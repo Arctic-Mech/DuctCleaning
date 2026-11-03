@@ -14,6 +14,7 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <title>Arctic Duct Cleaning</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 <style>
@@ -188,7 +189,6 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   bottom:0;overflow:hidden}
 .canvas-stage{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .canvas-stage img.plan{display:block;user-select:none;-webkit-user-drag:none;pointer-events:none}
-#hires{position:absolute;left:0;top:0;pointer-events:none;display:none}
 .pin{position:absolute;transform:translate(-50%,-100%);transform-origin:center bottom;
   cursor:pointer;filter:drop-shadow(0 3px 4px var(--pin-shadow))}
 .pin .body{width:34px;height:34px;border-radius:50% 50% 50% 2px;transform:rotate(45deg);
@@ -301,6 +301,19 @@ select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns
   font-size:14px;font-weight:600;z-index:200;opacity:0;transition:.25s;pointer-events:none;box-shadow:0 6px 20px rgba(0,0,0,.4);
   max-width:90vw;text-align:center}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ---------- report preview ---------- */
+.pv-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.pv-type{font-family:var(--font-head);font-weight:700;font-size:20px}
+.pv-kv{grid-template-columns:90px 1fr;font-size:14px;margin-bottom:4px}
+.pv-kv dt{color:var(--muted)} .pv-kv dd{margin:0}
+.pv-h{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;
+  margin:20px 0 8px;font-family:var(--font-body);font-weight:700}
+.pv-eq{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);
+  padding:10px 12px;margin-bottom:8px}
+.pv-eq b{font-weight:600} .pv-eq span{display:block;color:var(--muted);font-size:13.5px;margin-top:3px}
+.pv-area{font-size:14.5px;line-height:1.5}
+.pv-empty{color:var(--faint);font-size:13.5px;grid-column:1/-1}
 
 /* ---------- export package ---------- */
 .pkg{background:var(--bg)}
@@ -789,7 +802,6 @@ function viewDrawing(app){
       <div class="viewer" id="viewer">
         <div class="canvas-stage" id="stage">
           <img class="plan" id="plan" src="${d.img}" alt="${esc(d.name)}" draggable="false">
-          <canvas id="hires"></canvas>
           <div id="pinlayer"></div>
         </div>
       </div>
@@ -810,12 +822,10 @@ function viewDrawing(app){
   const viewer=app.querySelector('#viewer');
   const stage=app.querySelector('#stage');
   const plan=app.querySelector('#plan');
-  const hires=app.querySelector('#hires');
   const pinlayer=app.querySelector('#pinlayer');
   const hintChip=app.querySelector('#hintChip');
 
   VW={scale:1,tx:0,ty:0,baseW:0,baseH:0};
-  let PDFPAGE=null, hiresTimer=null, hiresTok=0, curRender=null;
   function setBase(){
     const rect=viewer.getBoundingClientRect();
     const iw=(d.pw||d.w||plan.naturalWidth), ih=(d.ph||d.h||plan.naturalHeight);
@@ -827,7 +837,7 @@ function viewDrawing(app){
   }
   function fitView(){
     const rect=viewer.getBoundingClientRect();
-    VW.scale=1;VW.tx=(rect.width-VW.baseW)/2;VW.ty=(rect.height-VW.baseH)/2;apply();scheduleRerender();
+    VW.scale=1;VW.tx=(rect.width-VW.baseW)/2;VW.ty=(rect.height-VW.baseH)/2;apply();
   }
   function clamp(){
     const rect=viewer.getBoundingClientRect();
@@ -843,7 +853,7 @@ function viewDrawing(app){
     const px=cx-rect.left, py=cy-rect.top;
     const ns=Math.max(0.35,Math.min(14,VW.scale*factor));
     const k=ns/VW.scale;
-    VW.tx=px-(px-VW.tx)*k;VW.ty=py-(py-VW.ty)*k;VW.scale=ns;apply();scheduleRerender();
+    VW.tx=px-(px-VW.tx)*k;VW.ty=py-(py-VW.ty)*k;VW.scale=ns;apply();
   }
   VW.renderPins=()=>{
     pinlayer.innerHTML='';
@@ -853,7 +863,7 @@ function viewDrawing(app){
       el.style.left=(r.nx*VW.baseW)+'px';el.style.top=(r.ny*VW.baseH)+'px';
       el.style.transform=`translate(-50%,-100%) scale(${1/VW.scale})`;
       el.innerHTML=`<div class="body"><span>${r.num}</span></div>`;
-      el.onclick=ev=>{ev.stopPropagation();reportEditor(r);};
+      el.onclick=ev=>{ev.stopPropagation();reportPreview(r);};
       pinlayer.appendChild(el);
     });
   };
@@ -879,7 +889,7 @@ function viewDrawing(app){
     viewer.releasePointerCapture?.(e.pointerId);pts.delete(e.pointerId);
     if(pts.size<2)startDist=0;
     if(pts.size===1){const p=[...pts.values()][0];panStart={x:p.x,y:p.y,tx:VW.tx,ty:VW.ty};}
-    if(pts.size===0){ if(wasTap&&S.placing)placeAt(downPt.x,downPt.y); else scheduleRerender(); }
+    if(pts.size===0&&wasTap&&S.placing)placeAt(downPt.x,downPt.y);
   }
   viewer.addEventListener('pointerup',endPt);
   viewer.addEventListener('pointercancel',endPt);
@@ -907,58 +917,11 @@ function viewDrawing(app){
       app.querySelector('#addReport').innerHTML=I.pin+' Place report';}
   };
 
-  // --- load the PDF (from Firestore chunks) and render the visible area on demand ---
-  async function loadPdf(){
-    if(!d.pdfChunks)return; // legacy plan without stored PDF — preview only
-    let chunks;
-    try{chunks=await pdfChunksByDraw(d.id);}catch(e){console.warn('pdf load failed; preview only',e);return;}
-    if(!chunks.length)return;
-    try{
-      const bytes=b64ToBytes(chunks.map(c=>c.data).join(''));
-      const pdf=await pdfjsLib.getDocument({data:bytes}).promise;
-      PDFPAGE=await pdf.getPage(1);
-      scheduleRerender();
-    }catch(e){console.warn('pdf parse failed; preview only',e);}
-  }
-  // render just the on-screen region of the page at device resolution, overlaid in base coords
-  async function renderHires(){
-    if(!PDFPAGE||!VW){return;}
-    const rect=viewer.getBoundingClientRect();
-    const S=VW.scale, dpr=Math.min(3,window.devicePixelRatio||1);
-    const m=0.12; // render a little beyond the viewport (relative to the view) so small pans stay crisp
-    let bx0=(-VW.tx)/S, by0=(-VW.ty)/S, bx1=(rect.width-VW.tx)/S, by1=(rect.height-VW.ty)/S;
-    const mw=(bx1-bx0)*m, mh=(by1-by0)*m;
-    bx0-=mw;by0-=mh;bx1+=mw;by1+=mh;
-    bx0=Math.max(0,bx0);by0=Math.max(0,by0);bx1=Math.min(VW.baseW,bx1);by1=Math.min(VW.baseH,by1);
-    const rw=bx1-bx0, rh=by1-by0; if(rw<=1||rh<=1)return;
-    const k=d.pw/VW.baseW;                 // base px -> pdf pt
-    let renderScale=S*dpr/k;               // pdf pt -> device px at current zoom
-    let cw=Math.round(rw*k*renderScale), ch=Math.round(rh*k*renderScale);
-    const MAXD=4096, MAXA=16.0e6, cap=Math.min(1, MAXD/Math.max(cw,ch), Math.sqrt(MAXA/(cw*ch)));
-    if(cap<1){renderScale*=cap;cw=Math.round(cw*cap);ch=Math.round(ch*cap);}
-    if(cw<2||ch<2)return;
-    const tok=++hiresTok;
-    if(curRender){try{curRender.cancel();}catch(e){}curRender=null;}
-    const c=document.createElement('canvas');c.width=cw;c.height=ch;
-    const vp=PDFPAGE.getViewport({scale:renderScale});
-    const task=PDFPAGE.render({canvasContext:c.getContext('2d',{alpha:false}),viewport:vp,
-      transform:[1,0,0,1,-bx0*k*renderScale,-by0*k*renderScale]});
-    curRender=task;
-    try{await task.promise;}
-    catch(e){return;}
-    if(tok!==hiresTok||!VW)return;
-    const ctx=hires.getContext('2d');hires.width=cw;hires.height=ch;ctx.drawImage(c,0,0);
-    hires.style.left=bx0+'px';hires.style.top=by0+'px';hires.style.width=rw+'px';hires.style.height=rh+'px';
-    hires.style.display='block';
-  }
-  function scheduleRerender(){
-    if(!PDFPAGE)return;clearTimeout(hiresTimer);
-    hiresTimer=setTimeout(renderHires,150);
-  }
+  // Field view stays on the fast, lightweight preview image. The full-resolution
+  // vector drawing is produced only at export time (see buildExportPDF).
   setBase();
   VW.renderPins();
-  loadPdf();
-  window.addEventListener('resize',()=>{if(VW){setBase();VW.renderPins();scheduleRerender();}},{once:false});
+  window.addEventListener('resize',()=>{if(VW){setBase();VW.renderPins();}},{once:false});
 }
 
 function drawMenu(d){
@@ -993,13 +956,45 @@ function renamePlan(d){
 /* ============================ report editor ============================ */
 function newReport(d,nx,ny){
   const num=(drawReports(d.id).reduce((m,r)=>Math.max(m,r.num),0))+1;
-  const r={id:uid(),jobId:d.jobId,drawId:d.id,num,type:'Return',status:'Open',
+  const r={id:uid(),jobId:d.jobId,drawId:d.id,num,type:'',typeOther:'',status:'Open',
     revisit:'',equipment:[{item:'',notes:''}],area:'',before:[],after:[],
     nx,ny,createdAt:now(),draft:true};
   reportEditor(r,true);
 }
 const REVISIT=['','3 Months','6 Months','8 Months','12 Months','18 Months','24 Months'];
-const RTYPES=['Return','Supply','ASU','Exhaust Fan (EF)','Riser','Main Trunk','Other'];
+const RTYPES=['Supply','Return','Exhaust','Other'];
+const typeLabel=r=> r.type==='Other' ? (r.typeOther||'Other') : (r.type||'—');
+
+// read-only preview shown when a pin is tapped; Edit opens the full form
+function reportPreview(r){
+  const d=S.drawings.find(x=>x.id===r.drawId);
+  const eq=(r.equipment||[]).filter(e=>e.item||e.notes);
+  const body=document.createElement('div');
+  body.innerHTML=`
+    <div class="pv-head">
+      <span class="pill ${r.status==='Completed'?'good':'warn'}"><span class="dot"></span>${esc(r.status)}</span>
+      <span class="pv-type">${esc(typeLabel(r))}</span>
+    </div>
+    <dl class="kv pv-kv">
+      ${r.revisit?`<dt>Re-visit</dt><dd>${esc(r.revisit)}</dd>`:''}
+      <dt>Plan</dt><dd>${esc(d?d.name:'')}</dd>
+    </dl>
+    ${eq.length?'<h4 class="pv-h">Serviced equipment</h4>'+eq.map(e=>`<div class="pv-eq"><b>${esc(e.item||'—')}</b>${e.notes?'<span>'+esc(e.notes)+'</span>':''}</div>`).join(''):''}
+    ${r.area?`<h4 class="pv-h">Inspected area</h4><div class="pv-area">${esc(r.area)}</div>`:''}
+    <h4 class="pv-h">Before pictures</h4><div class="photogrid pv-before"><div class="pv-empty">No photos</div></div>
+    <h4 class="pv-h">After pictures</h4><div class="photogrid pv-after"><div class="pv-empty">No photos</div></div>`;
+  const foot=document.createElement('button');foot.className='btn primary block';foot.innerHTML=I.edit+' Edit report';
+  const ctl=sheetShell({title:`Report #${r.num}`,bodyNode:body,footNode:foot,full:true});
+  foot.onclick=()=>{ctl.close();reportEditor(r);};
+  if((r.before&&r.before.length)||(r.after&&r.after.length)){
+    photosByReport(r.id).then(docs=>{
+      const byId={};docs.forEach(p=>byId[p.id]=p.data);
+      const fill=(which,sel)=>{const ids=(r[which]||[]).map(id=>byId[id]).filter(Boolean);
+        if(ids.length)body.querySelector(sel).innerHTML=ids.map(s=>`<div class="ph"><img src="${s}" alt=""></div>`).join('');};
+      fill('before','.pv-before');fill('after','.pv-after');
+    }).catch(e=>console.warn(e));
+  }
+}
 
 function reportEditor(r,isNew){
   const d=S.drawings.find(x=>x.id===r.drawId), j=S.jobs.find(x=>x.id===r.jobId);
@@ -1008,7 +1003,10 @@ function reportEditor(r,isNew){
   const body=document.createElement('div');
   body.innerHTML=`
     <div class="field"><label>Type</label>
-      <select class="inp" id="r_type">${RTYPES.map(t=>`<option ${t===w.type?'selected':''}>${t}</option>`).join('')}</select></div>
+      <select class="inp" id="r_type">
+        <option value="" ${!w.type?'selected':''}>Select type…</option>
+        ${RTYPES.map(t=>`<option ${t===w.type?'selected':''}>${t}</option>`).join('')}</select>
+      <input class="inp" id="r_typeother" placeholder="Enter type" value="${esc(w.typeOther||'')}" style="margin-top:10px" ${w.type==='Other'?'':'hidden'}></div>
     <div class="field"><label>Status</label>
       <div class="seg status" id="r_status">
         <button data-v="Open" class="${w.status==='Open'?'on':''}">Open</button>
@@ -1033,6 +1031,10 @@ function reportEditor(r,isNew){
   if(!isNew)foot.appendChild(delBtn);foot.appendChild(saveBtn);
 
   const ctl=sheetShell({title:isNew?`New report · #${w.num}`:`Report #${w.num}`,bodyNode:body,footNode:foot,full:true});
+
+  // type: reveal the manual field only for "Other"
+  const typeSel=body.querySelector('#r_type'), typeOther=body.querySelector('#r_typeother');
+  typeSel.onchange=()=>{typeOther.hidden=typeSel.value!=='Other';if(!typeOther.hidden)typeOther.focus();};
 
   // status segmented
   body.querySelector('#r_status').querySelectorAll('button').forEach(b=>b.onclick=()=>{
@@ -1108,7 +1110,9 @@ function reportEditor(r,isNew){
 
   // save: write each new photo as its own Firestore doc, keep order as id arrays on the report
   saveBtn.onclick=async()=>{
-    w.type=body.querySelector('#r_type').value;
+    w.type=typeSel.value;
+    w.typeOther = w.type==='Other' ? typeOther.value.trim() : '';
+    if(w.type==='Other' && !w.typeOther){toast('Enter the type');typeOther.focus();return;}
     w.revisit=body.querySelector('#r_revisit').value;
     w.area=body.querySelector('#r_area').value.trim();
     w.equipment=w.equipment.filter(eq=>eq.item.trim()||eq.notes.trim());
@@ -1139,79 +1143,144 @@ function reportEditor(r,isNew){
   };
 }
 
-/* ============================ export package ============================ */
+/* ============================ export: interactive PDF ============================ */
+const dataUrlToBytes=u=>b64ToBytes(String(u).split(',')[1]||'');
+async function fetchBytes(url){const r=await fetch(url);return new Uint8Array(await r.arrayBuffer());}
+
 function viewExport(app){
   const j=S.jobs.find(x=>x.id===S.jobId);if(!j){back();return;}
+  const draws=jobDrawings(j.id), nr=jobReports(j.id).length, done=jobReports(j.id).filter(r=>r.status==='Completed').length;
   app.innerHTML=`
     <div class="topbar">
       <button class="iconbtn" id="back">${I.back}</button>
-      <div class="ttl"><h1>Report package</h1><div class="sub">${esc(j.name)}</div></div>
+      <div class="ttl"><h1>Export</h1><div class="sub">${esc(j.name)}</div></div>
     </div>
-    <div class="content pkg"><div class="empty"><div class="spinner" style="margin:0 auto 14px"></div>
-      <p>Building package…</p></div></div>`;
-  app.querySelector('#back').onclick=back;
-  buildExport(app,j);
-}
-async function buildExport(app,j){
-  const draws=jobDrawings(j.id);
-  const co=COMPANY;
-  let byId={};
-  try{(await photosByJob(j.id)).forEach(p=>{byId[p.id]=p.data;});}catch(e){console.warn('photo load failed',e);}
-  const imgs=ids=>(ids||[]).map(id=>byId[id]).filter(Boolean);
-
-  let html=`<div class="content pkg" id="pkgRoot">
-      <div class="pkgbanner noprint">${I.info}<div>Review-ready package of every plan and report for this job.
-        Tap <b>Save / Print</b> to make a PDF — on iPhone that's the Share sheet → <b>Print</b> or <b>Save to Files</b>.</div></div>
-      <div class="pkgtitle"><img src="logo.png" alt="Arctic" style="height:30px;margin-bottom:8px">
-        <h2>${esc(j.name)}</h2><div class="mono">${esc(j.number)}${j.address?' · '+esc(j.address.replace(/\n/g,', ')):''}</div></div>`;
-
-  draws.forEach(d=>{
-    const reps=drawReports(d.id);
-    html+=`<div class="planpkg"><div class="cap"><span>${esc(d.name)}</span><span class="mono">${reps.length} report${reps.length!==1?'s':''}</span></div>
-      <div class="imgwrap"><img src="${d.img}" alt="">`;
-    reps.forEach(r=>{html+=`<div class="pn" style="left:${r.nx*100}%;top:${r.ny*100}%;background:${r.status==='Completed'?'#149a6c':'#c57e14'}"><span>${r.num}</span></div>`;});
-    html+=`</div></div>`;
-
-    reps.forEach(r=>{
-      const eq=(r.equipment||[]).filter(e=>e.item||e.notes);
-      const bf=imgs(r.before), af=imgs(r.after);
-      html+=`<div class="sheetpaper">
-        <div class="ph-head"><div class="co"><img class="rpt-logo" src="logo.png" alt="Arctic"><small>${esc(j.name)} · ${esc(j.number)}${j.address?' · '+esc(j.address.replace(/\n/g,', ')):''}</small></div>
-          <div class="rp">Duct Post Inspection<br>#${r.num}</div></div>
-        <div class="pbody">
-          <dl class="kv">
-            <dt>Type</dt><dd>${esc(r.type)}</dd>
-            <dt>Status</dt><dd style="color:${r.status==='Completed'?'#149a6c':'#c57e14'};font-weight:600">${esc(r.status)}</dd>
-            <dt>Plan</dt><dd>${esc(d.name)}</dd>
-            ${r.revisit?`<dt>Re-visit</dt><dd>${esc(r.revisit)}</dd>`:''}
-          </dl>`;
-      if(eq.length){html+=`<h4>Serviced equipment</h4><table class="eqtable"><tr><th style="width:38%">Surveyed item</th><th>Notes</th></tr>
-        ${eq.map(e=>`<tr><td>${esc(e.item)}</td><td>${esc(e.notes)}</td></tr>`).join('')}</table>`;}
-      if(r.area||bf.length||af.length){
-        html+=`<h4>Inspected area</h4>`;
-        if(r.area)html+=`<div style="font-size:12.5px;margin-bottom:8px">${esc(r.area)}</div>`;
-        if(bf.length){html+=`<div class="pklabel">Before</div><div class="pkphotos">${bf.map(s=>`<img src="${s}">`).join('')}</div>`;}
-        if(af.length){html+=`<div class="pklabel">After</div><div class="pkphotos">${af.map(s=>`<img src="${s}">`).join('')}</div>`;}
-      }
-      html+=`</div></div>`;
-    });
-  });
-  html+=`</div>
-    <div class="bottombar noprint">
-      <button class="btn ghost" id="shareBtn">${I.share}</button>
-      <button class="btn primary block" id="printBtn">${I.upload} Save / Print PDF</button>
+    <div class="content">
+      <div class="jobhead">
+        <div class="num mono">${esc(j.number)}</div><h2>${esc(j.name)}</h2>
+        <div class="stats">
+          <div class="s"><b>${draws.length}</b><span>Plans</span></div>
+          <div class="s"><b>${nr}</b><span>Reports</span></div>
+          <div class="s"><b style="color:var(--good)">${done}</b><span>Completed</span></div>
+        </div>
+      </div>
+      <div class="pkgbanner" style="margin-top:14px">${I.info}<div>Creates one <b>interactive PDF</b>: each plan is a full-resolution page with numbered pins, and <b>tapping a pin jumps to that report</b> — just like Fieldwire. Then save it to Files or send it.</div></div>
+      <div id="expStatus" class="hintline" style="text-align:center;min-height:18px"></div>
+    </div>
+    <div class="bottombar">
+      <button class="btn primary block" id="pdfBtn">${I.share} Create interactive PDF</button>
     </div>`;
-  // swap loading content + bottom bar in
-  app.querySelector('.content.pkg').outerHTML=html;
-  const printBtn=document.getElementById('printBtn');
-  if(printBtn)printBtn.onclick=()=>window.print();
-  const shareBtn=document.getElementById('shareBtn');
-  if(shareBtn)shareBtn.onclick=async()=>{
-    const text=`${j.name} (${j.number}) — ${jobReports(j.id).length} duct inspection reports`;
-    const url=location.href.split('#')[0];
-    if(navigator.share){try{await navigator.share({title:j.name,text,url});}catch(e){}}
-    else{try{await navigator.clipboard.writeText(text+' '+url);toast('Summary copied');}catch(e){toast('Use Save / Print instead');}}
-  };
+  app.querySelector('#back').onclick=back;
+  const btn=app.querySelector('#pdfBtn'), status=app.querySelector('#expStatus');
+  btn.onclick=()=>exportInteractivePdf(j,btn,status);
+}
+
+async function exportInteractivePdf(j,btn,status){
+  if(!window.PDFLib){toast('PDF engine still loading — try again');return;}
+  btn.disabled=true;const set=t=>{btn.textContent=t;if(status)status.textContent=t;};
+  set('Loading plans…');
+  try{
+    const draws=jobDrawings(j.id);
+    if(!draws.length){toast('Add a plan first');btn.disabled=false;btn.innerHTML=I.share+' Create interactive PDF';return;}
+    // photos for the whole job (id -> jpeg bytes)
+    let photoBytes={};
+    try{(await photosByJob(j.id)).forEach(p=>{try{photoBytes[p.id]=dataUrlToBytes(p.data);}catch(e){}});}catch(e){console.warn(e);}
+    let logoPng=null;try{logoPng=await fetchBytes('logo.png');}catch(e){}
+    const plans=[];
+    for(let di=0;di<draws.length;di++){
+      const d=draws[di];set(`Loading plan ${di+1}/${draws.length}…`);
+      let pdfBytes=null;
+      if(d.pdfChunks){try{const ch=await pdfChunksByDraw(d.id);if(ch.length)pdfBytes=b64ToBytes(ch.map(c=>c.data).join(''));}catch(e){console.warn(e);}}
+      const reports=drawReports(d.id).map(r=>({
+        num:r.num,type:r.type,typeOther:r.typeOther,status:r.status,revisit:r.revisit,
+        equipment:r.equipment,area:r.area,nx:r.nx,ny:r.ny,
+        before:(r.before||[]).map(id=>photoBytes[id]).filter(Boolean),
+        after:(r.after||[]).map(id=>photoBytes[id]).filter(Boolean),
+      }));
+      plans.push({name:d.name,pdfBytes,imgBytes:d.pdfChunks?null:dataUrlToBytes(d.img),pw:d.w,ph:d.h,reports});
+    }
+    set('Building PDF…');
+    const bytes=await makeExportPdf(PDFLib,{job:j,company:COMPANY,plans,logoPng});
+    const fname=(j.name+' '+j.number).replace(/[^\w .\-]+/g,'').trim()+' — Arctic.pdf';
+    const file=new File([bytes],fname,{type:'application/pdf'});
+    set('');btn.disabled=false;btn.innerHTML=I.share+' Create interactive PDF';
+    // Prefer the iOS share sheet (Save to Files / email / AirDrop); else download/open
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      try{await navigator.share({files:[file],title:fname});toast('Shared');return;}catch(e){if(e&&e.name==='AbortError')return;}
+    }
+    const url=URL.createObjectURL(file);
+    const a=document.createElement('a');a.href=url;a.download=fname;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),15000);
+    toast('PDF ready');
+  }catch(e){
+    console.error(e);set('');btn.disabled=false;btn.innerHTML=I.share+' Create interactive PDF';toast('Export failed — try again');
+  }
+}
+
+// ---- interactive-PDF builder (validated against real E-size sheets) ----
+async function makeExportPdf(PDFLib,{job,company,plans,logoPng}){
+  const {PDFDocument, rgb, StandardFonts, PDFName}=PDFLib;
+  const out=await PDFDocument.create();
+  const helv=await out.embedFont(StandardFonts.Helvetica);
+  const helvB=await out.embedFont(StandardFonts.HelveticaBold);
+  let logo=null; try{ if(logoPng) logo=await out.embedPng(logoPng); }catch(e){}
+  const GREEN=rgb(0.08,0.60,0.42), AMBER=rgb(0.77,0.49,0.08), INK=rgb(0.1,0.12,0.14), MUT=rgb(0.45,0.5,0.55);
+  const wrap=(txt,font,size,maxw)=>{const words=String(txt||'').split(/\s+/);const lines=[];let ln='';
+    for(const w of words){const t=ln?ln+' '+w:w;if(font.widthOfTextAtSize(t,size)>maxw&&ln){lines.push(ln);ln=w;}else ln=t;}
+    if(ln)lines.push(ln);return lines;};
+  function drawReportPage(pg,r,plan){
+    const W=pg.getWidth(),H=pg.getHeight(),M=48; let y=H-M;
+    if(logo){const lw=96,lh=lw*(logo.height/logo.width);pg.drawImage(logo,{x:M,y:y-lh+6,width:lw,height:lh});}
+    else{pg.drawText(company||'Arctic',{x:M,y:y-6,size:20,font:helvB,color:INK});}
+    pg.drawText('Duct Post Inspection',{x:W-M-helv.widthOfTextAtSize('Duct Post Inspection',11),y:y-2,size:11,font:helv,color:MUT});
+    const idn='#'+r.num; pg.drawText(idn,{x:W-M-helvB.widthOfTextAtSize(idn,22),y:y-26,size:22,font:helvB,color:INK});
+    y-=44;
+    const sub=(job.name||'')+'  ·  '+(job.number||'')+(job.address?('  ·  '+job.address.replace(/\n/g,', ')):'');
+    pg.drawText(sub,{x:M,y,size:9.5,font:helv,color:MUT}); y-=16;
+    pg.drawLine({start:{x:M,y},end:{x:W-M,y},thickness:2,color:rgb(0.12,0.5,0.85)}); y-=24;
+    const row=(k,v,vcol)=>{const lines=wrap(v,helvB,11,W-M-150);pg.drawText(k,{x:M,y,size:10,font:helv,color:MUT});
+      lines.forEach((ln,i)=>pg.drawText(ln,{x:M+100,y:y-i*14,size:11,font:helvB,color:vcol||INK}));y-=Math.max(20,14*lines.length+6);};
+    row('Type', r.type==='Other'?(r.typeOther||'Other'):(r.type||'—'));
+    row('Status', r.status, r.status==='Completed'?GREEN:AMBER);
+    row('Plan', plan.name);
+    if(r.revisit) row('Re-visit', r.revisit);
+    const eq=(r.equipment||[]).filter(e=>e.item||e.notes);
+    if(eq.length){y-=6;pg.drawText('SERVICED EQUIPMENT',{x:M,y,size:10,font:helvB,color:INK});y-=16;
+      eq.forEach(e=>{pg.drawText(e.item||'—',{x:M,y,size:10.5,font:helvB,color:INK});
+        const nl=wrap(e.notes||'',helv,10,W-M*2-12);nl.forEach((ln,i)=>pg.drawText(ln,{x:M+12,y:y-14-i*13,size:10,font:helv,color:MUT}));
+        y-=16+nl.length*13+6;});}
+    if(r.area){y-=4;pg.drawText('INSPECTED AREA',{x:M,y,size:10,font:helvB,color:INK});y-=15;
+      wrap(r.area,helv,10.5,W-M*2).forEach(ln=>{pg.drawText(ln,{x:M,y,size:10.5,font:helv,color:INK});y-=14;});}
+    const strip=(label,imgs)=>{if(!imgs||!imgs.length)return;y-=10;
+      pg.drawText(label,{x:M,y,size:10,font:helvB,color:INK});y-=6;
+      const gap=8,cols=3,cw=(W-M*2-gap*(cols-1))/cols,chh=cw*0.75;let x=M,placed=0;
+      for(const im of imgs){if(placed&&placed%cols===0){x=M;y-=chh+gap;}try{pg.drawImage(im,{x,y:y-chh,width:cw,height:chh});}catch(e){}x+=cw+gap;placed++;}
+      y-=chh+gap;};
+    strip('BEFORE', r.beforeImg); strip('AFTER', r.afterImg);
+  }
+  async function embedJpgs(list){const a=[];for(const bz of (list||[])){try{a.push(await out.embedJpg(bz));}catch(e){}}return a;}
+  for(const plan of plans){
+    let pg;
+    if(plan.pdfBytes){const src=await PDFDocument.load(plan.pdfBytes);[pg]=await out.copyPages(src,[0]);out.addPage(pg);}
+    else{let img=null;try{img=await out.embedJpg(plan.imgBytes);}catch(e){}const w=(img?img.width:plan.pw)||1200,h=(img?img.height:plan.ph)||1600;pg=out.addPage([w,h]);if(img)pg.drawImage(img,{x:0,y:0,width:w,height:h});}
+    const pw=pg.getWidth(), ph=pg.getHeight();
+    const repPages=[];
+    for(const r of plan.reports){r.beforeImg=await embedJpgs(r.before);r.afterImg=await embedJpgs(r.after);
+      const rp=out.addPage([612,792]);drawReportPage(rp,r,plan);repPages.push(rp);}
+    const annots=[];
+    plan.reports.forEach((r,i)=>{
+      const x=r.nx*pw, y=(1-r.ny)*ph, R=Math.max(16,pw*0.013);
+      pg.drawCircle({x,y,size:R,color:r.status==='Completed'?GREEN:AMBER,borderColor:rgb(1,1,1),borderWidth:R*0.14});
+      const fs=R*1.05, tw=helvB.widthOfTextAtSize(String(r.num),fs);
+      pg.drawText(String(r.num),{x:x-tw/2,y:y-fs*0.35,size:fs,font:helvB,color:rgb(1,1,1)});
+      const ctx=out.context, dest=ctx.obj([repPages[i].ref, PDFName.of('Fit')]);
+      const annot=ctx.obj({Type:PDFName.of('Annot'),Subtype:PDFName.of('Link'),Rect:[x-R,y-R,x+R,y+R],
+        Border:[0,0,0],A:{Type:PDFName.of('Action'),S:PDFName.of('GoTo'),D:dest}});
+      annots.push(ctx.register(annot));
+    });
+    pg.node.set(PDFName.of('Annots'), out.context.obj(annots));
+  }
+  return await out.save();
 }
 
 /* ============================ theme ============================ */
