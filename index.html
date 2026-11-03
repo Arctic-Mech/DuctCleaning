@@ -6,12 +6,13 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="DuctPro">
+<meta name="apple-mobile-web-app-title" content="Arctic Duct">
 <meta name="theme-color" content="#171e27" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#1d7fc4" media="(prefers-color-scheme: light)">
-<meta name="description" content="Arctic Mechanical duct cleaning field inspections.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 3L4 20h16z' fill='%232f9be6'/%3E%3Cpath d='M12 9l-3 7h6z' fill='%23fff'/%3E%3C/svg%3E">
-<title>DuctPro Field</title>
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="description" content="Arctic Duct Cleaning field inspections.">
+<link rel="icon" href="icon-180.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Arctic Duct Cleaning</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
@@ -93,6 +94,16 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .brandmark{width:30px;height:30px;border-radius:8px;flex:none;display:grid;place-items:center;
   background:linear-gradient(145deg,var(--accent),#1c6fb0);color:#fff}
 .brandmark svg{width:19px;height:19px}
+.brandlogo{height:24px;width:auto;flex:none;margin-left:3px}
+.brandsub{font-size:14px!important;font-weight:600;color:var(--muted);letter-spacing:.02em;
+  padding-left:11px;margin-left:9px;border-left:1px solid var(--line)}
+/* theme-aware logo swap (black wordmark on light, white on dark) */
+.dark-only{display:none}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .light-only{display:none}
+  :root:not([data-theme="light"]) .dark-only{display:inline-block}}
+:root[data-theme="dark"] .light-only{display:none}
+:root[data-theme="dark"] .dark-only{display:inline-block}
+.rpt-logo{height:26px;width:auto;display:block;margin-bottom:5px}
 
 /* ---------- content ---------- */
 .content{flex:1;min-height:0;
@@ -439,13 +450,14 @@ async function tilesByDraw(drawId){
 
 // ---- compress a canvas to a JPEG data: URL under a byte budget (Firestore 1 MiB/doc) ----
 function fitEncode(base,budget){
-  let q=0.82,w=base.width,h=base.height,url='';
-  for(let i=0;i<10;i++){
+  // keep quality high for crisp line work; only drop resolution as a last resort
+  let q=0.88,w=base.width,h=base.height,url='';
+  for(let i=0;i<12;i++){
     let c=base;
     if(w!==base.width){c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d',{alpha:false}).drawImage(base,0,0,w,h);}
     url=c.toDataURL('image/jpeg',q);
-    if(url.length<=budget||i===9)return{url,w,h};
-    if(q>0.45)q-=0.12;else{q=0.74;w=Math.round(w*0.82);h=Math.round(h*0.82);}
+    if(url.length<=budget||i===11)return{url,w,h};
+    if(q>0.62)q-=0.08;else{q=0.82;w=Math.round(w*0.88);h=Math.round(h*0.88);}
   }
   return{url,w,h};
 }
@@ -494,8 +506,8 @@ async function loadPdfFirstPage(file){
   const pdf=await pdfjsLib.getDocument({data:buf}).promise;
   return await pdf.getPage(1);
 }
-// quick low-res preview (thumbnails, export, base layer under the tiles)
-async function renderPagePreview(page,targetW=1600,budget=300000){
+// preview (thumbnails, export, and the base layer shown under the hi-res tiles)
+async function renderPagePreview(page,targetW=2600,budget=850000){
   const vp0=page.getViewport({scale:1});
   const MAXDIM=4000;
   let scale=Math.min(Math.max(0.5,targetW/vp0.width),MAXDIM/Math.max(vp0.width,vp0.height));
@@ -506,7 +518,7 @@ async function renderPagePreview(page,targetW=1600,budget=300000){
 }
 // hi-res tiles: render the page at a high scale in TILE-sized slices so no single
 // canvas exceeds iOS limits. Each tile is compressed to fit one Firestore doc.
-const TILE_LONG=5200, TILE_SIZE=1300, TILE_BUDGET=360000;
+const TILE_LONG=6400, TILE_SIZE=1600, TILE_BUDGET=900000;
 async function renderPageTiles(page,onProgress){
   const vp1=page.getViewport({scale:1});
   const scale=TILE_LONG/Math.max(vp1.width,vp1.height);
@@ -612,8 +624,9 @@ function viewJobs(app){
   });
   app.innerHTML=`
     <div class="topbar">
-      <span class="brandmark">${I.logo}</span>
-      <div class="ttl"><h1>DuctPro Field</h1><div class="sub">Duct cleaning inspections</div></div>
+      <img class="brandlogo light-only" src="logo.png" alt="Arctic">
+      <img class="brandlogo dark-only" src="logo-dark.png" alt="Arctic">
+      <div class="ttl"><h1 class="brandsub">Duct Cleaning</h1></div>
       <button class="iconbtn" id="themeBtn" aria-label="Toggle theme">${I.dots}</button>
     </div>
     <div class="content">
@@ -1134,7 +1147,8 @@ async function buildExport(app,j){
   let html=`<div class="content pkg" id="pkgRoot">
       <div class="pkgbanner noprint">${I.info}<div>Review-ready package of every plan and report for this job.
         Tap <b>Save / Print</b> to make a PDF — on iPhone that's the Share sheet → <b>Print</b> or <b>Save to Files</b>.</div></div>
-      <div class="pkgtitle"><h2>${esc(co)}</h2><div class="mono">${esc(j.number)} · ${esc(j.name)}${j.address?' · '+esc(j.address.replace(/\n/g,', ')):''}</div></div>`;
+      <div class="pkgtitle"><img src="logo.png" alt="Arctic" style="height:30px;margin-bottom:8px">
+        <h2>${esc(j.name)}</h2><div class="mono">${esc(j.number)}${j.address?' · '+esc(j.address.replace(/\n/g,', ')):''}</div></div>`;
 
   draws.forEach(d=>{
     const reps=drawReports(d.id);
@@ -1147,7 +1161,7 @@ async function buildExport(app,j){
       const eq=(r.equipment||[]).filter(e=>e.item||e.notes);
       const bf=imgs(r.before), af=imgs(r.after);
       html+=`<div class="sheetpaper">
-        <div class="ph-head"><div class="co">${esc(co)}<small>${esc(j.number)}${j.address?' · '+esc(j.address.replace(/\n/g,', ')):''}</small></div>
+        <div class="ph-head"><div class="co"><img class="rpt-logo" src="logo.png" alt="Arctic"><small>${esc(j.name)} · ${esc(j.number)}${j.address?' · '+esc(j.address.replace(/\n/g,', ')):''}</small></div>
           <div class="rp">Duct Post Inspection<br>#${r.num}</div></div>
         <div class="pbody">
           <dl class="kv">
