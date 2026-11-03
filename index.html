@@ -188,8 +188,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   bottom:0;overflow:hidden}
 .canvas-stage{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .canvas-stage img.plan{display:block;user-select:none;-webkit-user-drag:none;pointer-events:none}
-#tilelayer{position:absolute;left:0;top:0;pointer-events:none}
-#tilelayer img{position:absolute;display:block;-webkit-user-drag:none;image-rendering:auto}
+#hires{position:absolute;left:0;top:0;pointer-events:none;display:none}
 .pin{position:absolute;transform:translate(-50%,-100%);transform-origin:center bottom;
   cursor:pointer;filter:drop-shadow(0 3px 4px var(--pin-shadow))}
 .pin .body{width:34px;height:34px;border-radius:50% 50% 50% 2px;transform:rotate(45deg);
@@ -442,10 +441,10 @@ async function photosByJob(jobId){
   const s=await fdb.collection('photos').where('jobId','==',jobId).get();
   return s.docs.map(d=>d.data());
 }
-// plan tiles (one hi-res slice per doc) live in their own collection
-async function tilesByDraw(drawId){
-  const s=await fdb.collection('tiles').where('drawId','==',drawId).get();
-  return s.docs.map(d=>d.data());
+// the plan PDF, stored as base64 chunks across its own docs (free: no Storage)
+async function pdfChunksByDraw(drawId){
+  const s=await fdb.collection('pdfchunks').where('drawId','==',drawId).get();
+  return s.docs.map(d=>d.data()).sort((a,b)=>a.idx-b.idx);
 }
 
 // ---- compress a canvas to a JPEG data: URL under a byte budget (Firestore 1 MiB/doc) ----
@@ -506,7 +505,7 @@ async function loadPdfFirstPage(file){
   const pdf=await pdfjsLib.getDocument({data:buf}).promise;
   return await pdf.getPage(1);
 }
-// preview (thumbnails, export, and the base layer shown under the hi-res tiles)
+// preview (thumbnails, export, and the instant base layer under the live render)
 async function renderPagePreview(page,targetW=2600,budget=850000){
   const vp0=page.getViewport({scale:1});
   const MAXDIM=4000;
@@ -516,25 +515,16 @@ async function renderPagePreview(page,targetW=2600,budget=850000){
   await page.render({canvasContext:c.getContext('2d',{alpha:false}),viewport:vp}).promise;
   return fitEncode(c,budget);
 }
-// hi-res tiles: render the page at a high scale in TILE-sized slices so no single
-// canvas exceeds iOS limits. Each tile is compressed to fit one Firestore doc.
-const TILE_LONG=6400, TILE_SIZE=1600, TILE_BUDGET=900000;
-async function renderPageTiles(page,onProgress){
-  const vp1=page.getViewport({scale:1});
-  const scale=TILE_LONG/Math.max(vp1.width,vp1.height);
-  const vp=page.getViewport({scale});
-  const fullW=Math.round(vp.width), fullH=Math.round(vp.height);
-  const cols=Math.ceil(fullW/TILE_SIZE), rows=Math.ceil(fullH/TILE_SIZE);
-  const tiles=[]; const total=cols*rows; let done=0;
-  for(let row=0;row<rows;row++)for(let col=0;col<cols;col++){
-    const tw=Math.min(TILE_SIZE,fullW-col*TILE_SIZE), th=Math.min(TILE_SIZE,fullH-row*TILE_SIZE);
-    const c=document.createElement('canvas');c.width=tw;c.height=th;
-    await page.render({canvasContext:c.getContext('2d',{alpha:false}),viewport:vp,
-      transform:[1,0,0,1,-col*TILE_SIZE,-row*TILE_SIZE]}).promise;
-    tiles.push({col,row,tw,th,data:fitEncode(c,TILE_BUDGET).url});
-    done++; if(onProgress)onProgress(done,total);
-  }
-  return {fullW,fullH,tileSize:TILE_SIZE,cols,rows,tiles};
+// Split a File's bytes into base64 chunks that each fit one Firestore doc,
+// so the whole PDF is stored in Firestore (no Storage) and re-rendered on demand.
+const PDF_CHUNK=700000;
+function bytesToB64(bytes){let b='';for(let i=0;i<bytes.length;i+=0x8000)b+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));return btoa(b);}
+function b64ToBytes(b64){const bin=atob(b64),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u;}
+async function fileToPdfChunks(file){
+  const bytes=new Uint8Array(await file.arrayBuffer());
+  const b64=bytesToB64(bytes);
+  const chunks=[];for(let i=0;i<b64.length;i+=PDF_CHUNK)chunks.push(b64.slice(i,i+PDF_CHUNK));
+  return chunks;
 }
 
 /* ============================ sheets / modals ============================ */
@@ -732,7 +722,7 @@ function jobMenu(j){
       try{const ph=await photosByJob(j.id);for(const p of ph)await pDel('photos',p.id);}catch(e){console.warn(e);}
       for(const r of jobReports(j.id)){await pDel('reports',r.id);}
       for(const dd of jobDrawings(j.id)){
-        try{const ts=await tilesByDraw(dd.id);for(const t of ts)await pDel('tiles',t.id);}catch(e){console.warn(e);}
+        try{const ts=await pdfChunksByDraw(dd.id);for(const t of ts)await pDel('pdfchunks',t.id);}catch(e){console.warn(e);}
         await pDel('drawings',dd.id);
       }
       await pDel('jobs',j.id);
@@ -765,19 +755,19 @@ async function addPlanFlow(job,file){
   const nm=body.querySelector('#planName');setTimeout(()=>{nm.focus();nm.select();},250);
   foot.onclick=async()=>{
     const name=nm.value.trim();if(!name){toast('Name the plan first');nm.focus();return;}
-    foot.disabled=true;foot.textContent='Processing…';
-    const setProg=(a,b)=>{foot.textContent='Processing plan… '+a+'/'+b;};
-    let tiled;
-    try{tiled=await renderPageTiles(page,setProg);}
-    catch(e){console.error(e);foot.disabled=false;foot.textContent='Save plan';toast('Could not process that plan');return;}
+    foot.disabled=true;foot.textContent='Saving…';
+    const vp1=page.getViewport({scale:1});
     const id=uid();
+    let chunks;
+    try{chunks=await fileToPdfChunks(file);}
+    catch(e){console.error(e);foot.disabled=false;foot.textContent='Save plan';toast('Could not read that PDF');return;}
     const d={id,jobId:job.id,name,img:preview.url,w:preview.w,h:preview.h,
-      fullW:tiled.fullW,fullH:tiled.fullH,tileSize:tiled.tileSize,cols:tiled.cols,rows:tiled.rows,createdAt:now()};
-    foot.textContent='Saving…';
+      pw:vp1.width,ph:vp1.height,pdfChunks:chunks.length,createdAt:now()};
     try{
       await pPut('drawings',d);
-      for(const t of tiled.tiles){
-        await pPut('tiles',{id:id+'_'+t.col+'_'+t.row,drawId:id,jobId:job.id,col:t.col,row:t.row,tw:t.tw,th:t.th,data:t.data});
+      for(let i=0;i<chunks.length;i++){
+        foot.textContent='Saving… '+(i+1)+'/'+chunks.length;
+        await pPut('pdfchunks',{id:id+'_'+i,drawId:id,jobId:job.id,idx:i,data:chunks[i]});
       }
     }catch(e){console.error(e);foot.disabled=false;foot.textContent='Save plan';toast('Save failed — check connection');return;}
     S.drawings.push(d);ctl.close();go('drawing',{drawId:d.id});toast('Plan added');
@@ -799,7 +789,7 @@ function viewDrawing(app){
       <div class="viewer" id="viewer">
         <div class="canvas-stage" id="stage">
           <img class="plan" id="plan" src="${d.img}" alt="${esc(d.name)}" draggable="false">
-          <div id="tilelayer"></div>
+          <canvas id="hires"></canvas>
           <div id="pinlayer"></div>
         </div>
       </div>
@@ -820,20 +810,19 @@ function viewDrawing(app){
   const viewer=app.querySelector('#viewer');
   const stage=app.querySelector('#stage');
   const plan=app.querySelector('#plan');
-  const tilelayer=app.querySelector('#tilelayer');
+  const hires=app.querySelector('#hires');
   const pinlayer=app.querySelector('#pinlayer');
   const hintChip=app.querySelector('#hintChip');
 
   VW={scale:1,tx:0,ty:0,baseW:0,baseH:0};
-  let TILES=null;
+  let PDFPAGE=null, hiresTimer=null, hiresTok=0, curRender=null;
   function setBase(){
     const rect=viewer.getBoundingClientRect();
-    const iw=(d.fullW||d.w||plan.naturalWidth), ih=(d.fullH||d.h||plan.naturalHeight);
+    const iw=(d.pw||d.w||plan.naturalWidth), ih=(d.ph||d.h||plan.naturalHeight);
     const fit=Math.min(rect.width/iw,rect.height/ih);
     VW.baseW=iw*fit;VW.baseH=ih*fit;
     stage.style.width=VW.baseW+'px';stage.style.height=VW.baseH+'px';
     plan.style.width=VW.baseW+'px';plan.style.height=VW.baseH+'px';
-    layoutTiles();
     fitView();
   }
   function fitView(){
@@ -890,7 +879,7 @@ function viewDrawing(app){
     viewer.releasePointerCapture?.(e.pointerId);pts.delete(e.pointerId);
     if(pts.size<2)startDist=0;
     if(pts.size===1){const p=[...pts.values()][0];panStart={x:p.x,y:p.y,tx:VW.tx,ty:VW.ty};}
-    if(pts.size===0&&wasTap&&S.placing){placeAt(downPt.x,downPt.y);}
+    if(pts.size===0){ if(wasTap&&S.placing)placeAt(downPt.x,downPt.y); else scheduleRerender(); }
   }
   viewer.addEventListener('pointerup',endPt);
   viewer.addEventListener('pointercancel',endPt);
@@ -918,32 +907,58 @@ function viewDrawing(app){
       app.querySelector('#addReport').innerHTML=I.pin+' Place report';}
   };
 
-  function scheduleRerender(){} // no-op: plans are served as pre-rendered hi-res tiles
-  // position the loaded hi-res tiles over the preview, in base (fit) coordinates
-  function layoutTiles(){
-    if(!TILES||!d.fullW)return;
-    const sx=VW.baseW/d.fullW, sy=VW.baseH/d.fullH;
-    tilelayer.style.width=VW.baseW+'px';tilelayer.style.height=VW.baseH+'px';
-    [...tilelayer.children].forEach(im=>{
-      const col=+im.dataset.col, row=+im.dataset.row, tw=+im.dataset.tw, th=+im.dataset.th;
-      im.style.left=(col*d.tileSize*sx)+'px';im.style.top=(row*d.tileSize*sy)+'px';
-      im.style.width=Math.ceil(tw*sx)+'px';im.style.height=Math.ceil(th*sy)+'px';
-    });
+  // --- load the PDF (from Firestore chunks) and render the visible area on demand ---
+  async function loadPdf(){
+    if(!d.pdfChunks)return; // legacy plan without stored PDF — preview only
+    let chunks;
+    try{chunks=await pdfChunksByDraw(d.id);}catch(e){console.warn('pdf load failed; preview only',e);return;}
+    if(!chunks.length)return;
+    try{
+      const bytes=b64ToBytes(chunks.map(c=>c.data).join(''));
+      const pdf=await pdfjsLib.getDocument({data:bytes}).promise;
+      PDFPAGE=await pdf.getPage(1);
+      scheduleRerender();
+    }catch(e){console.warn('pdf parse failed; preview only',e);}
   }
-  async function loadTiles(){
-    if(!d.cols){return;} // legacy single-image plan (no tiles) — preview only
-    let docs;
-    try{docs=await tilesByDraw(d.id);}catch(e){console.warn('tile load failed; using preview',e);return;}
-    if(!docs.length)return;
-    tilelayer.innerHTML='';
-    docs.forEach(t=>{const im=document.createElement('img');im.src=t.data;im.draggable=false;
-      im.dataset.col=t.col;im.dataset.row=t.row;im.dataset.tw=t.tw;im.dataset.th=t.th;tilelayer.appendChild(im);});
-    TILES=docs;layoutTiles();
+  // render just the on-screen region of the page at device resolution, overlaid in base coords
+  async function renderHires(){
+    if(!PDFPAGE||!VW){return;}
+    const rect=viewer.getBoundingClientRect();
+    const S=VW.scale, dpr=Math.min(3,window.devicePixelRatio||1);
+    const m=0.12; // render a little beyond the viewport (relative to the view) so small pans stay crisp
+    let bx0=(-VW.tx)/S, by0=(-VW.ty)/S, bx1=(rect.width-VW.tx)/S, by1=(rect.height-VW.ty)/S;
+    const mw=(bx1-bx0)*m, mh=(by1-by0)*m;
+    bx0-=mw;by0-=mh;bx1+=mw;by1+=mh;
+    bx0=Math.max(0,bx0);by0=Math.max(0,by0);bx1=Math.min(VW.baseW,bx1);by1=Math.min(VW.baseH,by1);
+    const rw=bx1-bx0, rh=by1-by0; if(rw<=1||rh<=1)return;
+    const k=d.pw/VW.baseW;                 // base px -> pdf pt
+    let renderScale=S*dpr/k;               // pdf pt -> device px at current zoom
+    let cw=Math.round(rw*k*renderScale), ch=Math.round(rh*k*renderScale);
+    const MAXD=4096, MAXA=16.0e6, cap=Math.min(1, MAXD/Math.max(cw,ch), Math.sqrt(MAXA/(cw*ch)));
+    if(cap<1){renderScale*=cap;cw=Math.round(cw*cap);ch=Math.round(ch*cap);}
+    if(cw<2||ch<2)return;
+    const tok=++hiresTok;
+    if(curRender){try{curRender.cancel();}catch(e){}curRender=null;}
+    const c=document.createElement('canvas');c.width=cw;c.height=ch;
+    const vp=PDFPAGE.getViewport({scale:renderScale});
+    const task=PDFPAGE.render({canvasContext:c.getContext('2d',{alpha:false}),viewport:vp,
+      transform:[1,0,0,1,-bx0*k*renderScale,-by0*k*renderScale]});
+    curRender=task;
+    try{await task.promise;}
+    catch(e){return;}
+    if(tok!==hiresTok||!VW)return;
+    const ctx=hires.getContext('2d');hires.width=cw;hires.height=ch;ctx.drawImage(c,0,0);
+    hires.style.left=bx0+'px';hires.style.top=by0+'px';hires.style.width=rw+'px';hires.style.height=rh+'px';
+    hires.style.display='block';
+  }
+  function scheduleRerender(){
+    if(!PDFPAGE)return;clearTimeout(hiresTimer);
+    hiresTimer=setTimeout(renderHires,150);
   }
   setBase();
   VW.renderPins();
-  loadTiles();
-  window.addEventListener('resize',()=>{if(VW){setBase();VW.renderPins();}},{once:false});
+  loadPdf();
+  window.addEventListener('resize',()=>{if(VW){setBase();VW.renderPins();scheduleRerender();}},{once:false});
 }
 
 function drawMenu(d){
@@ -961,7 +976,7 @@ function drawMenu(d){
         await pDel('reports',r.id);
       }
       S.reports=S.reports.filter(r=>r.drawId!==d.id);
-      try{const ts=await tilesByDraw(d.id);for(const t of ts)await pDel('tiles',t.id);}catch(e){console.warn(e);}
+      try{const ts=await pdfChunksByDraw(d.id);for(const t of ts)await pDel('pdfchunks',t.id);}catch(e){console.warn(e);}
       await pDel('drawings',d.id);S.drawings=S.drawings.filter(x=>x.id!==d.id);
       VW=null;back();toast('Plan deleted');
     }};

@@ -17,8 +17,12 @@ devices. **Firebase Storage is not used**, so the project stays on the free Spar
 with no pay-as-you-go required.
 
 - Jobs, plans, and reports are Firestore documents.
-- The plan image and each photo are compressed and stored **inline in Firestore**, each
-  kept under the 1 MiB-per-document limit (plans land ~2000px wide; photos ~1280px).
+- Each **plan PDF is stored in Firestore** as base64 chunks (one collection, `pdfchunks`,
+  each chunk under the 1 MiB-per-document limit). The viewer loads those chunks, rebuilds
+  the PDF, and **renders only the on-screen area at device resolution on demand** — so a
+  huge E-size vector sheet stays crisp at any zoom without storing giant images.
+- A small preview image is kept on the plan for thumbnails, the instant base layer, and
+  the export. Photos are compressed and stored inline, one per `photos` document (~1280px).
 
 ### One-time setup (required)
 Because there is no login, the Firestore rules must allow open access:
