@@ -177,6 +177,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   bottom:0;overflow:hidden}
 .canvas-stage{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .canvas-stage img.plan{display:block;user-select:none;-webkit-user-drag:none;pointer-events:none}
+#tilelayer{position:absolute;left:0;top:0;pointer-events:none}
+#tilelayer img{position:absolute;display:block;-webkit-user-drag:none;image-rendering:auto}
 .pin{position:absolute;transform:translate(-50%,-100%);transform-origin:center bottom;
   cursor:pointer;filter:drop-shadow(0 3px 4px var(--pin-shadow))}
 .pin .body{width:34px;height:34px;border-radius:50% 50% 50% 2px;transform:rotate(45deg);
@@ -429,6 +431,11 @@ async function photosByJob(jobId){
   const s=await fdb.collection('photos').where('jobId','==',jobId).get();
   return s.docs.map(d=>d.data());
 }
+// plan tiles (one hi-res slice per doc) live in their own collection
+async function tilesByDraw(drawId){
+  const s=await fdb.collection('tiles').where('drawId','==',drawId).get();
+  return s.docs.map(d=>d.data());
+}
 
 // ---- compress a canvas to a JPEG data: URL under a byte budget (Firestore 1 MiB/doc) ----
 function fitEncode(base,budget){
@@ -444,7 +451,8 @@ function fitEncode(base,budget){
 }
 
 /* ============================ state ============================ */
-const S={jobs:[],drawings:[],reports:[],route:['jobs'],jobId:null,drawId:null,company:'',placing:false};
+const COMPANY='Arctic';
+const S={jobs:[],drawings:[],reports:[],route:['jobs'],jobId:null,drawId:null,placing:false};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -480,19 +488,41 @@ async function fileToDownscaledDataURL(file,maxDim=1280,budget=520000){
     pdfjsLib.GlobalWorkerOptions.workerSrc=URL.createObjectURL(blob);
   }catch(e){ console.warn('pdf worker setup failed, using fallback',e); }
 })();
-async function renderPdfToDataURL(file,targetW=3200){
+// load page 1 of a PDF File
+async function loadPdfFirstPage(file){
   const buf=await file.arrayBuffer();
   const pdf=await pdfjsLib.getDocument({data:buf}).promise;
-  const page=await pdf.getPage(1);
+  return await pdf.getPage(1);
+}
+// quick low-res preview (thumbnails, export, base layer under the tiles)
+async function renderPagePreview(page,targetW=1600,budget=300000){
   const vp0=page.getViewport({scale:1});
-  const MAXDIM=4000,MAXAREA=16e6; // keep within iOS Safari canvas limits
-  let scale=Math.max(0.5,targetW/vp0.width);
-  scale=Math.min(scale,4,MAXDIM/vp0.width,MAXDIM/vp0.height,Math.sqrt(MAXAREA/(vp0.width*vp0.height)));
+  const MAXDIM=4000;
+  let scale=Math.min(Math.max(0.5,targetW/vp0.width),MAXDIM/Math.max(vp0.width,vp0.height));
   const vp=page.getViewport({scale});
   const c=document.createElement('canvas');c.width=Math.round(vp.width);c.height=Math.round(vp.height);
   await page.render({canvasContext:c.getContext('2d',{alpha:false}),viewport:vp}).promise;
-  // compress to fit one Firestore doc (< 1 MiB); dense plans end up ~2000px wide
-  return fitEncode(c,900000);
+  return fitEncode(c,budget);
+}
+// hi-res tiles: render the page at a high scale in TILE-sized slices so no single
+// canvas exceeds iOS limits. Each tile is compressed to fit one Firestore doc.
+const TILE_LONG=5200, TILE_SIZE=1300, TILE_BUDGET=360000;
+async function renderPageTiles(page,onProgress){
+  const vp1=page.getViewport({scale:1});
+  const scale=TILE_LONG/Math.max(vp1.width,vp1.height);
+  const vp=page.getViewport({scale});
+  const fullW=Math.round(vp.width), fullH=Math.round(vp.height);
+  const cols=Math.ceil(fullW/TILE_SIZE), rows=Math.ceil(fullH/TILE_SIZE);
+  const tiles=[]; const total=cols*rows; let done=0;
+  for(let row=0;row<rows;row++)for(let col=0;col<cols;col++){
+    const tw=Math.min(TILE_SIZE,fullW-col*TILE_SIZE), th=Math.min(TILE_SIZE,fullH-row*TILE_SIZE);
+    const c=document.createElement('canvas');c.width=tw;c.height=th;
+    await page.render({canvasContext:c.getContext('2d',{alpha:false}),viewport:vp,
+      transform:[1,0,0,1,-col*TILE_SIZE,-row*TILE_SIZE]}).promise;
+    tiles.push({col,row,tw,th,data:fitEncode(c,TILE_BUDGET).url});
+    done++; if(onProgress)onProgress(done,total);
+  }
+  return {fullW,fullH,tileSize:TILE_SIZE,cols,rows,tiles};
 }
 
 /* ============================ sheets / modals ============================ */
@@ -606,7 +636,6 @@ function jobForm(existing){
   const j=existing||{};
   const body=document.createElement('div');
   body.innerHTML=`
-    ${existing?'':'<div class="field"><label>Company name</label><input class="inp" id="f_co" placeholder="Your company (shown on reports)" value="'+esc(S.company)+'"></div>'}
     <div class="field"><label>Job name <span class="req">*</span></label>
       <input class="inp" id="f_name" placeholder="e.g. Kaiser SYB Duct Cleaning" value="${esc(j.name||'')}"></div>
     <div class="field"><label>Job number <span class="req">*</span></label>
@@ -620,8 +649,6 @@ function jobForm(existing){
     const nm=name.value.trim(), num=body.querySelector('#f_num').value.trim();
     if(!nm){toast('Enter a job name');name.focus();return;}
     if(!num){toast('Enter a job number');return;}
-    const co=body.querySelector('#f_co');
-    if(co){S.company=co.value.trim();await pPut('meta',{k:'company',v:S.company});}
     if(existing){Object.assign(j,{name:nm,number:num,address:body.querySelector('#f_addr').value.trim()});await pPut('jobs',j);}
     else{const job={id:uid(),name:nm,number:num,address:body.querySelector('#f_addr').value.trim(),createdAt:now()};
       S.jobs.push(job);await pPut('jobs',job);ctl.close();go('job',{jobId:job.id,drawId:null});toast('Job created');return;}
@@ -691,7 +718,10 @@ function jobMenu(j){
     if(await confirmDialog({title:'Delete job?',message:'This permanently deletes "'+j.name+'", its plans, and all reports and photos.',confirmText:'Delete job'})){
       try{const ph=await photosByJob(j.id);for(const p of ph)await pDel('photos',p.id);}catch(e){console.warn(e);}
       for(const r of jobReports(j.id)){await pDel('reports',r.id);}
-      for(const d of jobDrawings(j.id)){await pDel('drawings',d.id);}
+      for(const dd of jobDrawings(j.id)){
+        try{const ts=await tilesByDraw(dd.id);for(const t of ts)await pDel('tiles',t.id);}catch(e){console.warn(e);}
+        await pDel('drawings',dd.id);
+      }
       await pDel('jobs',j.id);
       S.reports=S.reports.filter(r=>r.jobId!==j.id);S.drawings=S.drawings.filter(d=>d.jobId!==j.id);S.jobs=S.jobs.filter(x=>x.id!==j.id);
       S.route=['jobs'];render();toast('Job deleted');
@@ -701,11 +731,11 @@ function mkAction(icon,label,cls=''){const b=document.createElement('button');if
   b.innerHTML=icon+'<span>'+esc(label)+'</span>';return b;}
 function mkDiv(){const d=document.createElement('div');d.className='div';return d;}
 
-/* ---------- add plan: render pdf then name it ---------- */
+/* ---------- add plan: preview + name, then render hi-res tiles on save ---------- */
 async function addPlanFlow(job,file){
   const boot=document.getElementById('boot');boot.style.display='grid';
-  let rendered;
-  try{rendered=await renderPdfToDataURL(file);}
+  let page,preview;
+  try{page=await loadPdfFirstPage(file);preview=await renderPagePreview(page);}
   catch(e){boot.style.display='none';console.error(e);toast('Could not read that PDF');return;}
   boot.style.display='none';
   // name modal (required before save)
@@ -713,7 +743,7 @@ async function addPlanFlow(job,file){
   const guess=file.name.replace(/\.pdf$/i,'').replace(/[_-]+/g,' ').trim();
   body.innerHTML=`
     <div style="border-radius:12px;overflow:hidden;border:1px solid var(--line);margin-bottom:16px;background:var(--surface-2)">
-      <img src="${rendered.url}" alt="Plan preview" style="width:100%;display:block;max-height:240px;object-fit:contain"></div>
+      <img src="${preview.url}" alt="Plan preview" style="width:100%;display:block;max-height:240px;object-fit:contain"></div>
     <div class="field"><label>Floor / area name <span class="req">*</span></label>
       <input class="inp" id="planName" placeholder="e.g. Level 0LL HVAC" value="${esc(guess)}">
       <div class="hintline">Name this plan by its floor or area so you can tell them apart.</div></div>`;
@@ -722,10 +752,21 @@ async function addPlanFlow(job,file){
   const nm=body.querySelector('#planName');setTimeout(()=>{nm.focus();nm.select();},250);
   foot.onclick=async()=>{
     const name=nm.value.trim();if(!name){toast('Name the plan first');nm.focus();return;}
-    foot.disabled=true;foot.textContent='Saving…';
-    const d={id:uid(),jobId:job.id,name,img:rendered.url,w:rendered.w,h:rendered.h,createdAt:now()};
-    try{await pPut('drawings',d);}
-    catch(e){console.error(e);foot.disabled=false;foot.textContent='Save plan';toast('Save failed — check connection');return;}
+    foot.disabled=true;foot.textContent='Processing…';
+    const setProg=(a,b)=>{foot.textContent='Processing plan… '+a+'/'+b;};
+    let tiled;
+    try{tiled=await renderPageTiles(page,setProg);}
+    catch(e){console.error(e);foot.disabled=false;foot.textContent='Save plan';toast('Could not process that plan');return;}
+    const id=uid();
+    const d={id,jobId:job.id,name,img:preview.url,w:preview.w,h:preview.h,
+      fullW:tiled.fullW,fullH:tiled.fullH,tileSize:tiled.tileSize,cols:tiled.cols,rows:tiled.rows,createdAt:now()};
+    foot.textContent='Saving…';
+    try{
+      await pPut('drawings',d);
+      for(const t of tiled.tiles){
+        await pPut('tiles',{id:id+'_'+t.col+'_'+t.row,drawId:id,jobId:job.id,col:t.col,row:t.row,tw:t.tw,th:t.th,data:t.data});
+      }
+    }catch(e){console.error(e);foot.disabled=false;foot.textContent='Save plan';toast('Save failed — check connection');return;}
     S.drawings.push(d);ctl.close();go('drawing',{drawId:d.id});toast('Plan added');
   };
 }
@@ -745,6 +786,7 @@ function viewDrawing(app){
       <div class="viewer" id="viewer">
         <div class="canvas-stage" id="stage">
           <img class="plan" id="plan" src="${d.img}" alt="${esc(d.name)}" draggable="false">
+          <div id="tilelayer"></div>
           <div id="pinlayer"></div>
         </div>
       </div>
@@ -765,18 +807,20 @@ function viewDrawing(app){
   const viewer=app.querySelector('#viewer');
   const stage=app.querySelector('#stage');
   const plan=app.querySelector('#plan');
+  const tilelayer=app.querySelector('#tilelayer');
   const pinlayer=app.querySelector('#pinlayer');
   const hintChip=app.querySelector('#hintChip');
 
   VW={scale:1,tx:0,ty:0,baseW:0,baseH:0};
-  let PDFPAGE=null,VP1=null,rasterPxW=0,renderTok=0,rerenderTimer=null,curObjURL=null;
+  let TILES=null;
   function setBase(){
     const rect=viewer.getBoundingClientRect();
-    const iw=d.w||plan.naturalWidth, ih=d.h||plan.naturalHeight;
+    const iw=(d.fullW||d.w||plan.naturalWidth), ih=(d.fullH||d.h||plan.naturalHeight);
     const fit=Math.min(rect.width/iw,rect.height/ih);
     VW.baseW=iw*fit;VW.baseH=ih*fit;
     stage.style.width=VW.baseW+'px';stage.style.height=VW.baseH+'px';
     plan.style.width=VW.baseW+'px';plan.style.height=VW.baseH+'px';
+    layoutTiles();
     fitView();
   }
   function fitView(){
@@ -861,48 +905,32 @@ function viewDrawing(app){
       app.querySelector('#addReport').innerHTML=I.pin+' Place report';}
   };
 
-  // high-resolution live rendering straight from the PDF, re-rendered as you zoom in
-  async function loadPdfPage(){
-    if(!d.pdfUrl)return;
-    try{
-      const resp=await fetch(d.pdfUrl);if(!resp.ok)throw new Error('fetch '+resp.status);
-      const buf=await resp.arrayBuffer();
-      const pdf=await pdfjsLib.getDocument({data:buf}).promise;
-      PDFPAGE=await pdf.getPage(1);VP1=PDFPAGE.getViewport({scale:1});
-      renderAtCssWidth(VW.baseW*Math.max(1,VW.scale));
-    }catch(e){console.warn('live hi-res PDF unavailable (CORS/offline); using preview image',e);}
+  function scheduleRerender(){} // no-op: plans are served as pre-rendered hi-res tiles
+  // position the loaded hi-res tiles over the preview, in base (fit) coordinates
+  function layoutTiles(){
+    if(!TILES||!d.fullW)return;
+    const sx=VW.baseW/d.fullW, sy=VW.baseH/d.fullH;
+    tilelayer.style.width=VW.baseW+'px';tilelayer.style.height=VW.baseH+'px';
+    [...tilelayer.children].forEach(im=>{
+      const col=+im.dataset.col, row=+im.dataset.row, tw=+im.dataset.tw, th=+im.dataset.th;
+      im.style.left=(col*d.tileSize*sx)+'px';im.style.top=(row*d.tileSize*sy)+'px';
+      im.style.width=Math.ceil(tw*sx)+'px';im.style.height=Math.ceil(th*sy)+'px';
+    });
   }
-  async function renderAtCssWidth(cssW){
-    if(!PDFPAGE||!VP1)return;
-    const dpr=Math.min(2.5,window.devicePixelRatio||1);
-    const MAXW=4096,MAXAREA=16.7e6;
-    const capScale=Math.min(MAXW/VP1.width,Math.sqrt(MAXAREA/(VP1.width*VP1.height)));
-    const scale=Math.min((cssW*dpr)/VP1.width,capScale);
-    if(!(scale>0))return;
-    const vp=PDFPAGE.getViewport({scale});
-    const tok=++renderTok;
-    const c=document.createElement('canvas');c.width=Math.round(vp.width);c.height=Math.round(vp.height);
-    try{await PDFPAGE.render({canvasContext:c.getContext('2d',{alpha:false}),viewport:vp}).promise;}catch(e){return;}
-    if(tok!==renderTok)return;
-    await new Promise(res=>{c.toBlob(b=>{
-      if(tok!==renderTok||!b){res();return;}
-      const url=URL.createObjectURL(b),old=curObjURL;
-      plan.onload=()=>{if(old)URL.revokeObjectURL(old);};
-      plan.src=url;curObjURL=url;rasterPxW=c.width;res();
-    },'image/jpeg',0.85);});
-  }
-  function scheduleRerender(){
-    if(!PDFPAGE)return;clearTimeout(rerenderTimer);
-    rerenderTimer=setTimeout(()=>{
-      const dpr=Math.min(2.5,window.devicePixelRatio||1);
-      const want=VW.baseW*VW.scale*dpr;
-      if(want>rasterPxW*1.12&&rasterPxW<4096)renderAtCssWidth(VW.baseW*VW.scale);
-    },200);
+  async function loadTiles(){
+    if(!d.cols){return;} // legacy single-image plan (no tiles) — preview only
+    let docs;
+    try{docs=await tilesByDraw(d.id);}catch(e){console.warn('tile load failed; using preview',e);return;}
+    if(!docs.length)return;
+    tilelayer.innerHTML='';
+    docs.forEach(t=>{const im=document.createElement('img');im.src=t.data;im.draggable=false;
+      im.dataset.col=t.col;im.dataset.row=t.row;im.dataset.tw=t.tw;im.dataset.th=t.th;tilelayer.appendChild(im);});
+    TILES=docs;layoutTiles();
   }
   setBase();
   VW.renderPins();
-  loadPdfPage();
-  window.addEventListener('resize',()=>{if(VW){setBase();VW.renderPins();if(PDFPAGE)renderAtCssWidth(VW.baseW*VW.scale);}},{once:false});
+  loadTiles();
+  window.addEventListener('resize',()=>{if(VW){setBase();VW.renderPins();}},{once:false});
 }
 
 function drawMenu(d){
@@ -920,6 +948,7 @@ function drawMenu(d){
         await pDel('reports',r.id);
       }
       S.reports=S.reports.filter(r=>r.drawId!==d.id);
+      try{const ts=await tilesByDraw(d.id);for(const t of ts)await pDel('tiles',t.id);}catch(e){console.warn(e);}
       await pDel('drawings',d.id);S.drawings=S.drawings.filter(x=>x.id!==d.id);
       VW=null;back();toast('Plan deleted');
     }};
@@ -936,8 +965,8 @@ function renamePlan(d){
 /* ============================ report editor ============================ */
 function newReport(d,nx,ny){
   const num=(drawReports(d.id).reduce((m,r)=>Math.max(m,r.num),0))+1;
-  const r={id:uid(),jobId:d.jobId,drawId:d.id,num,name:'',type:'Return',status:'Open',assignee:'',
-    revisit:'',equipment:[{item:'',notes:''}],area:'',before:[],after:[],sig:null,sigName:'',sigRole:'',sigAt:null,
+  const r={id:uid(),jobId:d.jobId,drawId:d.id,num,type:'Return',status:'Open',
+    revisit:'',equipment:[{item:'',notes:''}],area:'',before:[],after:[],
     nx,ny,createdAt:now(),draft:true};
   reportEditor(r,true);
 }
@@ -950,16 +979,12 @@ function reportEditor(r,isNew){
   const w=JSON.parse(JSON.stringify(r));
   const body=document.createElement('div');
   body.innerHTML=`
-    <div class="field"><label>Name <span class="req">*</span></label>
-      <input class="inp" id="r_name" placeholder="e.g. Return, ASU 4, EF-3" value="${esc(w.name)}"></div>
     <div class="field"><label>Type</label>
       <select class="inp" id="r_type">${RTYPES.map(t=>`<option ${t===w.type?'selected':''}>${t}</option>`).join('')}</select></div>
     <div class="field"><label>Status</label>
       <div class="seg status" id="r_status">
         <button data-v="Open" class="${w.status==='Open'?'on':''}">Open</button>
         <button data-v="Completed" class="${w.status==='Completed'?'on':''}">Completed</button></div></div>
-    <div class="field"><label>Assignee</label>
-      <input class="inp" id="r_assignee" placeholder="Technician name" value="${esc(w.assignee)}"></div>
     <div class="field"><label>Recommended re-visit time frame</label>
       <select class="inp" id="r_revisit">${REVISIT.map(t=>`<option value="${t}" ${t===w.revisit?'selected':''}>${t||'— none —'}</option>`).join('')}</select></div>
 
@@ -1048,22 +1073,19 @@ function reportEditor(r,isNew){
 
   // delete
   delBtn.onclick=async()=>{ctl.close();
-    if(await confirmDialog({title:'Delete report?',message:'Report #'+w.num+(w.name?' ('+w.name+')':'')+' and its photos will be removed.',confirmText:'Delete'})){
+    if(await confirmDialog({title:'Delete report?',message:'Report #'+w.num+' and its photos will be removed.',confirmText:'Delete'})){
       try{const ids=[...(r.before||[]),...(r.after||[])];for(const id of ids)await pDel('photos',id);}catch(e){console.warn(e);}
       await pDel('reports',r.id);S.reports=S.reports.filter(x=>x.id!==r.id);if(VW&&VW.renderPins)VW.renderPins();render();toast('Report deleted');
     }};
 
   // save: write each new photo as its own Firestore doc, keep order as id arrays on the report
   saveBtn.onclick=async()=>{
-    w.name=body.querySelector('#r_name').value.trim();
-    if(!w.name){toast('Give the report a name');body.querySelector('#r_name').focus();return;}
     w.type=body.querySelector('#r_type').value;
-    w.assignee=body.querySelector('#r_assignee').value.trim();
     w.revisit=body.querySelector('#r_revisit').value;
     w.area=body.querySelector('#r_area').value.trim();
     w.equipment=w.equipment.filter(eq=>eq.item.trim()||eq.notes.trim());
     if(!w.equipment.length)w.equipment=[];
-    delete w.draft;delete w.sig;delete w.sigName;delete w.sigRole;delete w.sigAt;
+    delete w.draft;delete w.sig;delete w.sigName;delete w.sigRole;delete w.sigAt;delete w.name;delete w.assignee;
     saveBtn.disabled=true;saveBtn.textContent='Saving…';
     const bootEl=document.getElementById('boot');bootEl.style.display='grid';
     const fail=(m)=>{bootEl.style.display='none';saveBtn.disabled=false;saveBtn.textContent=isNew?'Save report':'Save changes';toast(m);};
@@ -1104,7 +1126,7 @@ function viewExport(app){
 }
 async function buildExport(app,j){
   const draws=jobDrawings(j.id);
-  const co=S.company||j.name;
+  const co=COMPANY;
   let byId={};
   try{(await photosByJob(j.id)).forEach(p=>{byId[p.id]=p.data;});}catch(e){console.warn('photo load failed',e);}
   const imgs=ids=>(ids||[]).map(id=>byId[id]).filter(Boolean);
@@ -1129,10 +1151,8 @@ async function buildExport(app,j){
           <div class="rp">Duct Post Inspection<br>#${r.num}</div></div>
         <div class="pbody">
           <dl class="kv">
-            <dt>Name</dt><dd>${esc(r.name)}</dd>
             <dt>Type</dt><dd>${esc(r.type)}</dd>
             <dt>Status</dt><dd style="color:${r.status==='Completed'?'#149a6c':'#c57e14'};font-weight:600">${esc(r.status)}</dd>
-            ${r.assignee?`<dt>Assignee</dt><dd>${esc(r.assignee)}</dd>`:''}
             <dt>Plan</dt><dd>${esc(d.name)}</dd>
             ${r.revisit?`<dt>Re-visit</dt><dd>${esc(r.revisit)}</dd>`:''}
           </dl>`;
@@ -1187,7 +1207,6 @@ function bootError(msg){
   try{ await initStore(); }
   catch(e){ console.error(e); bootError('Could not reach Firebase. Check your internet connection and reload.'); return; }
   try{
-    const co=await pGetMeta('company');if(co)S.company=co.v;
     S.jobs=await pAll('jobs');S.drawings=await pAll('drawings');S.reports=await pAll('reports');
   }catch(e){
     console.error(e);
