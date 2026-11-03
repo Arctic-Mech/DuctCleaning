@@ -13,6 +13,9 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 3L4 20h16z' fill='%232f9be6'/%3E%3Cpath d='M12 9l-3 7h6z' fill='%23fff'/%3E%3C/svg%3E">
 <title>DuctPro Field</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
 <style>
   /* --- standalone reset (normally provided by the host wrapper) --- */
   *{-webkit-text-size-adjust:100%}
@@ -370,23 +373,41 @@ const I = {
   logo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L4 20h16L12 3z" fill="currentColor" stroke="none"/><path d="M12 9l-3 7h6l-3-7z" fill="#fff" stroke="none"/></svg>',
 };
 
-/* ============================ storage ============================ */
-const DB_NAME='ductpro-db', DB_VER=1, STORES=['meta','jobs','drawings','reports'];
-let _db=null, memMode=false;
-const mem={meta:new Map(),jobs:new Map(),drawings:new Map(),reports:new Map()};
-function openDB(){return new Promise((res,rej)=>{let r;try{r=indexedDB.open(DB_NAME,DB_VER);}catch(e){return rej(e);}
-  r.onupgradeneeded=()=>{const db=r.result;STORES.forEach(s=>{if(!db.objectStoreNames.contains(s))db.createObjectStore(s,{keyPath:s==='meta'?'k':'id'});});};
-  r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
-async function initStore(){try{_db=await openDB();}catch(e){memMode=true;console.warn('IndexedDB unavailable, using memory only',e);}}
-function tx(store,mode){return _db.transaction(store,mode).objectStore(store);}
-function pAll(store){if(memMode)return Promise.resolve([...mem[store].values()]);
-  return new Promise((res,rej)=>{const r=tx(store,'readonly').getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error);});}
-function pPut(store,val){if(memMode){mem[store].set(val[store==='meta'?'k':'id'],val);return Promise.resolve();}
-  return new Promise((res,rej)=>{const r=tx(store,'readwrite').put(val);r.onsuccess=()=>res();r.onerror=()=>rej(r.error);});}
-function pDel(store,id){if(memMode){mem[store].delete(id);return Promise.resolve();}
-  return new Promise((res,rej)=>{const r=tx(store,'readwrite').delete(id);r.onsuccess=()=>res();r.onerror=()=>rej(r.error);});}
-function pGetMeta(k){if(memMode)return Promise.resolve(mem.meta.get(k));
-  return new Promise((res,rej)=>{const r=tx('meta','readonly').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+/* ============================ storage (Firebase, no auth) ============================ */
+const firebaseConfig={
+  apiKey:"AIzaSyD6IlI4l0k6gIZONst-XcV0jHcz2S952oU",
+  authDomain:"duct-cleaning-cb58f.firebaseapp.com",
+  projectId:"duct-cleaning-cb58f",
+  storageBucket:"duct-cleaning-cb58f.firebasestorage.app",
+  messagingSenderId:"406724038653",
+  appId:"1:406724038653:web:79e04d41ddf80edc91d394"
+};
+let fdb=null, fst=null;
+async function initStore(){
+  if(!window.firebase||!firebase.firestore){throw new Error('Firebase SDK did not load');}
+  firebase.initializeApp(firebaseConfig);
+  fdb=firebase.firestore();
+  fst=firebase.storage();
+  // offline cache so the field app keeps working through dead spots, then syncs
+  try{await fdb.enablePersistence({synchronizeTabs:true});}catch(e){console.warn('offline persistence off',e);}
+}
+// 'meta' keys on 'k', everything else on 'id'
+const _keyField=store=>store==='meta'?'k':'id';
+async function pAll(store){
+  const snap=await fdb.collection(store).get();
+  return snap.docs.map(d=>d.data());
+}
+async function pPut(store,val){
+  // never write blobs/File objects or giant data: URLs to Firestore — those go to Storage
+  const clean={};for(const k in val){const v=val[k];if(v instanceof Blob)continue;clean[k]=v;}
+  await fdb.collection(store).doc(String(val[_keyField(store)])).set(clean,{merge:false});
+}
+async function pDel(store,id){ await fdb.collection(store).doc(String(id)).delete(); }
+async function pGetMeta(k){ const d=await fdb.collection('meta').doc(String(k)).get(); return d.exists?d.data():undefined; }
+
+// ---- Firebase Storage helpers (binary: PDFs + photos) ----
+async function uploadDataURL(path,dataURL){ const ref=fst.ref(path); await ref.putString(dataURL,'data_url'); return await ref.getDownloadURL(); }
+async function uploadFile(path,file){ const ref=fst.ref(path); await ref.put(file); return await ref.getDownloadURL(); }
 
 /* ============================ state ============================ */
 const S={jobs:[],drawings:[],reports:[],route:['jobs'],jobId:null,drawId:null,company:'',placing:false};
@@ -425,15 +446,17 @@ async function fileToDownscaledDataURL(file,maxDim=1600,quality=0.82){
     pdfjsLib.GlobalWorkerOptions.workerSrc=URL.createObjectURL(blob);
   }catch(e){ console.warn('pdf worker setup failed, using fallback',e); }
 })();
-async function renderPdfToDataURL(file,targetW=1800){
+async function renderPdfToDataURL(file,targetW=3200){
   const buf=await file.arrayBuffer();
   const pdf=await pdfjsLib.getDocument({data:buf}).promise;
   const page=await pdf.getPage(1);
   const vp0=page.getViewport({scale:1});
-  const scale=Math.min(3,Math.max(0.5,targetW/vp0.width));
+  const MAXDIM=4000,MAXAREA=16e6; // keep within iOS Safari canvas limits
+  let scale=Math.max(0.5,targetW/vp0.width);
+  scale=Math.min(scale,4,MAXDIM/vp0.width,MAXDIM/vp0.height,Math.sqrt(MAXAREA/(vp0.width*vp0.height)));
   const vp=page.getViewport({scale});
   const c=document.createElement('canvas');c.width=Math.round(vp.width);c.height=Math.round(vp.height);
-  await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
+  await page.render({canvasContext:c.getContext('2d',{alpha:false}),viewport:vp}).promise;
   return {url:c.toDataURL('image/jpeg',0.86),w:c.width,h:c.height};
 }
 
@@ -663,7 +686,13 @@ async function addPlanFlow(job,file){
   const nm=body.querySelector('#planName');setTimeout(()=>{nm.focus();nm.select();},250);
   foot.onclick=async()=>{
     const name=nm.value.trim();if(!name){toast('Name the plan first');nm.focus();return;}
-    const d={id:uid(),jobId:job.id,name,img:rendered.url,w:rendered.w,h:rendered.h,createdAt:now()};
+    foot.disabled=true;foot.textContent='Uploading…';
+    const id=uid();let imgUrl='',pdfUrl='';
+    try{
+      imgUrl=await uploadDataURL('drawings/'+id+'/preview.jpg',rendered.url);
+      pdfUrl=await uploadFile('drawings/'+id+'/plan.pdf',file);
+    }catch(e){console.error(e);foot.disabled=false;foot.textContent='Save plan';toast('Upload failed — check connection');return;}
+    const d={id,jobId:job.id,name,img:imgUrl,pdfUrl,w:rendered.w,h:rendered.h,createdAt:now()};
     S.drawings.push(d);await pPut('drawings',d);ctl.close();go('drawing',{drawId:d.id});toast('Plan added');
   };
 }
@@ -707,6 +736,7 @@ function viewDrawing(app){
   const hintChip=app.querySelector('#hintChip');
 
   VW={scale:1,tx:0,ty:0,baseW:0,baseH:0};
+  let PDFPAGE=null,VP1=null,rasterPxW=0,renderTok=0,rerenderTimer=null,curObjURL=null;
   function setBase(){
     const rect=viewer.getBoundingClientRect();
     const iw=d.w||plan.naturalWidth, ih=d.h||plan.naturalHeight;
@@ -718,7 +748,7 @@ function viewDrawing(app){
   }
   function fitView(){
     const rect=viewer.getBoundingClientRect();
-    VW.scale=1;VW.tx=(rect.width-VW.baseW)/2;VW.ty=(rect.height-VW.baseH)/2;apply();
+    VW.scale=1;VW.tx=(rect.width-VW.baseW)/2;VW.ty=(rect.height-VW.baseH)/2;apply();scheduleRerender();
   }
   function clamp(){
     const rect=viewer.getBoundingClientRect();
@@ -732,9 +762,9 @@ function viewDrawing(app){
   function zoomAt(cx,cy,factor){
     const rect=viewer.getBoundingClientRect();
     const px=cx-rect.left, py=cy-rect.top;
-    const ns=Math.max(0.4,Math.min(8,VW.scale*factor));
+    const ns=Math.max(0.35,Math.min(14,VW.scale*factor));
     const k=ns/VW.scale;
-    VW.tx=px-(px-VW.tx)*k;VW.ty=py-(py-VW.ty)*k;VW.scale=ns;apply();
+    VW.tx=px-(px-VW.tx)*k;VW.ty=py-(py-VW.ty)*k;VW.scale=ns;apply();scheduleRerender();
   }
   VW.renderPins=()=>{
     pinlayer.innerHTML='';
@@ -798,9 +828,48 @@ function viewDrawing(app){
       app.querySelector('#addReport').innerHTML=I.pin+' Place report';}
   };
 
-  if(plan.complete&&plan.naturalWidth){setBase();}else{plan.onload=setBase;}
+  // high-resolution live rendering straight from the PDF, re-rendered as you zoom in
+  async function loadPdfPage(){
+    if(!d.pdfUrl)return;
+    try{
+      const resp=await fetch(d.pdfUrl);if(!resp.ok)throw new Error('fetch '+resp.status);
+      const buf=await resp.arrayBuffer();
+      const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+      PDFPAGE=await pdf.getPage(1);VP1=PDFPAGE.getViewport({scale:1});
+      renderAtCssWidth(VW.baseW*Math.max(1,VW.scale));
+    }catch(e){console.warn('live hi-res PDF unavailable (CORS/offline); using preview image',e);}
+  }
+  async function renderAtCssWidth(cssW){
+    if(!PDFPAGE||!VP1)return;
+    const dpr=Math.min(2.5,window.devicePixelRatio||1);
+    const MAXW=4096,MAXAREA=16.7e6;
+    const capScale=Math.min(MAXW/VP1.width,Math.sqrt(MAXAREA/(VP1.width*VP1.height)));
+    const scale=Math.min((cssW*dpr)/VP1.width,capScale);
+    if(!(scale>0))return;
+    const vp=PDFPAGE.getViewport({scale});
+    const tok=++renderTok;
+    const c=document.createElement('canvas');c.width=Math.round(vp.width);c.height=Math.round(vp.height);
+    try{await PDFPAGE.render({canvasContext:c.getContext('2d',{alpha:false}),viewport:vp}).promise;}catch(e){return;}
+    if(tok!==renderTok)return;
+    await new Promise(res=>{c.toBlob(b=>{
+      if(tok!==renderTok||!b){res();return;}
+      const url=URL.createObjectURL(b),old=curObjURL;
+      plan.onload=()=>{if(old)URL.revokeObjectURL(old);};
+      plan.src=url;curObjURL=url;rasterPxW=c.width;res();
+    },'image/jpeg',0.85);});
+  }
+  function scheduleRerender(){
+    if(!PDFPAGE)return;clearTimeout(rerenderTimer);
+    rerenderTimer=setTimeout(()=>{
+      const dpr=Math.min(2.5,window.devicePixelRatio||1);
+      const want=VW.baseW*VW.scale*dpr;
+      if(want>rasterPxW*1.12&&rasterPxW<4096)renderAtCssWidth(VW.baseW*VW.scale);
+    },200);
+  }
+  setBase();
   VW.renderPins();
-  window.addEventListener('resize',()=>{if(VW){setBase();VW.renderPins();}},{once:false});
+  loadPdfPage();
+  window.addEventListener('resize',()=>{if(VW){setBase();VW.renderPins();if(PDFPAGE)renderAtCssWidth(VW.baseW*VW.scale);}},{once:false});
 }
 
 function drawMenu(d){
@@ -867,13 +936,7 @@ function reportEditor(r,isNew){
       <textarea class="inp" id="r_area" placeholder="e.g. ASU 4 Return duct riser">${esc(w.area)}</textarea></div>
 
     <div class="field"><label>Before pictures</label><div class="photogrid" id="beforeGrid"></div></div>
-    <div class="field"><label>After pictures</label><div class="photogrid" id="afterGrid"></div></div>
-
-    <div style="height:1px;background:var(--line);margin:4px 0 18px"></div>
-    <div class="field"><label>Signature</label>
-      <canvas class="sigpad" id="sigpad"></canvas>
-      <div class="sigbar"><span id="sigState"></span><button class="clr" id="sigClear">Clear</button></div>
-      <input class="inp" id="r_signame" placeholder="Signed by (name & role)" style="margin-top:10px" value="${esc(w.sigName)}"></div>`;
+    <div class="field" style="margin-bottom:4px"><label>After pictures</label><div class="photogrid" id="afterGrid"></div></div>`;
 
   const foot=document.createElement('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
   const delBtn=document.createElement('button');delBtn.className='btn danger';delBtn.innerHTML=I.trash;
@@ -935,32 +998,21 @@ function reportEditor(r,isNew){
   }
   renderPhotos('before');renderPhotos('after');
 
-  // signature pad
-  const pad=body.querySelector('#sigpad');const sigState=body.querySelector('#sigState');
-  let sctx,drawn=!!w.sig,hasStroke=!!w.sig;
-  function setupPad(){
-    const rect=pad.getBoundingClientRect();const dpr=Math.min(2,window.devicePixelRatio||1);
-    pad.width=rect.width*dpr;pad.height=rect.height*dpr;sctx=pad.getContext('2d');sctx.scale(dpr,dpr);
-    sctx.lineWidth=2.2;sctx.lineCap='round';sctx.lineJoin='round';
-    sctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--fg').trim()||'#000';
-    if(w.sig){const img=new Image();img.onload=()=>sctx.drawImage(img,0,0,rect.width,rect.height);img.src=w.sig;}
-    updateSig();
-  }
-  function updateSig(){sigState.innerHTML=hasStroke?`<span class="signed">${I.check} Captured</span>`:'<span style="color:var(--faint);font-size:13px">Sign above</span>';}
-  let drawing=false,last=null;
-  const pos=e=>{const r=pad.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};};
-  pad.addEventListener('pointerdown',e=>{e.preventDefault();pad.setPointerCapture(e.pointerId);drawing=true;last=pos(e);hasStroke=true;updateSig();});
-  pad.addEventListener('pointermove',e=>{if(!drawing)return;const p=pos(e);sctx.beginPath();sctx.moveTo(last.x,last.y);sctx.lineTo(p.x,p.y);sctx.stroke();last=p;});
-  const endSig=()=>{if(drawing){drawing=false;w.sig=pad.toDataURL('image/png');}};
-  pad.addEventListener('pointerup',endSig);pad.addEventListener('pointercancel',endSig);
-  body.querySelector('#sigClear').onclick=()=>{sctx.clearRect(0,0,pad.width,pad.height);w.sig=null;hasStroke=false;updateSig();};
-  setTimeout(setupPad,260);
-
   // delete
   delBtn.onclick=async()=>{ctl.close();
     if(await confirmDialog({title:'Delete report?',message:'Report #'+w.num+(w.name?' ('+w.name+')':'')+' and its photos will be removed.',confirmText:'Delete'})){
       await pDel('reports',r.id);S.reports=S.reports.filter(x=>x.id!==r.id);if(VW&&VW.renderPins)VW.renderPins();render();toast('Report deleted');
     }};
+
+  // upload any newly-added (data: URL) photos to Storage, keep existing https URLs
+  async function uploadPhotos(which){
+    const out=[];
+    for(const v of w[which]){
+      if(typeof v==='string'&&v.startsWith('data:')){out.push(await uploadDataURL('reports/'+w.id+'/'+which+'-'+uid()+'.jpg',v));}
+      else out.push(v);
+    }
+    return out;
+  }
 
   // save
   saveBtn.onclick=async()=>{
@@ -972,12 +1024,18 @@ function reportEditor(r,isNew){
     w.area=body.querySelector('#r_area').value.trim();
     w.equipment=w.equipment.filter(eq=>eq.item.trim()||eq.notes.trim());
     if(!w.equipment.length)w.equipment=[];
-    w.sigName=body.querySelector('#r_signame').value.trim();
-    if(w.sig&&!w.sigAt)w.sigAt=now();
-    delete w.draft;
+    delete w.draft;delete w.sig;delete w.sigName;delete w.sigRole;delete w.sigAt;
+    saveBtn.disabled=true;saveBtn.textContent='Saving…';
+    const bootEl=document.getElementById('boot');bootEl.style.display='grid';
+    try{
+      w.before=await uploadPhotos('before');
+      w.after=await uploadPhotos('after');
+    }catch(e){console.error(e);bootEl.style.display='none';saveBtn.disabled=false;saveBtn.textContent=isNew?'Save report':'Save changes';toast('Photo upload failed — check connection');return;}
+    try{await pPut('reports',w);}
+    catch(e){console.error(e);bootEl.style.display='none';saveBtn.disabled=false;saveBtn.textContent=isNew?'Save report':'Save changes';toast('Save failed — check connection');return;}
     const exists=S.reports.find(x=>x.id===w.id);
     if(exists)Object.assign(exists,w);else S.reports.push(w);
-    await pPut('reports',w);
+    bootEl.style.display='none';
     ctl.close();if(VW&&VW.renderPins)VW.renderPins();render();toast(isNew?'Report saved':'Saved');
   };
 }
@@ -1026,8 +1084,6 @@ function viewExport(app){
         if(r.before.length){html+=`<div class="pklabel">Before</div><div class="pkphotos">${r.before.map(s=>`<img src="${s}">`).join('')}</div>`;}
         if(r.after.length){html+=`<div class="pklabel">After</div><div class="pkphotos">${r.after.map(s=>`<img src="${s}">`).join('')}</div>`;}
       }
-      if(r.sig||r.sigName){html+=`<h4>Signature</h4><div class="pksig">${r.sig?`<img src="${r.sig}" alt="signature">`:''}
-        <div class="line">${r.sigName?esc(r.sigName):''}${r.sigAt?`<br>${new Date(r.sigAt).toLocaleString()}`:''}</div></div>`;}
       html+=`</div></div>`;
     });
   });
@@ -1052,49 +1108,25 @@ function cycleTheme(){
 }
 (function initTheme(){try{const t=localStorage.getItem('ductpro-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
 
-/* ============================ seed example ============================ */
-function makeExamplePlan(){
-  // generate a simple schematic floor plan so pin placement is demonstrable
-  const W=1400,H=1000,c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
-  x.fillStyle='#f3f5f7';x.fillRect(0,0,W,H);
-  x.strokeStyle='#30455c';x.lineWidth=6;x.strokeRect(70,70,W-140,H-140);
-  x.lineWidth=3;
-  const rooms=[[70,70,420,380],[490,70,440,380],[930,70,400,520],[70,450,420,480],[490,450,440,480]];
-  rooms.forEach(r=>x.strokeRect(r[0],r[1],r[2],r[3]));
-  // duct runs
-  x.strokeStyle='#2f9be6';x.setLineDash([14,10]);x.lineWidth=5;
-  x.beginPath();x.moveTo(120,260);x.lineTo(1260,260);x.moveTo(700,120);x.lineTo(700,880);
-  x.moveTo(280,700);x.lineTo(1260,700);x.stroke();x.setLineDash([]);
-  x.fillStyle='#30455c';x.font='bold 26px Archivo, sans-serif';
-  x.fillText('LEVEL 0LL — HVAC',110,130);
-  x.font='16px IBM Plex Mono, monospace';x.fillStyle='#64748b';
-  x.fillText('EXAMPLE PLAN',110,160);
-  return {url:c.toDataURL('image/jpeg',0.85),w:W,h:H};
-}
-async function seedExample(){
-  const plan=makeExamplePlan();
-  const job={id:uid(),name:'Kaiser SYB Duct Cleaning',number:'24-0376',address:'10180 SE Sunnyside Rd\nClackamas, OR 97015',createdAt:now(),example:true};
-  const d={id:uid(),jobId:job.id,name:'Level 0LL HVAC',img:plan.url,w:plan.w,h:plan.h,createdAt:now()};
-  const mk=(num,name,type,status,nx,ny,assignee,area,eq,revisit)=>({id:uid(),jobId:job.id,drawId:d.id,num,name,type,status,
-    assignee,revisit,equipment:eq,area,before:[],after:[],sig:null,sigName:status==='Completed'?assignee+' — Foreman':'',sigRole:'',sigAt:status==='Completed'?now()-86400000:null,
-    nx,ny,createdAt:now()});
-  const reps=[
-    mk(1,'Return','Return','Completed',0.30,0.28,'Jaren Eells','Return duct main trunk',[{item:'Return Duct',notes:'Main trunk cleaned end to end.'}],'12 Months'),
-    mk(2,'ASU 4','ASU','Completed',0.63,0.52,'Kyle Semrau','ASU 4 Return duct riser',[{item:'Return Duct',notes:'Ducting running from ASU and riser was cleaned.'}],'8 Months'),
-    mk(3,'EF-3','Exhaust Fan (EF)','Open',0.82,0.30,'',' ',[{item:'',notes:''}],''),
-  ];
-  S.jobs.push(job);S.drawings.push(d);reps.forEach(r=>S.reports.push(r));
-  await pPut('jobs',job);await pPut('drawings',d);for(const r of reps)await pPut('reports',r);
-  await pPut('meta',{k:'seeded',v:1});
-}
-
 /* ============================ boot ============================ */
+function bootError(msg){
+  const el=document.getElementById('boot');
+  el.style.display='grid';
+  el.innerHTML='<div style="max-width:30ch;text-align:center;color:var(--muted);padding:24px">'+
+    '<div style="color:var(--danger);font-weight:700;font-size:17px;margin-bottom:8px">Couldn’t connect</div>'+
+    '<div style="font-size:14px;line-height:1.5">'+esc(msg)+'</div></div>';
+}
 (async function boot(){
-  await initStore();
-  const co=await pGetMeta('company');if(co)S.company=co.v;
-  S.jobs=await pAll('jobs');S.drawings=await pAll('drawings');S.reports=await pAll('reports');
-  const seeded=await pGetMeta('seeded');
-  if(!S.jobs.length&&!seeded){try{await seedExample();}catch(e){console.warn('seed failed',e);}}
+  try{ await initStore(); }
+  catch(e){ console.error(e); bootError('Could not reach Firebase. Check your internet connection and reload.'); return; }
+  try{
+    const co=await pGetMeta('company');if(co)S.company=co.v;
+    S.jobs=await pAll('jobs');S.drawings=await pAll('drawings');S.reports=await pAll('reports');
+  }catch(e){
+    console.error(e);
+    bootError('Connected to Firebase, but reads were denied. Make sure Firestore and Storage security rules allow access, then reload.');
+    return;
+  }
   restoreNav();
   render();
   document.getElementById('boot').style.display='none';
