@@ -15,7 +15,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
 <style>
   /* --- standalone reset (normally provided by the host wrapper) --- */
   *{-webkit-text-size-adjust:100%}
@@ -328,6 +327,24 @@ select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns
   transform-origin:center bottom;display:grid;place-items:center;border:2px solid #fff;box-shadow:0 2px 3px rgba(0,0,0,.4)}
 .planpkg .pn span{transform:rotate(-45deg);font-family:var(--font-mono);font-weight:700;font-size:11px;color:#fff}
 
+.pkgtitle{padding:2px 2px 14px}
+.pkgtitle h2{font-size:21px}
+.pkgtitle .mono{color:var(--muted);font-size:12.5px;margin-top:3px}
+
+/* print → real PDF (works on the live site, incl. iOS Share → Print) */
+@media print{
+  @page{margin:12mm}
+  html,body{height:auto!important}
+  body{background:#fff!important}
+  body::before{display:none!important}
+  .topbar,.bottombar,.noprint,#sheets,#toast,#boot,.zoomcol,.viewer-overlay{display:none!important}
+  .content{padding:0!important}
+  .pkg{background:#fff!important}
+  .pkgtitle h2{color:#111}.pkgtitle .mono{color:#555}
+  .sheetpaper,.planpkg{box-shadow:none!important;border:1px solid #ccc;break-inside:avoid;page-break-inside:avoid;margin-bottom:12px}
+  .pkphotos,.pkphotos img{break-inside:avoid}
+}
+
 /* loading */
 .loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:300}
 .spinner{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;
@@ -382,12 +399,11 @@ const firebaseConfig={
   messagingSenderId:"406724038653",
   appId:"1:406724038653:web:79e04d41ddf80edc91d394"
 };
-let fdb=null, fst=null;
+let fdb=null;
 async function initStore(){
   if(!window.firebase||!firebase.firestore){throw new Error('Firebase SDK did not load');}
   firebase.initializeApp(firebaseConfig);
   fdb=firebase.firestore();
-  fst=firebase.storage();
   // offline cache so the field app keeps working through dead spots, then syncs
   try{await fdb.enablePersistence({synchronizeTabs:true});}catch(e){console.warn('offline persistence off',e);}
 }
@@ -398,16 +414,34 @@ async function pAll(store){
   return snap.docs.map(d=>d.data());
 }
 async function pPut(store,val){
-  // never write blobs/File objects or giant data: URLs to Firestore — those go to Storage
-  const clean={};for(const k in val){const v=val[k];if(v instanceof Blob)continue;clean[k]=v;}
+  const clean={};for(const k in val){const v=val[k];if(v instanceof Blob||k.charAt(0)==='_')continue;clean[k]=v;}
   await fdb.collection(store).doc(String(val[_keyField(store)])).set(clean,{merge:false});
 }
 async function pDel(store,id){ await fdb.collection(store).doc(String(id)).delete(); }
 async function pGetMeta(k){ const d=await fdb.collection('meta').doc(String(k)).get(); return d.exists?d.data():undefined; }
 
-// ---- Firebase Storage helpers (binary: PDFs + photos) ----
-async function uploadDataURL(path,dataURL){ const ref=fst.ref(path); await ref.putString(dataURL,'data_url'); return await ref.getDownloadURL(); }
-async function uploadFile(path,file){ const ref=fst.ref(path); await ref.put(file); return await ref.getDownloadURL(); }
+// ---- photos live in their own Firestore docs (one per image, each < 1 MiB) ----
+async function photosByReport(reportId){
+  const s=await fdb.collection('photos').where('reportId','==',reportId).get();
+  return s.docs.map(d=>d.data());
+}
+async function photosByJob(jobId){
+  const s=await fdb.collection('photos').where('jobId','==',jobId).get();
+  return s.docs.map(d=>d.data());
+}
+
+// ---- compress a canvas to a JPEG data: URL under a byte budget (Firestore 1 MiB/doc) ----
+function fitEncode(base,budget){
+  let q=0.82,w=base.width,h=base.height,url='';
+  for(let i=0;i<10;i++){
+    let c=base;
+    if(w!==base.width){c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d',{alpha:false}).drawImage(base,0,0,w,h);}
+    url=c.toDataURL('image/jpeg',q);
+    if(url.length<=budget||i===9)return{url,w,h};
+    if(q>0.45)q-=0.12;else{q=0.74;w=Math.round(w*0.82);h=Math.round(h*0.82);}
+  }
+  return{url,w,h};
+}
 
 /* ============================ state ============================ */
 const S={jobs:[],drawings:[],reports:[],route:['jobs'],jobId:null,drawId:null,company:'',placing:false};
@@ -425,16 +459,16 @@ function toast(msg){const el=document.getElementById('toast');el.textContent=msg
   clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('show'),2200);}
 
 /* ============================ image helpers ============================ */
-async function fileToDownscaledDataURL(file,maxDim=1600,quality=0.82){
+async function fileToDownscaledDataURL(file,maxDim=1280,budget=520000){
   let bmp;
   try{bmp=await createImageBitmap(file,{imageOrientation:'from-image'});}
   catch(e){bmp=await new Promise((res,rej)=>{const img=new Image();img.onload=()=>res(img);img.onerror=rej;img.src=URL.createObjectURL(file);});}
   const w=bmp.width,h=bmp.height,scale=Math.min(1,maxDim/Math.max(w,h));
   const cw=Math.round(w*scale),ch=Math.round(h*scale);
   const c=document.createElement('canvas');c.width=cw;c.height=ch;
-  c.getContext('2d').drawImage(bmp,0,0,cw,ch);
+  c.getContext('2d',{alpha:false}).drawImage(bmp,0,0,cw,ch);
   if(bmp.close)bmp.close();
-  return c.toDataURL('image/jpeg',quality);
+  return fitEncode(c,budget).url; // keep each photo well under Firestore's 1 MiB/doc
 }
 
 /* ============================ pdf worker ============================ */
@@ -457,7 +491,8 @@ async function renderPdfToDataURL(file,targetW=3200){
   const vp=page.getViewport({scale});
   const c=document.createElement('canvas');c.width=Math.round(vp.width);c.height=Math.round(vp.height);
   await page.render({canvasContext:c.getContext('2d',{alpha:false}),viewport:vp}).promise;
-  return {url:c.toDataURL('image/jpeg',0.86),w:c.width,h:c.height};
+  // compress to fit one Firestore doc (< 1 MiB); dense plans end up ~2000px wide
+  return fitEncode(c,900000);
 }
 
 /* ============================ sheets / modals ============================ */
@@ -654,6 +689,7 @@ function jobMenu(j){
   edit.onclick=()=>{ctl.close();jobForm(j);};
   del.onclick=async()=>{ctl.close();
     if(await confirmDialog({title:'Delete job?',message:'This permanently deletes "'+j.name+'", its plans, and all reports and photos.',confirmText:'Delete job'})){
+      try{const ph=await photosByJob(j.id);for(const p of ph)await pDel('photos',p.id);}catch(e){console.warn(e);}
       for(const r of jobReports(j.id)){await pDel('reports',r.id);}
       for(const d of jobDrawings(j.id)){await pDel('drawings',d.id);}
       await pDel('jobs',j.id);
@@ -686,14 +722,11 @@ async function addPlanFlow(job,file){
   const nm=body.querySelector('#planName');setTimeout(()=>{nm.focus();nm.select();},250);
   foot.onclick=async()=>{
     const name=nm.value.trim();if(!name){toast('Name the plan first');nm.focus();return;}
-    foot.disabled=true;foot.textContent='Uploading…';
-    const id=uid();let imgUrl='',pdfUrl='';
-    try{
-      imgUrl=await uploadDataURL('drawings/'+id+'/preview.jpg',rendered.url);
-      pdfUrl=await uploadFile('drawings/'+id+'/plan.pdf',file);
-    }catch(e){console.error(e);foot.disabled=false;foot.textContent='Save plan';toast('Upload failed — check connection');return;}
-    const d={id,jobId:job.id,name,img:imgUrl,pdfUrl,w:rendered.w,h:rendered.h,createdAt:now()};
-    S.drawings.push(d);await pPut('drawings',d);ctl.close();go('drawing',{drawId:d.id});toast('Plan added');
+    foot.disabled=true;foot.textContent='Saving…';
+    const d={id:uid(),jobId:job.id,name,img:rendered.url,w:rendered.w,h:rendered.h,createdAt:now()};
+    try{await pPut('drawings',d);}
+    catch(e){console.error(e);foot.disabled=false;foot.textContent='Save plan';toast('Save failed — check connection');return;}
+    S.drawings.push(d);ctl.close();go('drawing',{drawId:d.id});toast('Plan added');
   };
 }
 
@@ -882,7 +915,10 @@ function drawMenu(d){
   del.onclick=async()=>{ctl.close();
     const n=drawReports(d.id).length;
     if(await confirmDialog({title:'Delete plan?',message:'This deletes "'+d.name+'"'+(n?' and its '+n+' report'+(n!==1?'s':''):'')+'.',confirmText:'Delete plan'})){
-      for(const r of drawReports(d.id))await pDel('reports',r.id);
+      for(const r of drawReports(d.id)){
+        try{const ids=[...(r.before||[]),...(r.after||[])];for(const id of ids)await pDel('photos',id);}catch(e){console.warn(e);}
+        await pDel('reports',r.id);
+      }
       S.reports=S.reports.filter(r=>r.drawId!==d.id);
       await pDel('drawings',d.id);S.drawings=S.drawings.filter(x=>x.id!==d.id);
       VW=null;back();toast('Plan deleted');
@@ -966,14 +1002,16 @@ function reportEditor(r,isNew){
   renderEq();
   body.querySelector('#addEq').onclick=()=>{w.equipment.push({item:'',notes:''});renderEq();};
 
-  // photos
+  // photos — held as {id?, data} objects; stored as their own Firestore docs on save
+  const PH={before:[],after:[]};
+  const origIds=new Set();
   function renderPhotos(which){
     const grid=body.querySelector(which==='before'?'#beforeGrid':'#afterGrid');
     grid.innerHTML='';
-    w[which].forEach((src,i)=>{
+    PH[which].forEach((p,i)=>{
       const ph=document.createElement('div');ph.className='ph';
-      ph.innerHTML=`<img src="${src}" alt=""><button class="rm" aria-label="Remove">${I.x}</button>`;
-      ph.querySelector('.rm').onclick=()=>{w[which].splice(i,1);renderPhotos(which);};
+      ph.innerHTML=`<img src="${p.data}" alt=""><button class="rm" aria-label="Remove">${I.x}</button>`;
+      ph.querySelector('.rm').onclick=()=>{PH[which].splice(i,1);renderPhotos(which);};
       grid.appendChild(ph);
     });
     const add=document.createElement('button');add.className='add';add.innerHTML=I.camera+'<span>Add</span>';
@@ -991,30 +1029,31 @@ function reportEditor(r,isNew){
     menu.append(inCap,inLib);
     const handle=async(input)=>{const files=[...input.files];input.value='';if(!files.length)return;
       m.close();const boot=document.getElementById('boot');boot.style.display='grid';
-      for(const f of files){try{w[which].push(await fileToDownscaledDataURL(f));}catch(e){console.error(e);}}
+      for(const f of files){try{PH[which].push({data:await fileToDownscaledDataURL(f)});}catch(e){console.error(e);}}
       boot.style.display='none';done();};
     take.onclick=()=>inCap.click();lib.onclick=()=>inLib.click();
     inCap.onchange=()=>handle(inCap);inLib.onchange=()=>handle(inLib);
   }
   renderPhotos('before');renderPhotos('after');
+  // load existing photos for this report (their own docs) and show them
+  if(!isNew&&((w.before&&w.before.length)||(w.after&&w.after.length))){
+    photosByReport(w.id).then(docs=>{
+      const byId={};docs.forEach(p=>{byId[p.id]=p;origIds.add(p.id);});
+      ['before','after'].forEach(which=>{
+        PH[which]=(w[which]||[]).map(id=>byId[id]).filter(Boolean).map(p=>({id:p.id,data:p.data}));
+        renderPhotos(which);
+      });
+    }).catch(e=>console.warn('photo load failed',e));
+  }
 
   // delete
   delBtn.onclick=async()=>{ctl.close();
     if(await confirmDialog({title:'Delete report?',message:'Report #'+w.num+(w.name?' ('+w.name+')':'')+' and its photos will be removed.',confirmText:'Delete'})){
+      try{const ids=[...(r.before||[]),...(r.after||[])];for(const id of ids)await pDel('photos',id);}catch(e){console.warn(e);}
       await pDel('reports',r.id);S.reports=S.reports.filter(x=>x.id!==r.id);if(VW&&VW.renderPins)VW.renderPins();render();toast('Report deleted');
     }};
 
-  // upload any newly-added (data: URL) photos to Storage, keep existing https URLs
-  async function uploadPhotos(which){
-    const out=[];
-    for(const v of w[which]){
-      if(typeof v==='string'&&v.startsWith('data:')){out.push(await uploadDataURL('reports/'+w.id+'/'+which+'-'+uid()+'.jpg',v));}
-      else out.push(v);
-    }
-    return out;
-  }
-
-  // save
+  // save: write each new photo as its own Firestore doc, keep order as id arrays on the report
   saveBtn.onclick=async()=>{
     w.name=body.querySelector('#r_name').value.trim();
     if(!w.name){toast('Give the report a name');body.querySelector('#r_name').focus();return;}
@@ -1027,12 +1066,22 @@ function reportEditor(r,isNew){
     delete w.draft;delete w.sig;delete w.sigName;delete w.sigRole;delete w.sigAt;
     saveBtn.disabled=true;saveBtn.textContent='Saving…';
     const bootEl=document.getElementById('boot');bootEl.style.display='grid';
+    const fail=(m)=>{bootEl.style.display='none';saveBtn.disabled=false;saveBtn.textContent=isNew?'Save report':'Save changes';toast(m);};
     try{
-      w.before=await uploadPhotos('before');
-      w.after=await uploadPhotos('after');
-    }catch(e){console.error(e);bootEl.style.display='none';saveBtn.disabled=false;saveBtn.textContent=isNew?'Save report':'Save changes';toast('Photo upload failed — check connection');return;}
+      const keep=new Set();
+      for(const which of ['before','after']){
+        for(const p of PH[which]){
+          if(!p.id){p.id=uid();await pPut('photos',{id:p.id,reportId:w.id,jobId:w.jobId,which,data:p.data,createdAt:now()});}
+          keep.add(p.id);
+        }
+      }
+      // remove photos the tech deleted
+      for(const id of origIds){if(!keep.has(id))await pDel('photos',id);}
+      w.before=PH.before.map(p=>p.id);
+      w.after=PH.after.map(p=>p.id);
+    }catch(e){console.error(e);return fail('Photo save failed — check connection');}
     try{await pPut('reports',w);}
-    catch(e){console.error(e);bootEl.style.display='none';saveBtn.disabled=false;saveBtn.textContent=isNew?'Save report':'Save changes';toast('Save failed — check connection');return;}
+    catch(e){console.error(e);return fail('Save failed — check connection');}
     const exists=S.reports.find(x=>x.id===w.id);
     if(exists)Object.assign(exists,w);else S.reports.push(w);
     bootEl.style.display='none';
@@ -1043,27 +1092,38 @@ function reportEditor(r,isNew){
 /* ============================ export package ============================ */
 function viewExport(app){
   const j=S.jobs.find(x=>x.id===S.jobId);if(!j){back();return;}
-  const draws=jobDrawings(j.id);
-  const co=S.company||j.name;
-  let html=`
+  app.innerHTML=`
     <div class="topbar">
       <button class="iconbtn" id="back">${I.back}</button>
       <div class="ttl"><h1>Report package</h1><div class="sub">${esc(j.name)}</div></div>
     </div>
-    <div class="content pkg">
-      <div class="pkgbanner">${I.info}<div>Review-ready package of every plan and report for this job.
-        To send it: on iPhone, take a screenshot of each page, or use <b>Share</b> below. A tap-to-download PDF
-        isn't available inside this preview sandbox — that comes once the app is deployed to its own web address.</div></div>`;
+    <div class="content pkg"><div class="empty"><div class="spinner" style="margin:0 auto 14px"></div>
+      <p>Building package…</p></div></div>`;
+  app.querySelector('#back').onclick=back;
+  buildExport(app,j);
+}
+async function buildExport(app,j){
+  const draws=jobDrawings(j.id);
+  const co=S.company||j.name;
+  let byId={};
+  try{(await photosByJob(j.id)).forEach(p=>{byId[p.id]=p.data;});}catch(e){console.warn('photo load failed',e);}
+  const imgs=ids=>(ids||[]).map(id=>byId[id]).filter(Boolean);
+
+  let html=`<div class="content pkg" id="pkgRoot">
+      <div class="pkgbanner noprint">${I.info}<div>Review-ready package of every plan and report for this job.
+        Tap <b>Save / Print</b> to make a PDF — on iPhone that's the Share sheet → <b>Print</b> or <b>Save to Files</b>.</div></div>
+      <div class="pkgtitle"><h2>${esc(co)}</h2><div class="mono">${esc(j.number)} · ${esc(j.name)}${j.address?' · '+esc(j.address.replace(/\n/g,', ')):''}</div></div>`;
 
   draws.forEach(d=>{
     const reps=drawReports(d.id);
     html+=`<div class="planpkg"><div class="cap"><span>${esc(d.name)}</span><span class="mono">${reps.length} report${reps.length!==1?'s':''}</span></div>
       <div class="imgwrap"><img src="${d.img}" alt="">`;
-    reps.forEach(r=>{html+=`<div class="pn" style="left:${r.nx*100}%;top:${r.ny*100}%;background:${r.status==='Completed'?'var(--good)':'var(--warn)'}"><span>${r.num}</span></div>`;});
+    reps.forEach(r=>{html+=`<div class="pn" style="left:${r.nx*100}%;top:${r.ny*100}%;background:${r.status==='Completed'?'#149a6c':'#c57e14'}"><span>${r.num}</span></div>`;});
     html+=`</div></div>`;
 
     reps.forEach(r=>{
       const eq=(r.equipment||[]).filter(e=>e.item||e.notes);
+      const bf=imgs(r.before), af=imgs(r.after);
       html+=`<div class="sheetpaper">
         <div class="ph-head"><div class="co">${esc(co)}<small>${esc(j.number)}${j.address?' · '+esc(j.address.replace(/\n/g,', ')):''}</small></div>
           <div class="rp">Duct Post Inspection<br>#${r.num}</div></div>
@@ -1078,23 +1138,30 @@ function viewExport(app){
           </dl>`;
       if(eq.length){html+=`<h4>Serviced equipment</h4><table class="eqtable"><tr><th style="width:38%">Surveyed item</th><th>Notes</th></tr>
         ${eq.map(e=>`<tr><td>${esc(e.item)}</td><td>${esc(e.notes)}</td></tr>`).join('')}</table>`;}
-      if(r.area||r.before.length||r.after.length){
+      if(r.area||bf.length||af.length){
         html+=`<h4>Inspected area</h4>`;
         if(r.area)html+=`<div style="font-size:12.5px;margin-bottom:8px">${esc(r.area)}</div>`;
-        if(r.before.length){html+=`<div class="pklabel">Before</div><div class="pkphotos">${r.before.map(s=>`<img src="${s}">`).join('')}</div>`;}
-        if(r.after.length){html+=`<div class="pklabel">After</div><div class="pkphotos">${r.after.map(s=>`<img src="${s}">`).join('')}</div>`;}
+        if(bf.length){html+=`<div class="pklabel">Before</div><div class="pkphotos">${bf.map(s=>`<img src="${s}">`).join('')}</div>`;}
+        if(af.length){html+=`<div class="pklabel">After</div><div class="pkphotos">${af.map(s=>`<img src="${s}">`).join('')}</div>`;}
       }
       html+=`</div></div>`;
     });
   });
   html+=`</div>
-    <div class="bottombar"><button class="btn primary block" id="shareBtn">${I.share} Share package</button></div>`;
-  app.innerHTML=html;
-  app.querySelector('#back').onclick=back;
-  app.querySelector('#shareBtn').onclick=async()=>{
+    <div class="bottombar noprint">
+      <button class="btn ghost" id="shareBtn">${I.share}</button>
+      <button class="btn primary block" id="printBtn">${I.upload} Save / Print PDF</button>
+    </div>`;
+  // swap loading content + bottom bar in
+  app.querySelector('.content.pkg').outerHTML=html;
+  const printBtn=document.getElementById('printBtn');
+  if(printBtn)printBtn.onclick=()=>window.print();
+  const shareBtn=document.getElementById('shareBtn');
+  if(shareBtn)shareBtn.onclick=async()=>{
     const text=`${j.name} (${j.number}) — ${jobReports(j.id).length} duct inspection reports`;
-    if(navigator.share){try{await navigator.share({title:j.name,text});}catch(e){}}
-    else{try{await navigator.clipboard.writeText(text);toast('Summary copied');}catch(e){toast('Screenshot each page to share');}}
+    const url=location.href.split('#')[0];
+    if(navigator.share){try{await navigator.share({title:j.name,text,url});}catch(e){}}
+    else{try{await navigator.clipboard.writeText(text+' '+url);toast('Summary copied');}catch(e){toast('Use Save / Print instead');}}
   };
 }
 
