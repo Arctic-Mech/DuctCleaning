@@ -141,6 +141,9 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .row .meta{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 .row .chev{color:var(--faint);flex:none}
 .row .chev svg{width:20px;height:20px}
+.rnum{width:34px;height:34px;border-radius:50%;flex:none;display:grid;place-items:center;border:2px solid #fff;
+  font-family:var(--font-mono);font-weight:700;font-size:13px;color:#fff;box-shadow:0 1px 2px var(--pin-shadow)}
+.rnum.good{background:var(--good)} .rnum.warn{background:var(--warn)}
 .thumb{width:52px;height:52px;border-radius:11px;flex:none;display:grid;place-items:center;
   background:var(--surface-2);color:var(--accent);overflow:hidden}
 .thumb img{width:100%;height:100%;object-fit:cover}
@@ -684,13 +687,20 @@ function viewJob(app){
   const j=S.jobs.find(x=>x.id===S.jobId);if(!j){S.route=['jobs'];return render();}
   const draws=jobDrawings(j.id);
   const nr=jobReports(j.id).length, done=jobReports(j.id).filter(r=>r.status==='Completed').length;
-  let list='';
+  let list='', repList='';
   draws.forEach(d=>{
     const rc=drawReports(d.id).length;
     list+=`<button class="row" data-draw="${d.id}">
       <span class="thumb">${d.img?`<img src="${d.img}" alt="">`:I.plan}</span>
       <span class="grow"><h3>${esc(d.name)}</h3><span class="meta">${rc} report${rc!==1?'s':''}</span></span>
       <span class="chev">${I.chev}</span></button>`;
+    drawReports(d.id).forEach(r=>{
+      const tl=typeLabel(r);
+      repList+=`<button class="row" data-rep="${r.id}">
+        <span class="rnum ${r.status==='Completed'?'good':'warn'}">${r.num}</span>
+        <span class="grow"><h3>${esc(tl==='—'?'Report #'+r.num:tl)}</h3><span class="meta">${esc(d.name)} · ${esc(r.status)}</span></span>
+        <span class="chev">${I.chev}</span></button>`;
+    });
   });
   app.innerHTML=`
     <div class="topbar">
@@ -713,16 +723,18 @@ function viewJob(app){
       ${draws.length?`<div class="card" style="padding:0">${list}</div>`
         :`<div class="empty"><div class="ic">${I.plan}</div><h2>No plans yet</h2>
             <p>Upload a PDF floor plan for each floor or area you're servicing.</p></div>`}
+      ${nr?`<div class="section-head"><h2>Reports</h2><span class="count-pill">${nr}</span></div>
+        <div class="card" style="padding:0">${repList}</div>`:''}
     </div>
     <div class="bottombar">
       ${nr?`<button class="btn ghost" id="exportBtn">${I.share}</button>`:''}
       <button class="btn primary block" id="addPlan">${I.upload} Add plan (PDF)</button>
     </div>
     <input type="file" id="pdfInput" accept="application/pdf" class="sr">`;
-  const cardEl=app.querySelector('.content .card');
-  if(cardEl){[...cardEl.children].forEach((c,i)=>{if(i)c.style.borderTop='1px solid var(--line)';});}
+  app.querySelectorAll('.content .card').forEach(card=>{[...card.children].forEach((c,i)=>{if(i)c.style.borderTop='1px solid var(--line)';});});
   app.querySelector('#back').onclick=back;
   app.querySelectorAll('[data-draw]').forEach(b=>b.onclick=()=>go('drawing',{drawId:b.dataset.draw}));
+  app.querySelectorAll('[data-rep]').forEach(b=>b.onclick=()=>{const r=S.reports.find(x=>x.id===b.dataset.rep);if(r)reportPreview(r);});
   app.querySelector('#jobMenu').onclick=()=>jobMenu(j);
   const exp=app.querySelector('#exportBtn');if(exp)exp.onclick=()=>go('export');
   const input=app.querySelector('#pdfInput');
