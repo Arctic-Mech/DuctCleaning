@@ -207,12 +207,18 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   display:flex;align-items:center;gap:7px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
 .vchip.hint{color:var(--accent)}
 .vchip svg{width:16px;height:16px}
+#hires{position:absolute;left:0;top:0;pointer-events:none;display:none}
 .zoomcol{position:absolute;right:max(12px,env(safe-area-inset-right,0px));
   bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:5;display:flex;flex-direction:column;gap:1px;
   border-radius:12px;overflow:hidden;box-shadow:0 3px 12px rgba(0,0,0,.3)}
 .zoomcol button{width:46px;height:46px;border:none;background:color-mix(in srgb,var(--surface) 92%,transparent);
   backdrop-filter:blur(8px);color:var(--fg);display:grid;place-items:center;font-size:22px;font-weight:600}
 .zoomcol button:active{background:var(--surface-2)}
+.zoomcol .hdz{font-size:14px;font-weight:800;letter-spacing:.03em;color:var(--faint)}
+.zoomcol .hdz[aria-pressed="true"]{background:var(--accent);color:#fff}
+.zoomcol .hdz.busy{color:var(--warn)}
+@keyframes pulse{50%{opacity:.4}}
+.zoomcol .hdz.busy{animation:pulse .9s ease-in-out infinite}
 .placing .viewer{cursor:crosshair}
 .placing .viewer-wrap::after{content:"";position:absolute;inset:0;z-index:4;pointer-events:none;
   box-shadow:inset 0 0 0 3px var(--accent)}
@@ -803,6 +809,7 @@ function viewDrawing(app){
       <div class="viewer" id="viewer">
         <div class="canvas-stage" id="stage">
           <img class="plan" id="plan" src="${d.img}" alt="${esc(d.name)}" draggable="false">
+          <canvas id="hires"></canvas>
           <div id="pinlayer"></div>
         </div>
       </div>
@@ -810,6 +817,7 @@ function viewDrawing(app){
         <div class="vchip" id="hintChip">${I.move}<span>Pinch to zoom · drag to pan</span></div>
       </div>
       <div class="zoomcol">
+        <button id="hdToggle" class="hdz" aria-pressed="false" aria-label="Toggle high quality">HD</button>
         <button id="zin" aria-label="Zoom in">+</button>
         <button id="zout" aria-label="Zoom out">−</button>
         <button id="zfit" aria-label="Fit" style="font-size:13px;font-weight:700">FIT</button>
@@ -823,10 +831,14 @@ function viewDrawing(app){
   const viewer=app.querySelector('#viewer');
   const stage=app.querySelector('#stage');
   const plan=app.querySelector('#plan');
+  const hires=app.querySelector('#hires');
   const pinlayer=app.querySelector('#pinlayer');
   const hintChip=app.querySelector('#hintChip');
+  const hdToggle=app.querySelector('#hdToggle');
 
   VW={scale:1,tx:0,ty:0,baseW:0,baseH:0};
+  let PDFPAGE=null, hiresTimer=null, hiresTok=0, curRender=null, hdOn=false, pdfTried=false;
+  try{hdOn=localStorage.getItem('ductpro-hd')==='1';}catch(e){}
   function setBase(){
     const rect=viewer.getBoundingClientRect();
     const iw=(d.pw||d.w||plan.naturalWidth), ih=(d.ph||d.h||plan.naturalHeight);
@@ -848,7 +860,8 @@ function viewDrawing(app){
     VW.tx=Math.max(minX,Math.min(maxX,VW.tx));VW.ty=Math.max(minY,Math.min(maxY,VW.ty));
   }
   function apply(){clamp();stage.style.transform=`translate(${VW.tx}px,${VW.ty}px) scale(${VW.scale})`;
-    pinlayer.querySelectorAll('.pin').forEach(p=>p.style.transform=`translate(-50%,-100%) scale(${1/VW.scale})`);}
+    pinlayer.querySelectorAll('.pin').forEach(p=>p.style.transform=`translate(-50%,-100%) scale(${1/VW.scale})`);
+    scheduleRerender();}
   function zoomAt(cx,cy,factor){
     const rect=viewer.getBoundingClientRect();
     const px=cx-rect.left, py=cy-rect.top;
@@ -937,10 +950,67 @@ function viewDrawing(app){
       app.querySelector('#addReport').innerHTML=I.pin+' Place report';}
   };
 
-  // Field view stays on the fast, lightweight preview image. The full-resolution
-  // vector drawing is produced only at export time (see buildExportPDF).
+  // ---- HD toggle: Quick (preview image, fast) <-> HD (render visible area from the PDF) ----
+  async function loadPdf(){
+    if(PDFPAGE||pdfTried)return PDFPAGE; pdfTried=true;
+    if(!d.pdfChunks)return null;
+    try{
+      const chunks=await pdfChunksByDraw(d.id); if(!chunks.length)return null;
+      const bytes=b64ToBytes(chunks.map(c=>c.data).join(''));
+      const pdf=await pdfjsLib.getDocument({data:bytes}).promise;
+      PDFPAGE=await pdf.getPage(1);
+    }catch(e){console.warn('HD unavailable',e);}
+    return PDFPAGE;
+  }
+  async function renderHires(){
+    if(!hdOn||!PDFPAGE||!VW)return;
+    const rect=viewer.getBoundingClientRect();
+    const Sc=VW.scale, dpr=Math.min(3,window.devicePixelRatio||1), m=0.1;
+    let bx0=(-VW.tx)/Sc, by0=(-VW.ty)/Sc, bx1=(rect.width-VW.tx)/Sc, by1=(rect.height-VW.ty)/Sc;
+    const mw=(bx1-bx0)*m, mh=(by1-by0)*m; bx0-=mw;by0-=mh;bx1+=mw;by1+=mh;
+    bx0=Math.max(0,bx0);by0=Math.max(0,by0);bx1=Math.min(VW.baseW,bx1);by1=Math.min(VW.baseH,by1);
+    const rw=bx1-bx0, rh=by1-by0; if(rw<=1||rh<=1)return;
+    const k=(d.pw||VW.baseW)/VW.baseW; let rs=Sc*dpr/k;
+    let cw=Math.round(rw*k*rs), ch=Math.round(rh*k*rs);
+    const MAXD=4096, MAXA=16.0e6, cap=Math.min(1, MAXD/Math.max(cw,ch), Math.sqrt(MAXA/(cw*ch)));
+    if(cap<1){rs*=cap;cw=Math.round(cw*cap);ch=Math.round(ch*cap);}
+    if(cw<2||ch<2)return;
+    const tok=++hiresTok;
+    if(curRender){try{curRender.cancel();}catch(e){}curRender=null;}
+    const c=document.createElement('canvas');c.width=cw;c.height=ch;
+    const vp=PDFPAGE.getViewport({scale:rs});
+    const task=PDFPAGE.render({canvasContext:c.getContext('2d',{alpha:false}),viewport:vp,
+      transform:[1,0,0,1,-bx0*k*rs,-by0*k*rs]});
+    curRender=task;
+    try{await task.promise;}catch(e){return;}
+    if(tok!==hiresTok||!hdOn||!VW)return;
+    hires.width=cw;hires.height=ch;hires.getContext('2d').drawImage(c,0,0);
+    hires.style.left=bx0+'px';hires.style.top=by0+'px';hires.style.width=rw+'px';hires.style.height=rh+'px';hires.style.display='block';
+  }
+  function scheduleRerender(){
+    if(!hdOn||!PDFPAGE)return;
+    clearTimeout(hiresTimer);hiresTimer=setTimeout(renderHires,140);
+  }
+  function hdUI(){hdToggle.setAttribute('aria-pressed',hdOn?'true':'false');}
+  async function setHd(on,announce){
+    hdOn=on; try{localStorage.setItem('ductpro-hd',on?'1':'0');}catch(e){}
+    hdUI();
+    if(on){
+      if(!PDFPAGE&&d.pdfChunks){hdToggle.classList.add('busy');await loadPdf();hdToggle.classList.remove('busy');}
+      if(PDFPAGE){renderHires();if(announce)toast('HD on — sharp, re-renders as you zoom');}
+      else{hdOn=false;hdUI();if(announce)toast(d.pdfChunks?'HD not available for this plan':'Re-upload this plan to use HD');}
+    }else{
+      hiresTok++; if(curRender){try{curRender.cancel();}catch(e){}curRender=null;}
+      hires.style.display='none';
+      if(announce)toast('Quick mode — fast');
+    }
+  }
+  hdToggle.onclick=()=>setHd(!hdOn,true);
+
   setBase();
   VW.renderPins();
+  hdUI();
+  if(hdOn)setHd(true); // honor the remembered choice
   window.addEventListener('resize',()=>{if(VW){setBase();VW.renderPins();}},{once:false});
 }
 
