@@ -189,11 +189,11 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   bottom:0;overflow:hidden}
 .canvas-stage{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .canvas-stage img.plan{display:block;user-select:none;-webkit-user-drag:none;pointer-events:none}
-.pin{position:absolute;transform:translate(-50%,-100%);transform-origin:center bottom;
-  cursor:pointer;filter:drop-shadow(0 3px 4px var(--pin-shadow))}
-.pin .body{width:34px;height:34px;border-radius:50% 50% 50% 2px;transform:rotate(45deg);
+.pin{position:absolute;transform:translate(-50%,-50%);transform-origin:center center;
+  cursor:pointer;filter:drop-shadow(0 2px 3px var(--pin-shadow))}
+.pin .body{width:32px;height:32px;border-radius:50%;
   display:grid;place-items:center;border:2.5px solid #fff}
-.pin .body span{transform:rotate(-45deg);font-family:var(--font-mono);font-weight:700;font-size:13px;color:#fff}
+.pin .body span{font-family:var(--font-mono);font-weight:700;font-size:13px;color:#fff}
 .pin.good .body{background:var(--good)}
 .pin.warn .body{background:var(--warn)}
 .pin.sel .body{outline:3px solid var(--accent);outline-offset:2px}
@@ -860,7 +860,7 @@ function viewDrawing(app){
     VW.tx=Math.max(minX,Math.min(maxX,VW.tx));VW.ty=Math.max(minY,Math.min(maxY,VW.ty));
   }
   function apply(){clamp();stage.style.transform=`translate(${VW.tx}px,${VW.ty}px) scale(${VW.scale})`;
-    pinlayer.querySelectorAll('.pin').forEach(p=>p.style.transform=`translate(-50%,-100%) scale(${1/VW.scale})`);
+    pinlayer.querySelectorAll('.pin').forEach(p=>p.style.transform=`translate(-50%,-50%) scale(${1/VW.scale})`);
     scheduleRerender();}
   function zoomAt(cx,cy,factor){
     const rect=viewer.getBoundingClientRect();
@@ -875,7 +875,7 @@ function viewDrawing(app){
       const el=document.createElement('div');
       el.className='pin '+(r.status==='Completed'?'good':'warn');
       el.style.left=(r.nx*VW.baseW)+'px';el.style.top=(r.ny*VW.baseH)+'px';
-      el.style.transform=`translate(-50%,-100%) scale(${1/VW.scale})`;
+      el.style.transform=`translate(-50%,-50%) scale(${1/VW.scale})`;
       el.innerHTML=`<div class="body"><span>${r.num}</span></div>`;
       pinlayer.appendChild(el);
     });
@@ -887,7 +887,7 @@ function viewDrawing(app){
     let best=null, bestD=28; // screen px tolerance
     drawReports(d.id).forEach(r=>{
       const ax=rect.left+VW.tx+r.nx*VW.baseW*VW.scale;
-      const ay=rect.top+VW.ty+r.ny*VW.baseH*VW.scale - 18; // body sits above the tip
+      const ay=rect.top+VW.ty+r.ny*VW.baseH*VW.scale; // circle is centered on the point
       const dx=cx-ax, dy=cy-ay, dist=Math.hypot(dx,dy);
       if(dist<bestD){bestD=dist;best=r;}
     });
