@@ -1,49 +1,49 @@
-# DuctPro Field — Arctic Mechanical Duct Cleaning
+# Arctic Duct Cleaning
 
-iPhone-first web app for duct cleaning field inspections. Live at
+iPhone-first web app for Arctic's duct cleaning field inspections. Live at
 **https://arctic-mech.github.io/DuctCleaning/** (served from `index.html` on `main`).
 
 ## What it does
-- Start a **job** (name, number, optional address)
-- Add **plans** (floor/area) by uploading a PDF — you name each one before it saves
-- **Place reports** by tapping a spot on the plan; a numbered pin drops there
-- Each report: name, type, status, assignee, recommended re-visit, serviced-equipment
-  table, inspected area, and **before/after photos** (camera or library)
-- **Report package** view assembles every plan + report; **Save / Print** makes a PDF
+- **Jobs**: name, number, optional address.
+- **Plans**: upload a PDF and name it. A multi-page PDF becomes one plan per page.
+  **Replace PDF (keep tags)** swaps in a clean copy of the same drawing without moving any pins.
+- **Reports**: tap the plan to drop an auto-numbered pin. Each report has type
+  (Supply / Return / Exhaust / Other), status, re-visit time frame, serviced equipment,
+  inspected area, and before/after photos. Reports can also be opened from the job screen.
+- **Quick / HD**: the field view uses a fast preview image; the **HD** button renders the
+  on-screen area from the PDF at full resolution.
+- **Markup** (internal planning, web view only, never exported):
+  - **Exhaust** and **Cleaning access** markers with an optional note, access door size,
+    and quantity. The job screen totals every access door needed by size.
+  - **Draw**: pen (pressure-sensitive with Apple Pencil), highlighter, eraser, colors,
+    sizes, undo. With a Pencil, the Pencil draws and fingers move the plan.
+- **Export**: one interactive PDF. Each plan is a full-resolution vector page with numbered
+  pins, and tapping a pin jumps to that report's page.
 
-## Data — Firebase Firestore only (no auth, no billing)
-Everything saves to the `duct-cleaning-cb58f` **Firestore** database and syncs across
-devices. **Firebase Storage is not used**, so the project stays on the free Spark plan
-with no pay-as-you-go required.
+## Data: Firebase Firestore only (no auth, no billing)
+Everything saves to the `duct-cleaning-cb58f` Firestore database and syncs across devices.
+Firebase Storage is not used, so the project stays on the free Spark plan.
 
-- Jobs, plans, and reports are Firestore documents.
-- Each **plan PDF is stored in Firestore** as base64 chunks (one collection, `pdfchunks`,
-  each chunk under the 1 MiB-per-document limit). The viewer loads those chunks, rebuilds
-  the PDF, and **renders only the on-screen area at device resolution on demand** — so a
-  huge E-size vector sheet stays crisp at any zoom without storing giant images.
-- A small preview image is kept on the plan for thumbnails, the instant base layer, and
-  the export. Photos are compressed and stored inline, one per `photos` document (~1280px).
+| Collection  | Holds |
+|-------------|-------|
+| `jobs`, `drawings`, `reports` | Core records (loaded at startup) |
+| `photos`    | One compressed photo per document (~1280px), loaded when a report opens |
+| `pdfchunks` | Plan PDFs as base64 chunks under the 1 MiB/document limit, shared across a PDF's pages |
+| `markers`   | Exhaust / cleaning-access markers, door size and quantity (loaded at startup) |
+| `strokes`   | One freehand markup stroke per document, loaded when a plan opens |
 
-### One-time setup (required)
+### One-time setup
 Because there is no login, the Firestore rules must allow open access:
-
-1. Firebase console → **Firestore Database** → create the database if you haven't.
-2. **Firestore Database → Rules** → paste `firebase/firestore.rules` → **Publish**.
+Firebase console → **Firestore Database → Rules** → paste `firebase/firestore.rules` → **Publish**.
 
 > ⚠️ Open rules make the database world-readable and world-writable. Anyone with the URL
-> can read or change everything. That matches the "no auth" requirement; add Firebase
-> Auth later if you ever need to lock it down.
+> can read or change everything. Add Firebase Auth later if you need to lock it down.
 
-### Free-tier limits & the "offload when done" workflow
-Spark free tier gives **1 GiB total storage** and **50K reads / 20K writes / 20K deletes
-per day**. The app only loads photos when you open a report or the report package (not on
-every launch), to stay well under the daily read cap.
-
-When a job is finished: **Save / Print the report package to a PDF, file it, then delete
-the job** in the app (job menu → Delete job). Deleting a job removes its plans, reports,
-and every photo from Firestore, which frees that storage back up. Roughly ~2,000 photos
-fit in 1 GiB, so offloading completed jobs keeps you comfortably inside the free tier.
+### Free-tier limits and offloading
+Spark gives **1 GiB storage** and **50K reads / 20K writes / 20K deletes per day**. When a
+job is finished, export the PDF, file it, then **delete the job** (job menu → Delete job).
+That removes its plans, PDFs, reports, photos, markers and drawings and frees the space.
 
 ## Development
-`index.html` is a single self-contained file. Edit and push to `main`; GitHub Pages
-redeploys in ~30–60s.
+`index.html` is a single self-contained file. Push to `main` and GitHub Pages redeploys in
+about a minute.

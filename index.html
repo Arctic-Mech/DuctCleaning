@@ -201,6 +201,81 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .pin.warn .body{background:var(--warn)}
 .pin.sel .body{outline:3px solid var(--accent);outline-offset:2px}
 
+/* ---------- markup: planning markers + freehand ink ---------- */
+:root{--mk-exhaust:#7c3aed;--mk-access:#0891b2}
+#ink{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+#mklayer{position:absolute;left:0;top:0}
+.hide-markups #ink,.hide-markups #mklayer{display:none}
+.mk{position:absolute;transform:translate(-50%,-50%);transform-origin:center center;
+  filter:drop-shadow(0 1px 2px var(--pin-shadow))}
+.mk .ic{width:26px;height:26px;display:grid;place-items:center;border:2px solid #fff;color:#fff}
+.mk .ic svg{width:15px;height:15px}
+.mk.exhaust .ic{border-radius:50%;background:var(--mk-exhaust)}
+.mk.access .ic{border-radius:6px;background:var(--mk-access)}
+.mk .tag{position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:3px;
+  background:rgba(12,16,22,.86);color:#fff;font:600 10px/1.3 var(--font-mono);padding:1px 5px;border-radius:5px;white-space:nowrap}
+.mk.flash .ic{animation:mkflash 1s ease-out 3}
+@keyframes mkflash{0%{box-shadow:0 0 0 0 rgba(47,155,230,.9)}100%{box-shadow:0 0 0 18px rgba(47,155,230,0)}}
+.drawing-mode .viewer{cursor:crosshair}
+.drawing-mode .viewer-wrap::after{content:"";position:absolute;inset:0;z-index:4;pointer-events:none;
+  box-shadow:inset 0 0 0 3px var(--mk-exhaust)}
+
+/* draw toolbar (replaces the bottom bar while drawing) */
+.drawbar{flex:1;display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);
+  border-radius:16px;padding:6px;box-shadow:0 4px 18px rgba(0,0,0,.25)}
+.drawbar .dt{width:44px;height:44px;flex:none;border:none;border-radius:11px;background:transparent;color:var(--fg);
+  display:grid;place-items:center}
+.drawbar .dt svg{width:22px;height:22px}
+.drawbar .dt.on{background:color-mix(in srgb,var(--mk-exhaust) 22%,transparent);color:var(--mk-exhaust)}
+.drawbar .dt:active{background:var(--surface-2)}
+.drawbar .sw{width:24px;height:24px;border-radius:50%;border:2px solid var(--surface);box-shadow:0 0 0 1.5px var(--line)}
+.drawbar .done{margin-left:auto;min-height:44px;padding:0 16px}
+.palette{position:fixed;left:50%;transform:translateX(-50%);z-index:60;
+  bottom:calc(84px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
+  background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:10px 12px;box-shadow:0 8px 28px rgba(0,0,0,.35);max-width:calc(100vw - 32px)}
+.palette button{border:none;background:none;padding:0;display:grid;place-items:center}
+.palette .c{width:30px;height:30px;border-radius:50%;border:3px solid var(--surface);box-shadow:0 0 0 1.5px var(--line)}
+.palette .c.on{box-shadow:0 0 0 2.5px var(--fg)}
+.palette .sep{width:1px;height:26px;background:var(--line)}
+.palette .wd{width:34px;height:34px;border-radius:10px}
+.palette .wd.on{background:var(--surface-2)}
+.palette .wd i{display:block;border-radius:99px;background:var(--fg)}
+
+/* marker sheet + door list */
+.mk-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.mk-head .ic{width:38px;height:38px;display:grid;place-items:center;color:#fff;border:2px solid #fff;box-shadow:0 0 0 1px var(--line)}
+.mk-head .ic svg{width:20px;height:20px}
+.mk-head .ic.exhaust{border-radius:50%;background:var(--mk-exhaust)}
+.mk-head .ic.access{border-radius:8px;background:var(--mk-access)}
+.mk-head b{font-family:var(--font-head);font-size:19px}
+.mk-head span{display:block;font-size:13px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.chips button{border:1px solid var(--line);background:var(--surface-2);color:var(--fg);border-radius:999px;
+  padding:8px 13px;font:600 14px var(--font-mono)}
+.chips button.on{background:var(--mk-access);border-color:var(--mk-access);color:#fff}
+.qty{display:flex;align-items:center;gap:0;border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;width:max-content}
+.qty button{width:46px;height:46px;border:none;background:var(--surface-2);color:var(--fg);font-size:22px;font-weight:600}
+.qty input{width:56px;height:46px;border:none;border-left:1px solid var(--line);border-right:1px solid var(--line);
+  background:var(--surface);text-align:center;font:700 17px var(--font-mono);color:var(--fg)}
+.door-total{display:flex;align-items:baseline;justify-content:space-between;padding:14px 15px;
+  background:color-mix(in srgb,var(--mk-access) 14%,var(--surface))}
+.dl-item .mk-head .ic{width:30px;height:30px;box-shadow:none}
+.dl-item .mk-head .ic svg{width:16px;height:16px}
+.dl-item .chev{color:var(--faint);flex:none}
+.dl-item .chev svg{width:18px;height:18px}
+.viewer{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.door-total b{font-family:var(--font-mono);font-size:24px;color:var(--mk-access)}
+.door-size{font-family:var(--font-mono);font-weight:700;font-size:15px;min-width:64px;padding:5px 9px;border-radius:8px;
+  background:color-mix(in srgb,var(--mk-access) 16%,transparent);color:var(--mk-access);text-align:center;flex:none}
+.door-qty{font-family:var(--font-mono);font-weight:700;font-size:17px;flex:none}
+.dl-group{margin-bottom:14px}
+.dl-group h4{display:flex;justify-content:space-between;align-items:center;margin:0 0 8px;font-size:15px}
+.dl-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface-2);
+  border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:6px;color:var(--fg)}
+.dl-item .grow{flex:1;min-width:0}
+.dl-item .grow b{font-family:var(--font-mono)}
+.dl-item .grow span{display:block;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
 .viewer-overlay{position:absolute;left:0;right:0;top:0;z-index:5;
   padding:12px max(12px,env(safe-area-inset-right,0px)) 0 max(12px,env(safe-area-inset-left,0px));
   display:flex;gap:8px;pointer-events:none}
@@ -423,6 +498,17 @@ const I = {
   wrench:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 00-5.4 5.2L3 18v3h3l6.5-6.3a4 4 0 005.2-5.4l-2.6 2.6-2.3-.6-.6-2.3z"/></svg>',
   dots:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   logo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L4 20h16L12 3z" fill="currentColor" stroke="none"/><path d="M12 9l-3 7h6l-3-7z" fill="#fff" stroke="none"/></svg>',
+  markup:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3-1 4-3 6-3s2 2 4 2 3-2 5-3"/><path d="M14.5 4.5l3 3L9 16l-4 1 1-4z"/></svg>',
+  pen:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 3.5a2.1 2.1 0 013 3L8 18l-4 1 1-4z"/><path d="M14 6l3 3"/></svg>',
+  highlighter:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l-3 3h4l1.5-1.5"/><path d="M9 15l5.5-9.5a2 2 0 012.8-.7l1.4.8a2 2 0 01.7 2.8L14 17z"/><path d="M4 21h16"/></svg>',
+  eraser:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H9l-5-5a2 2 0 010-2.8l8.2-8.2a2 2 0 012.8 0l5 5a2 2 0 010 2.8L13 19"/><path d="M9 9l6 6"/></svg>',
+  undo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/></svg>',
+  fan:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 11c-.6-2.6.2-6.5 3.2-6.9 2.3-.3 3.6 1.9 2.4 3.8-1.1 1.7-3.4 2.6-5.6 3.1zm1 1c2.6-.6 6.5.2 6.9 3.2.3 2.3-1.9 3.6-3.8 2.4-1.7-1.1-2.6-3.4-3.1-5.6zm-1 1c.6 2.6-.2 6.5-3.2 6.9-2.3.3-3.6-1.9-2.4-3.8 1.1-1.7 3.4-2.6 5.6-3.1zm-1-1c-2.6.6-6.5-.2-6.9-3.2-.3-2.3 1.9-3.6 3.8-2.4 1.7 1.1 2.6 3.4 3.1 5.6z"/><circle cx="12" cy="12" r="1.7"/></svg>',
+  door:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1.5"/><rect x="8" y="8" width="8" height="8" rx=".5"/><path d="M14 12h.01"/></svg>',
+  list:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>',
+  eye:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeoff:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0112 5c6.5 0 10 7 10 7a17 17 0 01-3.2 4.2M6.3 6.3A17 17 0 002 12s3.5 7 10 7a10 10 0 005.7-1.7"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/></svg>',
+  copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 01-1-1V4a1 1 0 011-1h10a1 1 0 011 1v1"/></svg>',
 };
 
 /* ============================ storage (Firebase, no auth) ============================ */
@@ -489,6 +575,15 @@ async function loadDrawingPdfBytes(d){
     return b64ToBytes(ch.map(c=>c.data).join(''));
   }catch(e){console.warn('pdf load failed',e);return null;}
 }
+// freehand markup strokes: one doc per stroke, loaded per plan (not at boot)
+async function strokesByDraw(drawId){
+  const s=await fdb.collection('strokes').where('drawId','==',drawId).get();
+  return s.docs.map(d=>d.data()).sort((a,b)=>a.createdAt-b.createdAt);
+}
+async function strokesByJob(jobId){
+  const s=await fdb.collection('strokes').where('jobId','==',jobId).get();
+  return s.docs.map(d=>d.data());
+}
 // delete a shared PDF's chunks only when no remaining drawing still references it
 async function deletePdfKeyIfUnused(key){
   if(!key)return;
@@ -512,7 +607,7 @@ function fitEncode(base,budget){
 
 /* ============================ state ============================ */
 const COMPANY='Arctic';
-const S={jobs:[],drawings:[],reports:[],route:['jobs'],jobId:null,drawId:null,placing:false};
+const S={jobs:[],drawings:[],reports:[],markers:[],route:['jobs'],jobId:null,drawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -520,6 +615,21 @@ const fmtDate=t=>new Date(t).toLocaleDateString(undefined,{month:'short',day:'nu
 const jobDrawings=j=>S.drawings.filter(d=>d.jobId===j).sort((a,b)=>a.createdAt-b.createdAt);
 const drawReports=d=>S.reports.filter(r=>r.drawId===d).sort((a,b)=>a.num-b.num);
 const jobReports=j=>S.reports.filter(r=>r.jobId===j);
+const drawMarkers=d=>S.markers.filter(m=>m.drawId===d);
+const jobMarkers=j=>S.markers.filter(m=>m.jobId===j);
+const MK={exhaust:{label:'Exhaust',pre:'E',icon:'fan'},access:{label:'Cleaning access',pre:'A',icon:'door'}};
+const mkCode=m=>MK[m.kind].pre+m.num;
+// "12 x 12", "12X12", "12×12" -> "12×12"
+const normDoor=s=>String(s||'').trim().toLowerCase().replace(/\s+/g,'').replace(/[x*×]/g,'×');
+const DOOR_SIZES=['8×8','10×10','12×12','14×14','16×16','18×18','24×24'];
+// all access doors needed for a job, grouped by size: [{size,qty,items:[marker]}], total
+function doorSummary(jobId){
+  const g={};let total=0;
+  jobMarkers(jobId).forEach(m=>{const sz=normDoor(m.doorSize);if(!sz)return;const q=Math.max(1,+m.doorQty||1);
+    (g[sz]=g[sz]||{size:sz,qty:0,items:[]});g[sz].qty+=q;g[sz].items.push(m);total+=q;});
+  const area=s=>{const p=s.split('×').map(Number);return p.length===2&&p.every(n=>!isNaN(n))?p[0]*p[1]:1e9;};
+  return {groups:Object.values(g).sort((a,b)=>area(a.size)-area(b.size)||a.size.localeCompare(b.size)),total};
+}
 
 /* ============================ toast ============================ */
 let toastT;
@@ -583,7 +693,8 @@ function openSheet(node,{full=false}={}){
   const sheet=document.createElement('div');sheet.className='sheet'+(full?' full':'');
   sheet.appendChild(node);scrim.appendChild(sheet);host.appendChild(scrim);
   requestAnimationFrame(()=>scrim.classList.add('open'));
-  const close=()=>{scrim.classList.remove('open');setTimeout(()=>scrim.remove(),280);};
+  // stop catching taps the moment it starts closing, so a quick tap on the plan isn't swallowed by the fade-out
+  const close=()=>{scrim.style.pointerEvents='none';scrim.classList.remove('open');setTimeout(()=>scrim.remove(),280);};
   scrim.addEventListener('click',e=>{if(e.target===scrim)close();});
   return {close,scrim,sheet};
 }
@@ -638,6 +749,8 @@ function render(){
   const route=S.route[S.route.length-1];
   const app=document.getElementById('app');
   document.documentElement.classList.toggle('placing',S.placing&&route==='drawing');
+  document.documentElement.classList.remove('drawing-mode');
+  closePalette();
   // validate context still exists
   if(route==='drawing'&&!S.drawings.find(d=>d.id===S.drawId)){S.route=['jobs'];}
   if(route==='job'&&!S.jobs.find(j=>j.id===S.jobId)){S.route=['jobs'];}
@@ -751,6 +864,14 @@ function viewJob(app){
             <p>Upload a PDF floor plan for each floor or area you're servicing.</p></div>`}
       ${nr?`<div class="section-head"><h2>Reports</h2><span class="count-pill">${nr}</span></div>
         <div class="card" style="padding:0">${repList}</div>`:''}
+      ${(()=>{const ds=doorSummary(j.id);if(!ds.total)return '';
+        return `<div class="section-head"><h2>Access doors needed</h2><button class="act" id="doorAll">View all</button></div>
+        <div class="card" style="padding:0">
+          <button class="door-total" data-doors style="width:100%;border:none;text-align:left;color:var(--fg)"><span style="font-weight:600">Total doors</span><b>${ds.total}</b></button>
+          ${ds.groups.map(g=>`<button class="row" data-doors><span class="door-size">${esc(g.size)}</span>
+            <span class="grow"><span class="meta" style="margin:0">${g.items.length} location${g.items.length!==1?'s':''}</span></span>
+            <span class="door-qty">× ${g.qty}</span></button>`).join('')}
+        </div>`;})()}
     </div>
     <div class="bottombar">
       ${nr?`<button class="btn ghost" id="exportBtn">${I.share}</button>`:''}
@@ -761,6 +882,7 @@ function viewJob(app){
   app.querySelector('#back').onclick=back;
   app.querySelectorAll('[data-draw]').forEach(b=>b.onclick=()=>go('drawing',{drawId:b.dataset.draw}));
   app.querySelectorAll('[data-rep]').forEach(b=>b.onclick=()=>{const r=S.reports.find(x=>x.id===b.dataset.rep);if(r)reportPreview(r);});
+  app.querySelectorAll('[data-doors],#doorAll').forEach(b=>b.onclick=()=>doorListSheet(j.id));
   app.querySelector('#jobMenu').onclick=()=>jobMenu(j);
   const exp=app.querySelector('#exportBtn');if(exp)exp.onclick=()=>go('export');
   const input=app.querySelector('#pdfInput');
@@ -779,10 +901,13 @@ function jobMenu(j){
     if(await confirmDialog({title:'Delete job?',message:'This permanently deletes "'+j.name+'", its plans, and all reports and photos.',confirmText:'Delete job'})){
       try{const ph=await photosByJob(j.id);for(const p of ph)await pDel('photos',p.id);}catch(e){console.warn(e);}
       for(const r of jobReports(j.id)){await pDel('reports',r.id);}
+      for(const m of jobMarkers(j.id)){await pDel('markers',m.id);}
+      try{const st=await strokesByJob(j.id);for(const s of st)await pDel('strokes',s.id);}catch(e){console.warn(e);}
       try{const ts=await pdfChunksByJob(j.id);for(const t of ts)await pDel('pdfchunks',t.id);}catch(e){console.warn(e);}
       for(const dd of jobDrawings(j.id))await pDel('drawings',dd.id);
       await pDel('jobs',j.id);
-      S.reports=S.reports.filter(r=>r.jobId!==j.id);S.drawings=S.drawings.filter(d=>d.jobId!==j.id);S.jobs=S.jobs.filter(x=>x.id!==j.id);
+      S.reports=S.reports.filter(r=>r.jobId!==j.id);S.markers=S.markers.filter(m=>m.jobId!==j.id);
+      S.drawings=S.drawings.filter(d=>d.jobId!==j.id);S.jobs=S.jobs.filter(x=>x.id!==j.id);
       S.route=['jobs'];render();toast('Job deleted');
     }};
 }
@@ -857,11 +982,13 @@ function viewDrawing(app){
         <div class="canvas-stage" id="stage">
           <img class="plan" id="plan" src="${d.img}" alt="${esc(d.name)}" draggable="false">
           <canvas id="hires"></canvas>
+          <svg id="ink" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
+          <div id="mklayer"></div>
           <div id="pinlayer"></div>
         </div>
       </div>
       <div class="viewer-overlay">
-        <div class="vchip" id="hintChip">${I.move}<span>Pinch to zoom · drag to pan</span></div>
+        <div class="vchip" id="hintChip"></div>
       </div>
       <div class="zoomcol">
         <button id="hdToggle" class="hdz" aria-pressed="false" aria-label="Toggle high quality">HD</button>
@@ -870,22 +997,36 @@ function viewDrawing(app){
         <button id="zfit" aria-label="Fit" style="font-size:13px;font-weight:700">FIT</button>
       </div>
     </div>
-    <div class="bottombar">
-      <button class="btn primary block" id="addReport">${I.pin} Place report</button>
-    </div>`;
-  app.querySelector('#back').onclick=()=>{VW=null;back();};
+    <div class="bottombar" id="vbar"></div>`;
+  app.querySelector('#back').onclick=()=>{closePalette();VW=null;back();};
   app.querySelector('#drawMenu').onclick=()=>drawMenu(d);
+  const vwrap=app.querySelector('#vwrap');
   const viewer=app.querySelector('#viewer');
   const stage=app.querySelector('#stage');
   const plan=app.querySelector('#plan');
   const hires=app.querySelector('#hires');
+  const ink=app.querySelector('#ink');
+  const mklayer=app.querySelector('#mklayer');
   const pinlayer=app.querySelector('#pinlayer');
   const hintChip=app.querySelector('#hintChip');
   const hdToggle=app.querySelector('#hdToggle');
+  const vbar=app.querySelector('#vbar');
 
   VW={scale:1,tx:0,ty:0,baseW:0,baseH:0};
   let PDFPAGE=null, hiresTimer=null, hiresTok=0, curRender=null, hdOn=false, pdfTried=false;
   try{hdOn=localStorage.getItem('ductpro-hd')==='1';}catch(e){}
+  // markup state
+  let mode='view', placeKind=null;          // mode: view | place | draw
+  let mkHidden=false; try{mkHidden=localStorage.getItem('ductpro-mkhide')==='1';}catch(e){}
+  let penSeen=false; try{penSeen=localStorage.getItem('ductpro-pen')==='1';}catch(e){}
+  let fingerDraws=!penSeen;                 // with an Apple Pencil, fingers move the plan
+  let tool='pen', penColor='#e11d48', hlColor='#facc15', penW=3, hlW=18;
+  try{const s=JSON.parse(localStorage.getItem('ductpro-ink')||'{}');
+    if(s.penColor)penColor=s.penColor;if(s.hlColor)hlColor=s.hlColor;if(s.penW)penW=s.penW;if(s.hlW)hlW=s.hlW;}catch(e){}
+  const saveInkPrefs=()=>{try{localStorage.setItem('ductpro-ink',JSON.stringify({penColor,hlColor,penW,hlW}));}catch(e){}};
+  let STROKES=[], undoStack=[], drawPid=null, drawType=null, cur=null, rafPending=false;
+  const strokeEls=new Map();
+
   function setBase(){
     const rect=viewer.getBoundingClientRect();
     const iw=(d.pw||d.w||plan.naturalWidth), ih=(d.ph||d.h||plan.naturalHeight);
@@ -893,6 +1034,8 @@ function viewDrawing(app){
     VW.baseW=iw*fit;VW.baseH=ih*fit;
     stage.style.width=VW.baseW+'px';stage.style.height=VW.baseH+'px';
     plan.style.width=VW.baseW+'px';plan.style.height=VW.baseH+'px';
+    ink.style.width=VW.baseW+'px';ink.style.height=VW.baseH+'px';
+    ink.setAttribute('viewBox',`0 0 1000 ${(1000*VW.baseH/VW.baseW).toFixed(3)}`);
     fitView();
   }
   function fitView(){
@@ -907,7 +1050,7 @@ function viewDrawing(app){
     VW.tx=Math.max(minX,Math.min(maxX,VW.tx));VW.ty=Math.max(minY,Math.min(maxY,VW.ty));
   }
   function apply(){clamp();stage.style.transform=`translate(${VW.tx}px,${VW.ty}px) scale(${VW.scale})`;
-    pinlayer.querySelectorAll('.pin').forEach(p=>p.style.transform=`translate(-50%,-50%) scale(${1/VW.scale})`);
+    stage.querySelectorAll('.pin,.mk').forEach(p=>p.style.transform=`translate(-50%,-50%) scale(${1/VW.scale})`);
     scheduleRerender();}
   function zoomAt(cx,cy,factor){
     const rect=viewer.getBoundingClientRect();
@@ -916,6 +1059,9 @@ function viewDrawing(app){
     const k=ns/VW.scale;
     VW.tx=px-(px-VW.tx)*k;VW.ty=py-(py-VW.ty)*k;VW.scale=ns;apply();
   }
+  const toNorm=(cx,cy)=>{const rect=viewer.getBoundingClientRect();
+    return {nx:((cx-rect.left)-VW.tx)/VW.scale/VW.baseW, ny:((cy-rect.top)-VW.ty)/VW.scale/VW.baseH};};
+
   VW.renderPins=()=>{
     pinlayer.innerHTML='';
     drawReports(d.id).forEach(r=>{
@@ -927,29 +1073,250 @@ function viewDrawing(app){
       pinlayer.appendChild(el);
     });
   };
-  // hit-test a tap (client coords) against existing pins — works in any mode,
-  // since the viewer captures pointer events and the pin's own click won't fire
-  function hitPin(cx,cy){
-    const rect=viewer.getBoundingClientRect();
-    let best=null, bestD=28; // screen px tolerance
-    drawReports(d.id).forEach(r=>{
-      const ax=rect.left+VW.tx+r.nx*VW.baseW*VW.scale;
-      const ay=rect.top+VW.ty+r.ny*VW.baseH*VW.scale; // circle is centered on the point
-      const dx=cx-ax, dy=cy-ay, dist=Math.hypot(dx,dy);
-      if(dist<bestD){bestD=dist;best=r;}
+  VW.renderMarkers=()=>{
+    mklayer.innerHTML='';
+    drawMarkers(d.id).forEach(m=>{
+      const el=document.createElement('div');el.className='mk '+m.kind;el.dataset.id=m.id;
+      el.style.left=(m.nx*VW.baseW)+'px';el.style.top=(m.ny*VW.baseH)+'px';
+      el.style.transform=`translate(-50%,-50%) scale(${1/VW.scale})`;
+      const sz=normDoor(m.doorSize),q=Math.max(1,+m.doorQty||1);
+      el.innerHTML=`<div class="ic">${I[MK[m.kind].icon]}</div>${sz?`<div class="tag">${esc(sz)}${q>1?' ×'+q:''}</div>`:''}`;
+      mklayer.appendChild(el);
     });
+  };
+  // hit-test a tap (client coords) against report pins and markers; nearest wins
+  function hitAny(cx,cy){
+    const rect=viewer.getBoundingClientRect();let best=null,bestD=1e9;
+    const sx=n=>rect.left+VW.tx+n*VW.baseW*VW.scale, sy=n=>rect.top+VW.ty+n*VW.baseH*VW.scale;
+    if(!mkHidden)drawMarkers(d.id).forEach(m=>{const dd=Math.hypot(cx-sx(m.nx),cy-sy(m.ny));if(dd<22&&dd<bestD){bestD=dd;best={type:'marker',m};}});
+    drawReports(d.id).forEach(r=>{const dd=Math.hypot(cx-sx(r.nx),cy-sy(r.ny));if(dd<26&&dd<bestD){bestD=dd;best={type:'report',r};}});
     return best;
   }
+  VW.focus=(m)=>{
+    ensureShown();
+    const rect=viewer.getBoundingClientRect();const Sc=Math.max(VW.scale,3);
+    VW.scale=Sc;VW.tx=rect.width/2-m.nx*VW.baseW*Sc;VW.ty=rect.height/2-m.ny*VW.baseH*Sc;apply();
+    const el=mklayer.querySelector(`[data-id="${m.id}"]`);if(el){el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
+  };
 
-  // pointer handling: pan + pinch, tap-to-place
-  const pts=new Map();let startDist=0,startScale=1,startMid=null,moved=0,panStart=null,downPt=null;
-  viewer.addEventListener('pointerdown',e=>{viewer.setPointerCapture(e.pointerId);
+  // ---------- modes + bottom bar ----------
+  const hint=(html,on)=>{hintChip.innerHTML=html;hintChip.classList.toggle('hint',!!on);};
+  function renderBar(){
+    document.documentElement.classList.toggle('placing',mode==='place');
+    document.documentElement.classList.toggle('drawing-mode',mode==='draw');
+    S.placing=(mode==='place');
+    closePalette();
+    if(mode==='view'){
+      hint(I.move+'<span>Pinch to zoom · drag to pan</span>');
+      vbar.innerHTML=`<button class="btn" id="mkBtn">${I.markup} Markup</button>
+        <button class="btn primary block" id="addReport">${I.pin} Place report</button>`;
+      vbar.querySelector('#mkBtn').onclick=markupSheet;
+      vbar.querySelector('#addReport').onclick=()=>{setMode('place','report');toast('Tap the spot on the plan');};
+    }else if(mode==='place'){
+      const what=placeKind==='report'?'a report':placeKind==='exhaust'?'an exhaust':'a cleaning access';
+      hint(I.pin+`<span>Tap the plan to place ${what}</span>`,true);
+      vbar.innerHTML=`<button class="btn primary block" id="endPlace">${placeKind==='report'?I.x+' Cancel placing':I.check+' Done placing'}</button>`;
+      vbar.querySelector('#endPlace').onclick=()=>setMode('view');
+    }else{
+      hint(I.pen+`<span>${fingerDraws?'Draw with your finger · 2 fingers to move':'Pencil draws · fingers move'}</span>`,true);
+      vbar.innerHTML=`<div class="drawbar">
+          <button class="dt ${tool==='pen'?'on':''}" data-tool="pen" aria-label="Pen">${I.pen}</button>
+          <button class="dt ${tool==='hl'?'on':''}" data-tool="hl" aria-label="Highlighter">${I.highlighter}</button>
+          <button class="dt ${tool==='erase'?'on':''}" data-tool="erase" aria-label="Eraser">${I.eraser}</button>
+          <button class="dt" id="dColor" aria-label="Color and size"><span class="sw" style="background:${curColor()}"></span></button>
+          <button class="dt" id="dUndo" aria-label="Undo">${I.undo}</button>
+          <button class="btn primary done" id="dDone">Done</button></div>`;
+      vbar.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{tool=b.dataset.tool;renderBar();});
+      vbar.querySelector('#dColor').onclick=togglePalette;
+      vbar.querySelector('#dUndo').onclick=undo;
+      vbar.querySelector('#dDone').onclick=()=>setMode('view');
+      refreshUndo();
+    }
+  }
+  function setMode(m,kind){
+    if(drawPid!==null)cancelStroke();
+    mode=m;placeKind=m==='place'?kind:null;renderBar();
+  }
+  function setHidden(h){mkHidden=h;try{localStorage.setItem('ductpro-mkhide',h?'1':'0');}catch(e){}
+    vwrap.classList.toggle('hide-markups',h);}
+  function ensureShown(){if(mkHidden)setHidden(false);}
+
+  function markupSheet(){
+    const body=document.createElement('div');body.className='actionlist';
+    const ex=mkAction(I.fan,'Place exhaust');
+    const ac=mkAction(I.door,'Cleaning access');
+    const dr=mkAction(I.pen,'Draw');
+    const ds=doorSummary(d.jobId);
+    const dl=mkAction(I.list,'Access doors needed'+(ds.total?` (${ds.total})`:''));
+    const hv=mkAction(mkHidden?I.eye:I.eyeoff,mkHidden?'Show markups':'Hide markups');
+    const cl=mkAction(I.trash,'Clear drawings on this plan','danger');
+    body.append(ex,ac,dr,mkDiv(),dl,hv,cl);
+    ex.querySelector('svg').style.color='var(--mk-exhaust)';
+    ac.querySelector('svg').style.color='var(--mk-access)';
+    dr.querySelector('svg').style.color='var(--mk-exhaust)';
+    const ctl=sheetShell({title:'Markup',bodyNode:body});
+    ex.onclick=()=>{ctl.close();ensureShown();setMode('place','exhaust');};
+    ac.onclick=()=>{ctl.close();ensureShown();setMode('place','access');};
+    dr.onclick=()=>{ctl.close();ensureShown();setMode('draw');};
+    dl.onclick=()=>{ctl.close();doorListSheet(d.jobId);};
+    hv.onclick=()=>{ctl.close();setHidden(!mkHidden);toast(mkHidden?'Markups hidden':'Markups shown');};
+    cl.onclick=()=>{ctl.close();clearInk();};
+  }
+
+  // ---------- placing reports / markers ----------
+  function placeAt(cx,cy){
+    const {nx,ny}=toNorm(cx,cy);
+    if(nx<0||nx>1||ny<0||ny>1){toast('Tap on the plan');return;}
+    if(placeKind==='report'){setMode('view');newReport(d,nx,ny);return;}
+    const kind=placeKind;
+    const num=jobMarkers(d.jobId).filter(m=>m.kind===kind).reduce((a,m)=>Math.max(a,m.num||0),0)+1;
+    const m={id:uid(),jobId:d.jobId,drawId:d.id,kind,num,nx:+nx.toFixed(5),ny:+ny.toFixed(5),
+      note:'',doorSize:'',doorQty:1,createdAt:now()};
+    S.markers.push(m);VW.renderMarkers();
+    pPut('markers',m).catch(e=>{console.error(e);toast('Save failed — check connection');});
+    markerSheet(m,{isNew:true,onChange:()=>{if(VW&&VW.renderMarkers)VW.renderMarkers();}});
+  }
+
+  // ---------- freehand ink ----------
+  const PEN_COLORS=['#e11d48','#2563eb','#111827','#16a34a','#f97316','#7c3aed'];
+  const HL_COLORS=['#facc15','#4ade80','#38bdf8','#f472b6','#fb923c'];
+  const curColor=()=>tool==='hl'?hlColor:penColor;
+  const f1=n=>Math.round(n*10)/10;
+  function svgPts(s){const a=VW.baseH/VW.baseW,out=[];
+    for(let i=0;i<s.pts.length;i+=3)out.push([s.pts[i]*1000,s.pts[i+1]*1000*a,s.pts[i+2]]);return out;}
+  function linePath(P){
+    if(P.length===1)return `M${f1(P[0][0])},${f1(P[0][1])}l0.01,0`;
+    let s=`M${f1(P[0][0])},${f1(P[0][1])}`;
+    for(let i=1;i<P.length-1;i++){const mx=(P[i][0]+P[i+1][0])/2,my=(P[i][1]+P[i+1][1])/2;s+=`Q${f1(P[i][0])},${f1(P[i][1])} ${f1(mx)},${f1(my)}`;}
+    const L=P[P.length-1];return s+`L${f1(L[0])},${f1(L[1])}`;
+  }
+  // pressure-sensitive pen: a filled outline whose width follows the Pencil's pressure
+  function outlinePath(P,w){
+    const n=P.length,W=P.map(p=>w*(0.45+1.1*(p[2]==null?0.5:p[2])));
+    for(let k=0;k<2;k++)for(let i=1;i<n-1;i++)W[i]=(W[i-1]+W[i]*2+W[i+1])/4;
+    if(n===1){const r=W[0]/2,x=P[0][0],y=P[0][1];
+      return `M${f1(x-r)},${f1(y)}a${f1(r)},${f1(r)} 0 1,0 ${f1(2*r)},0a${f1(r)},${f1(r)} 0 1,0 ${f1(-2*r)},0Z`;}
+    const Lp=[],Rp=[];
+    for(let i=0;i<n;i++){
+      const a=P[Math.max(0,i-1)],b=P[Math.min(n-1,i+1)];
+      let dx=b[0]-a[0],dy=b[1]-a[1];const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
+      const r=W[i]/2;Lp.push([P[i][0]-dy*r,P[i][1]+dx*r]);Rp.push([P[i][0]+dy*r,P[i][1]-dx*r]);
+    }
+    const sm=Q=>{let s='';for(let i=1;i<Q.length-1;i++){const mx=(Q[i][0]+Q[i+1][0])/2,my=(Q[i][1]+Q[i+1][1])/2;
+      s+=`Q${f1(Q[i][0])},${f1(Q[i][1])} ${f1(mx)},${f1(my)}`;}const Z=Q[Q.length-1];return s+`L${f1(Z[0])},${f1(Z[1])}`;};
+    const Rr=Rp.slice().reverse(),re=W[n-1]/2,rs=W[0]/2;
+    return `M${f1(Lp[0][0])},${f1(Lp[0][1])}`+sm(Lp)+`A${f1(re)},${f1(re)} 0 0,0 ${f1(Rr[0][0])},${f1(Rr[0][1])}`
+      +sm(Rr)+`A${f1(rs)},${f1(rs)} 0 0,0 ${f1(Lp[0][0])},${f1(Lp[0][1])}Z`;
+  }
+  const strokeD=s=>s.tool==='hl'?linePath(svgPts(s)):outlinePath(svgPts(s),s.w*1000);
+  function strokeEl(s){
+    const el=document.createElementNS('http://www.w3.org/2000/svg','path');
+    el.setAttribute('d',strokeD(s));
+    if(s.tool==='hl'){el.setAttribute('fill','none');el.setAttribute('stroke',s.color);el.setAttribute('stroke-width',f1(s.w*1000));
+      el.setAttribute('stroke-linecap','round');el.setAttribute('stroke-linejoin','round');el.setAttribute('opacity','.38');
+      el.style.mixBlendMode='multiply';}
+    else el.setAttribute('fill',s.color);
+    return el;
+  }
+  function addStroke(s){STROKES.push(s);const el=strokeEl(s);strokeEls.set(s.id,el);ink.appendChild(el);}
+  function removeStroke(id){STROKES=STROKES.filter(x=>x.id!==id);const el=strokeEls.get(id);if(el)el.remove();strokeEls.delete(id);}
+  function refreshUndo(){const b=vbar.querySelector('#dUndo');if(b){b.disabled=!undoStack.length;b.style.opacity=undoStack.length?'':'.35';}}
+
+  function addPoint(e){
+    if(cur.last){const dx=e.clientX-cur.last.x,dy=e.clientY-cur.last.y;if(dx*dx+dy*dy<2.25)return;} // skip <1.5px jitter
+    const {nx,ny}=toNorm(e.clientX,e.clientY);
+    const p=cur.isPen?Math.max(0.05,Math.min(1,e.pressure||0.5)):0.5;
+    cur.pts.push(+nx.toFixed(5),+ny.toFixed(5),+p.toFixed(2));cur.last={x:e.clientX,y:e.clientY};
+  }
+  function beginStroke(e){
+    closePalette();
+    if(tool==='erase'){cur={erase:true,last:{x:e.clientX,y:e.clientY}};eraseAt(e.clientX,e.clientY);return;}
+    const w=(tool==='hl'?hlW:penW)/(VW.scale*VW.baseW);           // width relative to the page
+    cur={tool,color:curColor(),w,pts:[],last:null,isPen:e.pointerType==='pen'};
+    addPoint(e);
+    cur.el=strokeEl(cur);ink.appendChild(cur.el);
+  }
+  function extendStroke(e){
+    if(!cur)return;
+    const evs=(e.getCoalescedEvents&&e.getCoalescedEvents())||[];const list=evs.length?evs:[e];
+    if(cur.erase){list.forEach(ev=>eraseAt(ev.clientX,ev.clientY));cur.last={x:e.clientX,y:e.clientY};return;}
+    list.forEach(addPoint);
+    if(!rafPending){rafPending=true;requestAnimationFrame(()=>{rafPending=false;if(cur&&cur.el)cur.el.setAttribute('d',strokeD(cur));});}
+  }
+  function finishStroke(){
+    const c=cur;cur=null;drawPid=null;drawType=null;
+    if(!c||c.erase||!c.pts.length){if(c&&c.el)c.el.remove();refreshUndo();return;}
+    const s={id:uid(),jobId:d.jobId,drawId:d.id,tool:c.tool,color:c.color,w:+c.w.toFixed(6),pts:c.pts,createdAt:now()};
+    c.el.remove();addStroke(s);undoStack.push({type:'add',s});refreshUndo();
+    pPut('strokes',s).catch(e=>{console.error(e);toast('Drawing not saved — check connection');});
+  }
+  function cancelStroke(){if(cur&&cur.el)cur.el.remove();cur=null;drawPid=null;drawType=null;}
+  function segDist(px,py,ax,ay,bx,by){const dx=bx-ax,dy=by-ay,l=dx*dx+dy*dy;let t=l?((px-ax)*dx+(py-ay)*dy)/l:0;
+    t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));}
+  function eraseAt(cx,cy){
+    const {nx,ny}=toNorm(cx,cy),a=VW.baseH/VW.baseW,X=nx*1000,Y=ny*1000*a;
+    const tolBase=12*1000/(VW.scale*VW.baseW);                    // ~12 screen px
+    for(const s of STROKES.slice().reverse()){
+      const P=svgPts(s),tol=tolBase+s.w*1000/2;let hit=false;
+      for(let i=0;i<P.length&&!hit;i++){const q=P[Math.min(i+1,P.length-1)];if(segDist(X,Y,P[i][0],P[i][1],q[0],q[1])<tol)hit=true;}
+      if(hit){removeStroke(s.id);undoStack.push({type:'erase',s});pDel('strokes',s.id).catch(()=>{});refreshUndo();}
+    }
+  }
+  function undo(){
+    const a=undoStack.pop();if(!a)return;
+    if(a.type==='add'){removeStroke(a.s.id);pDel('strokes',a.s.id).catch(()=>{});}
+    else if(a.type==='erase'){addStroke(a.s);pPut('strokes',a.s).catch(()=>{});}
+    else if(a.type==='clear'){a.list.forEach(s=>{addStroke(s);pPut('strokes',s).catch(()=>{});});}
+    refreshUndo();
+  }
+  async function clearInk(){
+    if(!STROKES.length){toast('No drawings on this plan');return;}
+    if(!await confirmDialog({title:'Clear drawings?',message:'Removes all '+STROKES.length+' drawn marks on this plan. Exhaust and access markers stay.',confirmText:'Clear'}))return;
+    const list=STROKES.slice();list.forEach(s=>{removeStroke(s.id);pDel('strokes',s.id).catch(()=>{});});
+    undoStack.push({type:'clear',list});toast('Drawings cleared — Undo in Draw if needed');
+  }
+  async function loadInk(){
+    try{const list=await strokesByDraw(d.id);if(!VW||!ink.isConnected)return;list.forEach(addStroke);}
+    catch(e){console.warn('strokes load failed',e);}
+  }
+  function togglePalette(){
+    if(paletteEl){closePalette();return;}
+    const isHL=tool==='hl', cols=isHL?HL_COLORS:PEN_COLORS, sizes=isHL?[12,18,28]:[1.8,3,5.5], curW=isHL?hlW:penW;
+    paletteEl=document.createElement('div');paletteEl.className='palette';
+    paletteEl.innerHTML=cols.map(c=>`<button class="c ${c===(isHL?hlColor:penColor)?'on':''}" data-c="${c}" style="background:${c}" aria-label="Color"></button>`).join('')
+      +'<span class="sep"></span>'
+      +sizes.map(s=>{const px=Math.min(22,s*(isHL?0.85:2.6));return `<button class="wd ${s===curW?'on':''}" data-w="${s}" aria-label="Size"><i style="width:${px}px;height:${px}px"></i></button>`;}).join('')
+      +(penSeen?`<span class="sep"></span><button class="btn ghost" data-finger style="min-height:34px;padding:0 10px;font-size:13px">Finger ${fingerDraws?'draws':'moves'}</button>`:'');
+    document.body.appendChild(paletteEl);
+    paletteEl.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{if(isHL)hlColor=b.dataset.c;else{penColor=b.dataset.c;if(tool==='erase')tool='pen';}saveInkPrefs();renderBar();});
+    paletteEl.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{if(isHL)hlW=+b.dataset.w;else{penW=+b.dataset.w;if(tool==='erase')tool='pen';}saveInkPrefs();renderBar();});
+    const fb=paletteEl.querySelector('[data-finger]');if(fb)fb.onclick=()=>{fingerDraws=!fingerDraws;renderBar();};
+  }
+
+  // ---------- pointer handling: draw / pan + pinch / tap ----------
+  const pts=new Map();let startDist=0,startScale=1,moved=0,panStart=null,downPt=null;
+  viewer.addEventListener('pointerdown',e=>{
+    if(paletteEl)closePalette();
+    if(mode==='draw'){
+      const isPen=e.pointerType==='pen';
+      if(isPen&&!penSeen){penSeen=true;fingerDraws=false;try{localStorage.setItem('ductpro-pen','1');}catch(_){}renderBar();}
+      if(drawPid!==null&&drawType==='pen'&&!isPen)return;          // palm rejection while the Pencil is down
+      if(drawPid===null&&(isPen||(fingerDraws&&pts.size===0))){
+        try{viewer.setPointerCapture(e.pointerId);}catch(_){}
+        drawPid=e.pointerId;drawType=e.pointerType;beginStroke(e);return;
+      }
+      if(drawPid!==null&&drawType!=='pen'&&!isPen){                 // 2nd finger: turn the finger stroke into a pinch
+        const pid=drawPid,last=cur&&cur.last;cancelStroke();
+        if(last)pts.set(pid,{x:last.x,y:last.y});
+      }
+    }
+    try{viewer.setPointerCapture(e.pointerId);}catch(_){}
     pts.set(e.pointerId,{x:e.clientX,y:e.clientY});moved=0;
     if(pts.size===1){panStart={x:e.clientX,y:e.clientY,tx:VW.tx,ty:VW.ty};downPt={x:e.clientX,y:e.clientY};}
-    if(pts.size===2){const a=[...pts.values()];startDist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);startScale=VW.scale;
-      startMid={x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2};panStart=null;}
+    if(pts.size===2){const a=[...pts.values()];startDist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);startScale=VW.scale;panStart=null;moved=99;}
   });
   viewer.addEventListener('pointermove',e=>{
+    if(e.pointerId===drawPid){extendStroke(e);return;}
     if(!pts.has(e.pointerId))return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(pts.size===2&&startDist){const a=[...pts.values()];const dist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
       const mid={x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2};
@@ -958,44 +1325,31 @@ function viewDrawing(app){
       moved=Math.max(moved,Math.hypot(dx,dy));VW.tx=panStart.tx+dx;VW.ty=panStart.ty+dy;apply();}
   });
   function endPt(e){
+    if(e.pointerId===drawPid){
+      if(e.type==='pointercancel')cancelStroke();else finishStroke();
+      try{viewer.releasePointerCapture(e.pointerId);}catch(_){}
+      return;
+    }
     const wasTap=pts.size===1&&moved<8&&downPt;
-    viewer.releasePointerCapture?.(e.pointerId);pts.delete(e.pointerId);
+    try{viewer.releasePointerCapture(e.pointerId);}catch(_){}
+    pts.delete(e.pointerId);
     if(pts.size<2)startDist=0;
     if(pts.size===1){const p=[...pts.values()][0];panStart={x:p.x,y:p.y,tx:VW.tx,ty:VW.ty};}
-    if(pts.size===0&&wasTap){
-      const hit=hitPin(downPt.x,downPt.y);
-      if(hit){ if(S.placing)exitPlacing(); reportPreview(hit); }
-      else if(S.placing){ placeAt(downPt.x,downPt.y); }
+    if(pts.size===0&&wasTap&&mode!=='draw'){
+      const hit=hitAny(downPt.x,downPt.y);
+      if(hit){
+        if(hit.type==='report'){if(mode==='place'&&placeKind==='report')setMode('view');reportPreview(hit.r);}
+        else markerSheet(hit.m,{onChange:()=>{if(VW&&VW.renderMarkers)VW.renderMarkers();}});
+      }else if(mode==='place')placeAt(downPt.x,downPt.y);
     }
   }
   viewer.addEventListener('pointerup',endPt);
   viewer.addEventListener('pointercancel',endPt);
   viewer.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.clientX,e.clientY,e.deltaY<0?1.12:0.9);},{passive:false});
 
-  function exitPlacing(){
-    S.placing=false;document.documentElement.classList.remove('placing');
-    hintChip.innerHTML=I.move+'<span>Pinch to zoom · drag to pan</span>';hintChip.classList.remove('hint');
-    app.querySelector('#addReport').innerHTML=I.pin+' Place report';
-  }
-  function placeAt(cx,cy){
-    const rect=viewer.getBoundingClientRect();
-    const nx=((cx-rect.left)-VW.tx)/VW.scale/VW.baseW;
-    const ny=((cy-rect.top)-VW.ty)/VW.scale/VW.baseH;
-    if(nx<0||nx>1||ny<0||ny>1){toast('Tap on the plan');return;}
-    exitPlacing();
-    newReport(d,nx,ny);
-  }
-
   app.querySelector('#zin').onclick=()=>{const r=viewer.getBoundingClientRect();zoomAt(r.left+r.width/2,r.top+r.height/2,1.3);};
   app.querySelector('#zout').onclick=()=>{const r=viewer.getBoundingClientRect();zoomAt(r.left+r.width/2,r.top+r.height/2,0.77);};
   app.querySelector('#zfit').onclick=fitView;
-  app.querySelector('#addReport').onclick=()=>{
-    S.placing=!S.placing;document.documentElement.classList.toggle('placing',S.placing);
-    if(S.placing){hintChip.innerHTML=I.pin+'<span>Tap the plan to drop a report</span>';hintChip.classList.add('hint');
-      app.querySelector('#addReport').innerHTML=I.x+' Cancel placing';toast('Tap the spot on the plan');}
-    else{hintChip.innerHTML=I.move+'<span>Pinch to zoom · drag to pan</span>';hintChip.classList.remove('hint');
-      app.querySelector('#addReport').innerHTML=I.pin+' Place report';}
-  };
 
   // ---- HD toggle: Quick (preview image, fast) <-> HD (render visible area from the PDF) ----
   async function loadPdf(){
@@ -1042,7 +1396,7 @@ function viewDrawing(app){
     hdOn=on; try{localStorage.setItem('ductpro-hd',on?'1':'0');}catch(e){}
     hdUI();
     if(on){
-      if(!PDFPAGE&&d.pdfChunks){hdToggle.classList.add('busy');await loadPdf();hdToggle.classList.remove('busy');}
+      if(!PDFPAGE&&(d.pdfChunks||d.pdfKey)){hdToggle.classList.add('busy');await loadPdf();hdToggle.classList.remove('busy');}
       if(PDFPAGE){renderHires();if(announce)toast('HD on — sharp, re-renders as you zoom');}
       else{hdOn=false;hdUI();if(announce)toast(d.pdfChunks?'HD not available for this plan':'Re-upload this plan to use HD');}
     }else{
@@ -1053,11 +1407,95 @@ function viewDrawing(app){
   }
   hdToggle.onclick=()=>setHd(!hdOn,true);
 
+  vwrap.classList.toggle('hide-markups',mkHidden);
   setBase();
   VW.renderPins();
+  VW.renderMarkers();
+  renderBar();
   hdUI();
   if(hdOn)setHd(true); // honor the remembered choice
-  window.addEventListener('resize',()=>{if(VW){setBase();VW.renderPins();}},{once:false});
+  loadInk();
+  if(S.focus&&S.focus.drawId===d.id){const m=S.markers.find(x=>x.id===S.focus.id);S.focus=null;if(m)requestAnimationFrame(()=>VW&&VW.focus(m));}
+  window.addEventListener('resize',()=>{if(VW&&stage.isConnected){setBase();VW.renderPins();VW.renderMarkers();}},{once:false});
+}
+
+/* ---------- markup: shared helpers (palette, marker sheet, door list) ---------- */
+let paletteEl=null;
+function closePalette(){if(paletteEl){paletteEl.remove();paletteEl=null;}}
+
+function markerSheet(m,{isNew=false,onChange}={}){
+  const k=MK[m.kind], dr=S.drawings.find(x=>x.id===m.drawId);
+  const size0=normDoor(m.doorSize), qty0=Math.max(1,+m.doorQty||1);
+  const body=document.createElement('div');
+  body.innerHTML=`
+    <div class="mk-head"><span class="ic ${m.kind}">${I[k.icon]}</span>
+      <div><b>${esc(k.label)} ${esc(mkCode(m))}</b><span>${esc(dr?dr.name:'')}</span></div></div>
+    <div class="field"><label>Access door size needed <span style="color:var(--faint);font-weight:400">(optional)</span></label>
+      <div class="chips" id="mkChips">${DOOR_SIZES.map(s=>`<button type="button" data-s="${s}" class="${size0===s?'on':''}">${s}</button>`).join('')}</div>
+      <input class="inp mono" id="mkSize" placeholder="Other size, e.g. 20×14" autocomplete="off" value="${esc(DOOR_SIZES.includes(size0)?'':size0)}"></div>
+    <div class="field" id="mkQtyF" ${size0?'':'hidden'}><label>Doors needed here</label>
+      <div class="qty"><button type="button" id="qm" aria-label="Fewer">−</button><input id="mkQty" inputmode="numeric" value="${qty0}"><button type="button" id="qp" aria-label="More">+</button></div></div>
+    <div class="field" style="margin-bottom:4px"><label>Note <span style="color:var(--faint);font-weight:400">(optional)</span></label>
+      <textarea class="inp" id="mkNote" placeholder="${m.kind==='exhaust'?'e.g. EF-3 on roof, needs ladder':'e.g. above ceiling grid, cut in from hallway'}">${esc(m.note||'')}</textarea></div>`;
+  const foot=document.createElement('div');foot.style.cssText='display:flex;gap:10px;width:100%';
+  const left=document.createElement('button');left.className=isNew?'btn ghost block':'btn danger';left.innerHTML=isNew?'Skip':I.trash;
+  if(!isNew)left.setAttribute('aria-label','Delete marker');
+  const save=document.createElement('button');save.className='btn primary block';save.textContent='Save';
+  foot.append(left,save);
+  const ctl=sheetShell({title:isNew?k.label+' placed':k.label,bodyNode:body,footNode:foot});
+  const sizeIn=body.querySelector('#mkSize'),qtyF=body.querySelector('#mkQtyF'),qtyIn=body.querySelector('#mkQty');
+  const curSize=()=>{const on=body.querySelector('#mkChips .on');return on?on.dataset.s:normDoor(sizeIn.value);};
+  const syncQty=()=>{qtyF.hidden=!curSize();};
+  body.querySelectorAll('#mkChips button').forEach(b=>b.onclick=()=>{const was=b.classList.contains('on');
+    body.querySelectorAll('#mkChips button').forEach(x=>x.classList.remove('on'));if(!was){b.classList.add('on');sizeIn.value='';}syncQty();});
+  sizeIn.oninput=()=>{if(sizeIn.value.trim())body.querySelectorAll('#mkChips button').forEach(x=>x.classList.remove('on'));syncQty();};
+  body.querySelector('#qm').onclick=()=>{qtyIn.value=Math.max(1,(parseInt(qtyIn.value)||1)-1);};
+  body.querySelector('#qp').onclick=()=>{qtyIn.value=Math.min(99,(parseInt(qtyIn.value)||1)+1);};
+  left.onclick=async()=>{
+    ctl.close();if(isNew)return;
+    if(await confirmDialog({title:'Delete marker?',message:k.label+' '+mkCode(m)+' will be removed.',confirmText:'Delete'})){
+      S.markers=S.markers.filter(x=>x.id!==m.id);pDel('markers',m.id).catch(()=>{});
+      if(onChange)onChange();toast('Marker deleted');
+    }
+  };
+  save.onclick=()=>{
+    m.doorSize=curSize();m.doorQty=m.doorSize?Math.max(1,Math.min(99,parseInt(qtyIn.value)||1)):1;
+    m.note=body.querySelector('#mkNote').value.trim();
+    pPut('markers',m).catch(e=>{console.error(e);toast('Save failed — check connection');});
+    ctl.close();if(onChange)onChange();toast('Saved');
+  };
+}
+
+function focusMarker(m){
+  const top=S.route[S.route.length-1];
+  if(top==='drawing'&&S.drawId===m.drawId&&VW&&VW.focus){VW.focus(m);return;}
+  S.focus={drawId:m.drawId,id:m.id};go('drawing',{drawId:m.drawId});
+}
+
+function doorListSheet(jobId){
+  const j=S.jobs.find(x=>x.id===jobId), ds=doorSummary(jobId);
+  const body=document.createElement('div');
+  if(!ds.total){
+    body.innerHTML=`<div class="empty" style="padding:28px 10px"><div class="ic">${I.door}</div><h2>No access doors yet</h2>
+      <p>Place a Cleaning access marker and fill in “Access door size needed”. Doors show up here with totals.</p></div>`;
+  }else{
+    body.innerHTML=`<div class="door-total" style="border:1px solid var(--line);border-radius:var(--radius);margin-bottom:16px">
+        <span style="font-weight:600">Total access doors</span><b>${ds.total}</b></div>`
+      +ds.groups.map(g=>`<div class="dl-group"><h4><span class="door-size">${esc(g.size)}</span><span class="door-qty">× ${g.qty}</span></h4>`
+        +g.items.map(m=>{const dr=S.drawings.find(x=>x.id===m.drawId),q=Math.max(1,+m.doorQty||1);
+          return `<button class="dl-item" data-m="${m.id}"><span class="mk-head" style="margin:0"><span class="ic ${m.kind}">${I[MK[m.kind].icon]}</span></span>
+            <span class="grow"><b>${esc(mkCode(m))}</b>${q>1?` · ${q} doors`:''}<span>${esc(dr?dr.name:'')}${m.note?' · '+esc(m.note):''}</span></span>
+            <span class="chev">${I.chev}</span></button>`;}).join('')+'</div>').join('');
+  }
+  let foot=null;
+  if(ds.total){foot=document.createElement('button');foot.className='btn primary block';foot.innerHTML=I.copy+' Copy door list';}
+  const ctl=sheetShell({title:'Access doors needed',bodyNode:body,footNode:foot,full:true});
+  body.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{const m=S.markers.find(x=>x.id===b.dataset.m);if(!m)return;ctl.close();focusMarker(m);});
+  if(foot)foot.onclick=async()=>{
+    const txt=`Access doors needed — ${j?j.name+' ('+j.number+')':''}\n`
+      +ds.groups.map(g=>`${g.size}: ${g.qty}`).join('\n')+`\nTotal: ${ds.total}`;
+    try{await navigator.clipboard.writeText(txt);toast('Door list copied');}catch(e){toast('Copy isn’t available here');}
+  };
 }
 
 function drawMenu(d){
@@ -1080,6 +1518,9 @@ function drawMenu(d){
         await pDel('reports',r.id);
       }
       S.reports=S.reports.filter(r=>r.drawId!==d.id);
+      for(const m of drawMarkers(d.id))await pDel('markers',m.id);
+      S.markers=S.markers.filter(m=>m.drawId!==d.id);
+      try{const st=await strokesByDraw(d.id);for(const s of st)await pDel('strokes',s.id);}catch(e){console.warn(e);}
       await pDel('drawings',d.id);S.drawings=S.drawings.filter(x=>x.id!==d.id);
       if(d.pdfKey)await deletePdfKeyIfUnused(d.pdfKey);
       else{try{const ts=await pdfChunksByDraw(d.id);for(const t of ts)await pDel('pdfchunks',t.id);}catch(e){console.warn(e);}}
@@ -1485,6 +1926,7 @@ function bootError(msg){
   catch(e){ console.error(e); bootError('Could not reach Firebase. Check your internet connection and reload.'); return; }
   try{
     S.jobs=await pAll('jobs');S.drawings=await pAll('drawings');S.reports=await pAll('reports');
+    try{S.markers=await pAll('markers');}catch(e){console.warn('markers load failed',e);S.markers=[];}
   }catch(e){
     console.error(e);
     bootError('Connected to Firebase, but reads were denied. Make sure Firestore and Storage security rules allow access, then reload.');
