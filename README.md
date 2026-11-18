@@ -4,6 +4,11 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
 **https://arctic-mech.github.io/DuctCleaning/** (served from `index.html` on `main`).
 
 ## What it does
+- **Truck checklist** (top of the home screen): a shared list of what should be in the truck.
+  Foremen check items off, which stamps their name and the time. **Order** marks a missing item as
+  "Replacement ordered on (date) · (name)" until someone checks it off as in the truck. **Edit list**
+  adds (type or paste a list), renames, reorders and removes items, and can uncheck everything for a
+  fresh check. Changes show up live on every phone.
 - **Jobs**: name, number, optional address.
 - **Plans**: upload a PDF and name it. A multi-page PDF becomes one plan per page.
   **Replace PDF (keep tags)** swaps in a clean copy of the same drawing without moving any pins.
@@ -40,6 +45,7 @@ Firebase Storage is not used, so the project stays on the free Spark plan.
 | `strokes`   | One freehand markup stroke per document, with author and group, loaded when a plan opens |
 | `users`     | People, keyed by name (`u_first_last`) |
 | `mkgroups`  | Markup groups, owned by a person, with their set color |
+| `checklist` | Truck checklist items: who checked each one and when, and any replacement order |
 
 ### One-time setup
 Because there is no login, the Firestore rules must allow open access:
