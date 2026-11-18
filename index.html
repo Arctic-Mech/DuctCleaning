@@ -68,7 +68,13 @@ body{
   -webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;
   overscroll-behavior-y:none;
 }
-#app{min-height:100%;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}
+/* space for the iPhone status bar. Opened from the Home Screen, the status bar sits on top of the page,
+   and some iOS versions report 0 for it, so the app adds a fixed blank space there (portrait only;
+   the status bar is hidden in landscape). */
+:root{--safe-top:env(safe-area-inset-top,0px)}
+html.ios-app{--safe-top:max(env(safe-area-inset-top,0px),62px)}
+@media (orientation:landscape){html.ios-app{--safe-top:env(safe-area-inset-top,0px)}}
+#app{min-height:100%;display:flex;flex-direction:column;padding-top:var(--safe-top)}
 h1,h2,h3{font-family:var(--font-head);font-weight:700;margin:0;letter-spacing:-.01em}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer}
@@ -76,11 +82,11 @@ input,textarea,select{font-family:inherit;font-size:16px;color:var(--fg)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 
 /* paint behind the iOS status bar / notch */
-body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);
+body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
   background:var(--surface);z-index:60}
 
 /* ---------- top bar ---------- */
-.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;
+.topbar{position:sticky;top:var(--safe-top);z-index:50;
   display:flex;align-items:center;gap:10px;min-height:var(--bar-h);
   padding-left:max(10px,env(safe-area-inset-left,0px));
   padding-right:max(10px,env(safe-area-inset-right,0px));
@@ -188,7 +194,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 :root[data-theme="light"] .viewer,
 :root:not([data-theme="dark"]) .viewer{background:#c9d2db}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .viewer{background:#0b0f14}}
-.viewer-wrap{position:fixed;inset:0;top:calc(var(--bar-h) + env(safe-area-inset-top,0px));
+.viewer-wrap{position:fixed;inset:0;top:calc(var(--bar-h) + var(--safe-top));
   bottom:0;overflow:hidden}
 .canvas-stage{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .canvas-stage img.plan{display:block;user-select:none;-webkit-user-drag:none;pointer-events:none}
@@ -469,7 +475,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   background:var(--surface);border-radius:20px 20px 0 0;border:1px solid var(--line);border-bottom:none;
   transform:translateY(100%);transition:transform .26s cubic-bezier(.3,.8,.3,1);overflow:hidden}
 .scrim.open .sheet{transform:translateY(0)}
-.sheet.full{max-height:none;height:calc(100% - env(safe-area-inset-top,0px) - 10px);border-radius:20px 20px 0 0}
+.sheet.full{max-height:none;height:calc(100% - var(--safe-top) - 10px);border-radius:20px 20px 0 0}
 .sheet-head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);flex:none}
 .sheet-head h2{flex:1;font-size:18px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sheet-head .x{width:38px;height:38px;border-radius:10px;border:none;background:var(--surface-2);
@@ -779,6 +785,9 @@ function fitEncode(base,budget){
 
 /* ============================ state ============================ */
 const COMPANY='Arctic';
+// opened from the iPhone Home Screen (not in Safari): leave room for the status bar
+try{if(navigator.standalone===true||(matchMedia('(display-mode: standalone)').matches&&/iP(hone|od|ad)/.test(navigator.userAgent)))
+  document.documentElement.classList.add('ios-app');}catch(e){}
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],user:null,route:['jobs'],jobId:null,drawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
