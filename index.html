@@ -68,7 +68,7 @@ body{
   -webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;
   overscroll-behavior-y:none;
 }
-#app{min-height:100%;display:flex;flex-direction:column}
+#app{min-height:100%;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}
 h1,h2,h3{font-family:var(--font-head);font-weight:700;margin:0;letter-spacing:-.01em}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 button{font-family:inherit;font-size:inherit;color:inherit;cursor:pointer}
@@ -1630,9 +1630,9 @@ function viewDrawing(app){
     renderLegend();
   };
   function openLayers(){
-    ensureUser().then(()=>layersSheet(d.jobId,{
+    ensureUser().then(()=>{splitHidden();layersSheet(d.jobId,{
       strokeGroups:[...new Set(STROKES.map(mkGroupOf))],
-      onChange:()=>{STROKES=STROKES.filter(s=>!s.group||S.groups.some(g=>g.id===s.group));refreshLayers();}}));
+      onChange:()=>{STROKES=STROKES.filter(s=>!s.group||S.groups.some(g=>g.id===s.group));refreshLayers();}});});
   }
   // hit-test a tap (client coords) against report pins and markers; nearest wins
   function hitAny(cx,cy){
@@ -1643,7 +1643,7 @@ function viewDrawing(app){
     return best;
   }
   VW.focus=(m)=>{
-    ensureShown();
+    revealGroup(mkGroupOf(m));
     const rect=viewer.getBoundingClientRect();const Sc=Math.max(VW.scale,3);
     VW.scale=Sc;VW.tx=rect.width/2-m.nx*VW.baseW*Sc;VW.ty=rect.height/2-m.ny*VW.baseH*Sc;apply();
     const el=mklayer.querySelector(`[data-id="${m.id}"]`);if(el){el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
@@ -1774,7 +1774,17 @@ function viewDrawing(app){
   }
   function setHidden(h){mkHidden=h;try{localStorage.setItem('ductpro-mkhide',h?'1':'0');}catch(e){}
     vwrap.classList.toggle('hide-markups',h);mkUI();renderLegend();}
-  function ensureShown(){if(mkHidden)setHidden(false);}
+  // "Hide all" is one switch. To show a single group, turn it into "each group on this plan hidden".
+  function splitHidden(){
+    if(!mkHidden)return false;
+    setGroupsHidden(Object.keys(planGroups()),true);refreshLayers();setHidden(false);return true;
+  }
+  // show one group without bringing the others back
+  function revealGroup(id){
+    const split=splitHidden();
+    if(!groupVisible(id))setGroupsHidden([id],false);
+    refreshLayers();return split;
+  }
 
   function markupSheet(){
     const g=activeGroup();
@@ -1793,8 +1803,9 @@ function viewDrawing(app){
     nt.querySelector('svg').style.color='var(--mk-note)';dr.querySelector('svg').style.color='var(--mk-exhaust)';
     const ctl=sheetShell({title:'Markup',bodyNode:body});
     // starting a markup action makes sure your own group is showing
-    const start=fn=>()=>{ctl.close();ensureShown();
-      if(!groupVisible(activeGroup().id)){setGroupsHidden([activeGroup().id],false);refreshLayers();}fn();};
+    // starting a markup action shows the group you're adding to; anything you hid stays hidden
+    const start=fn=>()=>{ctl.close();const ag=activeGroup();
+      if(revealGroup(ag.id))toast('Other markups stay hidden');fn();};
     ex.onclick=start(()=>setMode('place','exhaust'));
     ac.onclick=start(()=>setMode('place','access'));
     nt.onclick=start(()=>setMode('place','note'));
