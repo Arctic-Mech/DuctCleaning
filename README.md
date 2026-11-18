@@ -4,15 +4,19 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
 **https://arctic-mech.github.io/DuctCleaning/** (served from `index.html` on `main`).
 
 ## What it does
-- **Truck checklist** (top of the home screen): a shared list of what should be in the truck.
-  Foremen check items off, which stamps their name and the time. **Order** marks a missing item as
-  "Replacement ordered on (date) · (name)" until someone checks it off as in the truck. **Edit list**
-  adds (type or paste a list), renames, reorders and removes items, and can uncheck everything for a
-  fresh check. Changes show up live on every phone. The list starts collapsed each time the app
-  opens; tap the summary to expand it.
-  Items set to **Track when it's replaced** (on automatically for anything named "filter") show
-  "Replaced Oct 3 · 46 days ago". **Replaced** logs a replacement (today or a past date) and keeps
-  a history.
+- **Truck checklist** (top of the home screen, collapsed until you tap the summary): a shared list
+  of what should be in the truck. The **box** checks an item off and stamps the person's name and
+  the time. **Tapping the item** opens its editor:
+  - **Replacement ordered** (with the order date and who marked it). Checking the item off later
+    clears it.
+  - **Track when it's replaced** (on automatically for anything named "filter"): log replacements
+    for today or a past date, see "Replaced Oct 3 · 46 days ago", and keep a history.
+  - **Needs replacing**: a replace-by date, optionally repeating every 1–12 months from the last
+    replacement. Due within two weeks shows orange; overdue shows red and in the summary.
+  - Rename or remove the item.
+
+  **Edit list** adds items (type or paste a list), reorders them by dragging the handle, and can
+  uncheck everything for a fresh check. Changes show up live on every phone.
 - **Jobs**: name, number, optional address.
 - **Plans**: upload a PDF and name it. A multi-page PDF becomes one plan per page.
   **Replace PDF (keep tags)** swaps in a clean copy of the same drawing without moving any pins.
@@ -49,7 +53,7 @@ Firebase Storage is not used, so the project stays on the free Spark plan.
 | `strokes`   | One freehand markup stroke per document, with author and group, loaded when a plan opens |
 | `users`     | People, keyed by name (`u_first_last`) |
 | `mkgroups`  | Markup groups, owned by a person, with their set color |
-| `checklist` | Truck checklist items: who checked each one and when, any replacement order, and replacement history |
+| `checklist` | Truck checklist items: who checked each one and when, replacement order, replacement history and replace-by date |
 
 ### One-time setup
 Because there is no login, the Firestore rules must allow open access:

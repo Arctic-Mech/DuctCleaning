@@ -364,24 +364,31 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .cl-chev svg{width:20px;height:20px}
 .cl-chev.open{transform:rotate(90deg)}
 .cl-list{border-top:1px solid var(--line)}
-.cl-item{display:flex;align-items:center;gap:6px;padding-right:12px;border-top:1px solid var(--line)}
+.cl-item{display:flex;align-items:stretch;padding-right:10px;border-top:1px solid var(--line)}
 .cl-item:first-child{border-top:none}
-.cl-tap{flex:1;min-width:0;display:flex;align-items:center;gap:12px;padding:12px 4px 12px 15px;min-height:58px;
+.cl-check{flex:none;align-self:stretch;width:58px;display:grid;place-items:center;border:none;background:transparent;padding:0 0 0 4px}
+.cl-check:active .cl-box{transform:scale(.9)}
+.cl-tap{flex:1;min-width:0;display:flex;align-items:center;gap:8px;padding:12px 0 12px 2px;min-height:58px;
   border:none;background:transparent;text-align:left;color:var(--fg)}
+.cl-tap:active{background:var(--surface-2)}
+.cl-tap .cl-txt{flex:1}
+.cl-go{color:var(--faint);flex:none;display:grid}
+.cl-go svg{width:18px;height:18px}
 .cl-box{width:27px;height:27px;border-radius:8px;border:2px solid color-mix(in srgb,var(--fg) 28%,transparent);
-  display:grid;place-items:center;flex:none;color:transparent;transition:background .15s,border-color .15s}
+  display:grid;place-items:center;flex:none;color:transparent;transition:background .15s,border-color .15s,transform .1s}
 .cl-box svg{width:17px;height:17px}
 .cl-item.in .cl-box{background:var(--good);border-color:var(--good);color:#fff}
-.cl-item.ord .cl-box{border-color:var(--warn)}
+.cl-item.ord:not(.in) .cl-box{border-color:var(--warn)}
 .cl-txt{min-width:0;display:flex;flex-direction:column;gap:3px}
 .cl-name{font-size:16px;font-weight:600;line-height:1.25}
 .cl-sub{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:4px;line-height:1.3}
 .cl-sub svg{width:13px;height:13px;color:var(--good);flex:none}
 .cl-sub.ord{color:var(--warn);font-weight:600}
 .cl-sub.rep svg{color:var(--accent)}
-.cl-act{flex:none;border:1px solid var(--line);background:var(--surface-2);color:var(--accent);border-radius:999px;
-  padding:7px 13px;font:600 13px var(--font-body)}
-.cl-act.ord{background:color-mix(in srgb,var(--warn) 18%,transparent);border-color:transparent;color:var(--warn)}
+.cl-sub.due svg{color:currentColor}
+.cl-sub.due.soon,.cl-duehint.soon{color:var(--warn);font-weight:600}
+.cl-sub.due.over,.cl-duehint.over{color:var(--danger);font-weight:700}
+.cl-over{color:var(--danger);font-weight:700}
 .cl-empty{display:flex;align-items:center;gap:12px;padding:15px}
 .cl-empty .grow{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;font-size:15px}
 .cl-empty .grow span{font-size:13px;color:var(--muted)}
@@ -392,11 +399,41 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .cl-add .inp{flex:1;min-width:0}
 .cl-add .btn{flex:none}
 .cl-tip{color:var(--faint);font-size:12.5px;margin:6px 2px 14px}
-.cl-erow{margin-bottom:12px}
-.cl-eline{display:flex;align-items:center;gap:2px}
-.cl-eline .cl-ename{flex:1;min-width:0;margin-right:4px}
-.cl-track{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--muted);padding:7px 2px 0}
-.cl-track input{width:18px;height:18px;accent-color:var(--accent);margin:0}
+.cl-tip svg{width:14px;height:14px;vertical-align:-2px}
+/* reorder list */
+.cl-rlist{display:flex;flex-direction:column;gap:6px}
+.cl-rrow{display:flex;align-items:center;gap:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);
+  padding:0 4px 0 0;position:relative;transition:transform .16s ease}
+.cl-rlist.sorting .cl-rrow{user-select:none;-webkit-user-select:none}
+.cl-rrow.dragging{transition:none;z-index:2;background:var(--surface);box-shadow:0 10px 24px rgba(0,0,0,.22);border-color:var(--accent)}
+.cl-drag{width:46px;align-self:stretch;min-height:50px;display:grid;place-items:center;color:var(--faint);flex:none;
+  touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.cl-rrow.dragging .cl-drag{color:var(--accent);cursor:grabbing}
+.cl-drag svg{width:20px;height:20px}
+.cl-rname{flex:1;min-width:0;border:none;background:none;text-align:left;color:var(--fg);font:600 15.5px var(--font-body);padding:12px 0}
+/* item editor */
+.cl-instat{display:flex;align-items:flex-start;gap:6px;font-size:13.5px;color:var(--muted);margin:10px 2px 0;line-height:1.4}
+.cl-instat b{color:var(--fg)}
+.cl-instat svg{width:15px;height:15px;color:var(--good);flex:none;margin-top:2px}
+.cl-sec{border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);padding:12px 14px;margin-top:12px}
+.cl-swrow{display:flex;align-items:center;gap:12px;cursor:pointer}
+.cl-swrow>span{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;font-size:15.5px}
+.cl-swrow small{font-size:13px;color:var(--muted);font-weight:500;line-height:1.35}
+.cl-sec .field{margin:12px 0 0}
+.cl-logrow{display:flex;gap:8px;align-items:flex-end}
+.cl-logrow .field{flex:1;min-width:0}
+.cl-logrow .btn{flex:none}
+.cl-subhead{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:700;margin:18px 0 0}
+.cl-two{display:flex;gap:8px}
+.cl-two .field{flex:1;min-width:0;margin-top:8px}
+.cl-duehint{font-size:13px;margin:8px 0 0;color:var(--muted);line-height:1.4}
+.sw{appearance:none;-webkit-appearance:none;width:51px;height:31px;border-radius:99px;flex:none;margin:0;position:relative;cursor:pointer;
+  background:color-mix(in srgb,var(--fg) 20%,transparent);transition:background .2s}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;
+  box-shadow:0 2px 4px rgba(0,0,0,.25);transition:transform .2s}
+.sw:checked{background:var(--accent)}
+.sw.warn:checked{background:var(--warn)}
+.sw:checked::after{transform:translateX(20px)}
 .cl-stat{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:8px}
 .cl-statrow{display:flex;align-items:flex-start;gap:8px;font-size:15px;line-height:1.4;color:var(--muted)}
 .cl-statrow b{color:var(--fg)}
@@ -405,11 +442,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .cl-hrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0 4px 2px;border-bottom:1px solid var(--line);font-size:14.5px;color:var(--muted)}
 .cl-hrow b{color:var(--fg)}
 .cl-hrow .ib{color:var(--faint)}
-.cl-erow .ib[disabled]{opacity:.25}
-.cl-erow .cl-del{color:var(--danger)}
-.cl-note{color:var(--muted);font-size:15px;line-height:1.5;margin:2px 0 0}
-.cl-note b{color:var(--fg)}
-.cl-foot{display:flex;gap:10px;width:100%}
+.cl-rrow .cl-del{color:var(--danger)}
 .vchip svg{width:16px;height:16px}
 #hires{position:absolute;left:0;top:0;pointer-events:none;display:none}
 .zoomcol{position:absolute;right:max(12px,env(safe-area-inset-right,0px));
@@ -620,8 +653,8 @@ const I = {
   share:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v14"/></svg>',
   truck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h12v10H2z"/><path d="M14 9h4l3 3.5V16h-7z"/><circle cx="6" cy="17.5" r="1.9"/><circle cx="17.5" cy="17.5" r="1.9"/></svg>',
   refresh:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 12a8.5 8.5 0 11-2.5-6L20.5 8.5"/><path d="M20.5 3.5v5h-5"/></svg>',
-  up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>',
-  down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
+  grip:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
   info:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>',
   clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
@@ -1007,8 +1040,9 @@ function viewJobs(app){
 }
 
 /* ---------- truck checklist (home screen) ----------
-   One shared list. An item is either blank, "replacement ordered" (date + name),
-   or checked "in truck" (name + time). Checking an ordered item means it arrived. */
+   One shared list. The box checks an item off (name + time); tapping the item opens its editor:
+   replacement ordered (date + name), replacement tracking + history, and when it needs replacing.
+   Checking off an ordered item means it arrived, so the order clears. */
 const clSorted=()=>[...S.checklist].sort((a,b)=>(a.pos??0)-(b.pos??0)||(a.createdAt||0)-(b.createdAt||0));
 const CL_ASK={title:'What’s your name?',why:'So check-offs show who checked them.'};
 const fullName=u=>(u.first+' '+u.last).trim();
@@ -1049,6 +1083,21 @@ const clFind=id=>S.checklist.find(x=>x.id===id);
 const CL_CLEAR_CHECK={checkedAt:null,checkedBy:null,checkedName:null};
 const CL_CLEAR_ORDER={orderedAt:null,orderedBy:null,orderedName:null};
 
+// when it needs replacing: {cls:''|'soon'|'over', text}
+function clDue(it){
+  if(!it.trackReplace||!it.replaceBy)return null;
+  const a=new Date(it.replaceBy),b=new Date();a.setHours(0,0,0,0);b.setHours(0,0,0,0);
+  const d=Math.round((a-b)/864e5);
+  if(d<0)return {cls:'over',text:`Replacement overdue · was due ${fmtDay(it.replaceBy)}`};
+  if(d===0)return {cls:'over',text:'Replace today'};
+  if(d<=14)return {cls:'soon',text:`Replace by ${fmtDay(it.replaceBy)} · in ${d} day${d>1?'s':''}`};
+  return {cls:'',text:`Replace by ${fmtDay(it.replaceBy)}`};
+}
+function addMonths(t,n){const d=new Date(t),day=d.getDate();d.setDate(1);d.setMonth(d.getMonth()+n);
+  d.setDate(Math.min(day,new Date(d.getFullYear(),d.getMonth()+1,0).getDate()));d.setHours(12,0,0,0);return d.getTime();}
+const dayAt=v=>{const [y,m,d]=v.split('-').map(Number);return new Date(y,m-1,d,12).getTime();};
+const everyLabel=m=>m===12?'Every year':m===1?'Every month':`Every ${m} months`;
+
 function renderChecklistCard(card){
   const items=clSorted();
   if(!items.length){
@@ -1057,76 +1106,35 @@ function renderChecklistCard(card){
       <button type="button" class="btn" id="clAddFirst">${I.plus} Add items</button></div>`;
     card.querySelector('#clAddFirst').onclick=checklistEditSheet;return;
   }
-  const open=clIsOpen(),nIn=items.filter(i=>i.checkedAt).length,nOrd=items.filter(i=>!i.checkedAt&&i.orderedAt).length;
+  const open=clIsOpen(),nIn=items.filter(i=>i.checkedAt).length,nOrd=items.filter(i=>i.orderedAt).length;
+  const nOver=items.filter(i=>(clDue(i)||{}).cls==='over').length;
   const row=it=>{
-    const st=it.checkedAt?'in':it.orderedAt?'ord':'';
-    let sub='';
-    if(st==='in')sub+=`<span class="cl-sub">${I.check}<span>${esc(it.checkedName||'')} · ${fmtStamp(it.checkedAt)}</span></span>`;
-    if(st==='ord')sub+=`<span class="cl-sub ord"><span>Replacement ordered on ${fmtDay(it.orderedAt)}${it.orderedName?' · '+esc(it.orderedName):''}</span></span>`;
+    const due=clDue(it);let sub='';
+    if(it.checkedAt)sub+=`<span class="cl-sub">${I.check}<span>${esc(it.checkedName||'')} · ${fmtStamp(it.checkedAt)}</span></span>`;
+    if(it.orderedAt)sub+=`<span class="cl-sub ord"><span>Replacement ordered on ${fmtDay(it.orderedAt)}${it.orderedName?' · '+esc(it.orderedName):''}</span></span>`;
     if(it.trackReplace)sub+=`<span class="cl-sub rep">${I.refresh}<span>${it.replacedAt?`Replaced ${fmtDay(it.replacedAt)} · ${agoDays(it.replacedAt)}`:'No replacement logged'}</span></span>`;
-    const act=it.trackReplace?`<button type="button" class="cl-act${st==='ord'?' ord':''}" data-item="${it.id}">${st==='ord'?'Ordered':'Replaced'}</button>`
-      :st==='in'?'':st==='ord'?`<button type="button" class="cl-act ord" data-ordered="${it.id}">Ordered</button>`
-      :`<button type="button" class="cl-act" data-order="${it.id}">Order</button>`;
-    return `<div class="cl-item${st?' '+st:''}" data-cl="${it.id}">
-      <button type="button" class="cl-tap" data-check="${it.id}" aria-pressed="${st==='in'}">
-        <span class="cl-box">${I.check}</span>
-        <span class="cl-txt"><span class="cl-name">${esc(it.name)}</span>${sub}</span></button>
-      ${act}
+    if(due)sub+=`<span class="cl-sub due ${due.cls}">${I.clock}<span>${due.text}</span></span>`;
+    return `<div class="cl-item${it.checkedAt?' in':''}${it.orderedAt?' ord':''}" data-cl="${it.id}">
+      <button type="button" class="cl-check" data-check="${it.id}" aria-pressed="${!!it.checkedAt}" aria-label="${it.checkedAt?'Uncheck':'Check off'} ${esc(it.name)}"><span class="cl-box">${I.check}</span></button>
+      <button type="button" class="cl-tap" data-edit="${it.id}">
+        <span class="cl-txt"><span class="cl-name">${esc(it.name)}</span>${sub}</span><span class="cl-go">${I.chev}</span></button>
     </div>`;
   };
   card.innerHTML=`<button type="button" class="cl-head" id="clHead" aria-expanded="${open}">
-      <span class="cl-sum"><span><b>${nIn}</b> of ${items.length} in truck${nOrd?` · <span class="cl-warn">${nOrd} ordered</span>`:''}</span>
+      <span class="cl-sum"><span><b>${nIn}</b> of ${items.length} in truck${nOrd?` · <span class="cl-warn">${nOrd} ordered</span>`:''}${nOver?` · <span class="cl-over">${nOver} overdue</span>`:''}</span>
         <span class="cl-bar"><i style="width:${Math.round(nIn/items.length*100)}%"></i></span></span>
       <span class="cl-chev${open?' open':''}">${I.chev}</span></button>
     ${open?`<div class="cl-list">${items.map(row).join('')}</div>`:''}`;
   card.querySelector('#clHead').onclick=()=>{CL_OPEN=!open;renderChecklistCard(card);};
   card.querySelectorAll('[data-check]').forEach(b=>b.onclick=()=>clToggle(b.dataset.check));
-  card.querySelectorAll('[data-order]').forEach(b=>b.onclick=()=>clOrder(b.dataset.order));
-  card.querySelectorAll('[data-ordered]').forEach(b=>b.onclick=()=>clOrderedSheet(b.dataset.ordered));
-  card.querySelectorAll('[data-item]').forEach(b=>b.onclick=()=>clReplaceSheet(b.dataset.item));
+  card.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>clItemSheet(b.dataset.edit));
 }
-// items that track replacements (e.g. HEPA filters): last replaced, log a new one, order, history
-function clReplaceSheet(id){
-  const it=clFind(id);if(!it)return;
-  const body=document.createElement('div');
-  const ctl=sheetShell({title:it.name,bodyNode:body});
-  const today=isoDay(now());
-  function draw(){
-    const c=clFind(id);if(!c){ctl.close();return;}
-    const log=c.replaceLog||[];
-    body.innerHTML=`<div class="cl-stat">
-        <div class="cl-statrow">${I.refresh}<span>${c.replacedAt?`Last replaced <b>${fmtDay(c.replacedAt)}</b>${c.replacedName?' by <b>'+esc(c.replacedName)+'</b>':''} · ${agoDays(c.replacedAt)}`:'No replacement logged yet'}</span></div>
-        ${c.orderedAt?`<div class="cl-statrow ord"><span>Replacement ordered on <b>${fmtDay(c.orderedAt)}</b>${c.orderedName?' · '+esc(c.orderedName):''}</span></div>`:''}
-      </div>
-      <div class="field" style="margin:14px 0 10px"><label>Replaced on</label><input type="date" class="inp" id="rpDate" value="${today}" max="${today}"></div>
-      <button type="button" class="btn primary" id="rpLog" style="width:100%">${I.refresh} Log replacement</button>
-      <button type="button" class="btn ghost" id="rpOrder" style="width:100%;margin-top:8px">${c.orderedAt?'Cancel order':'Order replacement'}</button>
-      ${log.length?`<div class="lyr-sec">History</div>`+log.map((e,i)=>`<div class="cl-hrow"><span><b>${fmtDay(e.at)}</b>${e.name?' · '+esc(e.name):''}</span>
-        <button type="button" class="ib" data-rm="${i}" aria-label="Remove ${fmtDay(e.at)}">${I.trash}</button></div>`).join(''):''}`;
-    body.querySelector('#rpLog').onclick=async()=>{
-      const v=body.querySelector('#rpDate').value;if(!v){toast('Pick the date it was replaced');return;}
-      const [y,m,d]=v.split('-').map(Number),at=new Date(y,m-1,d,12).getTime();
-      if(at>now()+864e5){toast('That date is in the future');return;}
-      const u=await ensureUser(CL_ASK);const cur=clFind(id);if(!cur)return;
-      cur.replaceLog=[{at,by:u.id,name:fullName(u),loggedAt:now()},...(cur.replaceLog||[])];
-      clSetLatest(cur);clSave(cur);ctl.close();toast('Replacement logged');
-    };
-    body.querySelector('#rpOrder').onclick=()=>{const cur=clFind(id);if(!cur)return;
-      if(cur.orderedAt){Object.assign(cur,CL_CLEAR_ORDER);clSave(cur);toast('Order cleared');draw();}
-      else{ctl.close();clOrder(id);}};
-    body.querySelectorAll('[data-rm]').forEach(b=>b.onclick=async()=>{const cur=clFind(id);if(!cur)return;
-      const e=(cur.replaceLog||[])[+b.dataset.rm];if(!e)return;
-      if(!await confirmDialog({title:'Remove entry?',message:`The ${fmtDay(e.at)} replacement will be removed from the history.`,confirmText:'Remove'}))return;
-      const c2=clFind(id);if(!c2)return;c2.replaceLog=(c2.replaceLog||[]).filter(x=>!(x.at===e.at&&x.loggedAt===e.loggedAt));
-      clSetLatest(c2);clSave(c2);draw();});
-  }
-  draw();
-}
-// newest replacement first; keep the last 20
+// newest replacement first; keep the last 20. A repeat schedule moves "replace by" along with it.
 function clSetLatest(it){
   it.replaceLog=(it.replaceLog||[]).sort((a,b)=>b.at-a.at||b.loggedAt-a.loggedAt).slice(0,20);
   const top=it.replaceLog[0];
   Object.assign(it,top?{replacedAt:top.at,replacedBy:top.by,replacedName:top.name}:{replacedAt:null,replacedBy:null,replacedName:null});
+  if(it.replaceEvery&&it.replacedAt)it.replaceBy=addMonths(it.replacedAt,it.replaceEvery);
 }
 async function clCheck(id){
   const u=await ensureUser(CL_ASK);const it=clFind(id);if(!it)return;
@@ -1137,38 +1145,130 @@ function clToggle(id){
   if(it.checkedAt){Object.assign(it,CL_CLEAR_CHECK);clSave(it);}
   else clCheck(id);
 }
-async function clOrder(id){
-  const u=await ensureUser(CL_ASK);const it=clFind(id);if(!it)return;
-  if(!await confirmDialog({title:'Order a replacement?',confirmText:'Mark ordered',danger:false,
-    message:`“${it.name}” will show “Replacement ordered on ${fmtDay(now())} · ${fullName(u)}” until someone checks it off as in the truck.`}))return;
-  const cur=clFind(id);if(!cur)return;
-  Object.assign(cur,{orderedAt:now(),orderedBy:u.id,orderedName:fullName(u)},CL_CLEAR_CHECK);clSave(cur);toast('Marked as ordered');
+function clRemove(id){
+  S.checklist=S.checklist.filter(x=>x.id!==id);pDel('checklist',id).catch(()=>{});
+  clSorted().forEach((x,k)=>{if(x.pos!==k){x.pos=k;pPut('checklist',x).catch(()=>{});}});
+  clChanged();
 }
-function clOrderedSheet(id){
-  const it=clFind(id);if(!it)return;
+// tap an item: name, replacement ordered, track replacements, when it needs replacing, history
+function clItemSheet(id){
+  const it0=clFind(id);if(!it0)return;
   const body=document.createElement('div');
-  body.innerHTML=`<p class="cl-note">Replacement ordered on <b>${fmtDay(it.orderedAt)}</b>${it.orderedName?' by <b>'+esc(it.orderedName)+'</b>':''}.</p>`;
-  const foot=document.createElement('div');foot.className='cl-foot';
-  const cancel=document.createElement('button');cancel.className='btn ghost block';cancel.textContent='Cancel order';
-  const here=document.createElement('button');here.className='btn primary block';here.innerHTML=`${I.check} It’s in the truck`;
-  foot.append(cancel,here);
-  const ctl=sheetShell({title:it.name,bodyNode:body,footNode:foot});
-  cancel.onclick=()=>{ctl.close();const c=clFind(id);if(c){Object.assign(c,CL_CLEAR_ORDER);clSave(c);toast('Order cleared');}};
-  here.onclick=()=>{ctl.close();clCheck(id);};
+  const foot=document.createElement('button');foot.className='btn primary block';foot.textContent='Done';
+  const ctl=sheetShell({title:it0.name,bodyNode:body,footNode:foot});
+  const title=ctl.sheet.querySelector('.sheet-head h2');
+  const sub=()=>{if(!body.isConnected){CL_SUBS.delete(sub);return;}if(!body.contains(document.activeElement))draw();};
+  foot.onclick=()=>{CL_SUBS.delete(sub);ctl.close();};
+  const today=isoDay(now());
+  const save=c=>{clSave(c);draw();};
+  function draw(){
+    const c=clFind(id);if(!c){CL_SUBS.delete(sub);ctl.close();return;}
+    title.textContent=c.name;
+    const log=c.replaceLog||[],due=clDue(c);
+    body.innerHTML=`<div class="field" style="margin-bottom:0"><label>Item</label><input class="inp" id="edName" value="${esc(c.name)}"></div>
+      <p class="cl-instat">${c.checkedAt?`${I.check}<span>In the truck · checked by <b>${esc(c.checkedName||'')}</b> · ${fmtStamp(c.checkedAt)}</span>`:'<span>Not checked off — use the box on the list</span>'}</p>
+      <div class="cl-sec">
+        <label class="cl-swrow"><span><b>Replacement ordered</b><small>${c.orderedAt?`Marked by ${esc(c.orderedName||'')}. Checking it off clears this.`:'Turn on when a new one is ordered'}</small></span>
+          <input type="checkbox" class="sw warn" id="edOrd"${c.orderedAt?' checked':''}></label>
+        ${c.orderedAt?`<div class="field"><label>Ordered on</label><input type="date" class="inp" id="edOrdDate" value="${isoDay(c.orderedAt)}" max="${today}"></div>`:''}
+      </div>
+      <div class="cl-sec">
+        <label class="cl-swrow"><span><b>Track when it’s replaced</b><small>${c.trackReplace?(c.replacedAt?`Last replaced ${fmtDay(c.replacedAt)}${c.replacedName?' by '+esc(c.replacedName):''} · ${agoDays(c.replacedAt)}`:'No replacement logged yet'):'For things like HEPA filters'}</small></span>
+          <input type="checkbox" class="sw" id="edTrack"${c.trackReplace?' checked':''}></label>
+        ${c.trackReplace?`
+        <div class="cl-logrow"><div class="field"><label>Replaced on</label><input type="date" class="inp" id="rpDate" value="${today}" max="${today}"></div>
+          <button type="button" class="btn primary" id="rpLog">${I.refresh} Log</button></div>
+        <div class="cl-subhead">Needs replacing</div>
+        <div class="cl-two">
+          <div class="field"><label>Replace by</label><input type="date" class="inp" id="edDue" value="${c.replaceBy?isoDay(c.replaceBy):''}"></div>
+          <div class="field"><label>Repeat</label><select class="inp" id="edEvery"><option value="">Don’t repeat</option>
+            ${[1,2,3,4,6,12].map(m=>`<option value="${m}"${c.replaceEvery===m?' selected':''}>${everyLabel(m)}</option>`).join('')}</select></div>
+        </div>
+        <p class="cl-duehint ${due?due.cls:''}">${due?due.text:'No date set'}${c.replaceEvery?` · moves ${everyLabel(c.replaceEvery).toLowerCase().replace('every ','')} ahead when a replacement is logged`:''}</p>
+        ${log.length?`<div class="cl-subhead">History</div>`+log.map((e,i)=>`<div class="cl-hrow"><span><b>${fmtDay(e.at)}</b>${e.name?' · '+esc(e.name):''}</span>
+          <button type="button" class="ib" data-rm="${i}" aria-label="Remove ${fmtDay(e.at)}">${I.trash}</button></div>`).join(''):''}`:''}
+      </div>
+      <button type="button" class="btn danger" id="edDel" style="width:100%;margin-top:18px">Remove from checklist</button>`;
+    const $=s=>body.querySelector(s);
+    $('#edName').onchange=e=>{const v=e.target.value.trim(),cur=clFind(id);if(!cur)return;
+      if(!v){e.target.value=cur.name;toast('Name can’t be blank');return;}cur.name=v;save(cur);};
+    $('#edOrd').onchange=async e=>{const on=e.target.checked;e.target.checked=!on;
+      if(on){const u=await ensureUser(CL_ASK);const cur=clFind(id);if(!cur)return;
+        Object.assign(cur,{orderedAt:now(),orderedBy:u.id,orderedName:fullName(u)});save(cur);toast('Marked as ordered');}
+      else{const cur=clFind(id);if(!cur)return;Object.assign(cur,CL_CLEAR_ORDER);save(cur);toast('Order cleared');}};
+    if($('#edOrdDate'))$('#edOrdDate').onchange=e=>{const cur=clFind(id);if(!cur||!e.target.value)return;cur.orderedAt=dayAt(e.target.value);save(cur);};
+    $('#edTrack').onchange=e=>{const cur=clFind(id);if(!cur)return;cur.trackReplace=e.target.checked;save(cur);};
+    if(!c.trackReplace){$('#edDel').onclick=del;return;}
+    $('#rpLog').onclick=async()=>{
+      const v=$('#rpDate').value;if(!v){toast('Pick the date it was replaced');return;}
+      const at=dayAt(v);if(at>now()+864e5){toast('That date is in the future');return;}
+      const u=await ensureUser(CL_ASK);const cur=clFind(id);if(!cur)return;
+      cur.replaceLog=[{at,by:u.id,name:fullName(u),loggedAt:now()},...(cur.replaceLog||[])];
+      clSetLatest(cur);save(cur);toast('Replacement logged');
+    };
+    $('#edDue').onchange=e=>{const cur=clFind(id);if(!cur)return;cur.replaceBy=e.target.value?dayAt(e.target.value):null;save(cur);};
+    $('#edEvery').onchange=e=>{const cur=clFind(id);if(!cur)return;cur.replaceEvery=+e.target.value||null;
+      if(cur.replaceEvery&&cur.replacedAt)cur.replaceBy=addMonths(cur.replacedAt,cur.replaceEvery);save(cur);};
+    body.querySelectorAll('[data-rm]').forEach(b=>b.onclick=async()=>{const cur=clFind(id);if(!cur)return;
+      const e=(cur.replaceLog||[])[+b.dataset.rm];if(!e)return;
+      if(!await confirmDialog({title:'Remove entry?',message:`The ${fmtDay(e.at)} replacement will be removed from the history.`,confirmText:'Remove'}))return;
+      const c2=clFind(id);if(!c2)return;c2.replaceLog=(c2.replaceLog||[]).filter(x=>!(x.at===e.at&&x.loggedAt===e.loggedAt));
+      clSetLatest(c2);save(c2);});
+    $('#edDel').onclick=del;
+  }
+  async function del(){const cur=clFind(id);if(!cur)return;
+    if(!await confirmDialog({title:'Remove item?',message:`“${cur.name}” will be removed from the checklist.`,confirmText:'Remove'}))return;
+    CL_SUBS.delete(sub);ctl.close();clRemove(id);toast('Item removed');}
+  CL_SUBS.add(sub);draw();
+}
+// drag rows by their handle; onDrop(fromIndex,toIndex)
+function dragReorder(list,rowSel,onDrop){
+  list.addEventListener('pointerdown',e=>{
+    const h=e.target.closest('.cl-drag');if(!h||!list.contains(h)||(e.button!==undefined&&e.button>0))return;
+    e.preventDefault();
+    const rows=[...list.querySelectorAll(rowSel)],row=h.closest(rowSel),from=rows.indexOf(row);if(from<0)return;
+    const scroller=list.closest('.sheet-body')||document.scrollingElement;
+    const rects=rows.map(r=>r.getBoundingClientRect());
+    const gap=rows.length>1?Math.max(0,rects[1].top-rects[0].bottom):0,shift=rects[from].height+gap;
+    const startY=e.clientY,startScroll=scroller.scrollTop;let lastY=startY,to=from,raf=0;
+    list.classList.add('sorting');row.classList.add('dragging');
+    try{h.setPointerCapture(e.pointerId);}catch(_){}
+    const layout=()=>{
+      const dy=lastY-startY+(scroller.scrollTop-startScroll);
+      row.style.transform=`translateY(${dy}px)`;
+      const mid=rects[from].top+rects[from].height/2+dy;let t=0;
+      rects.forEach((r,i)=>{if(i!==from&&r.top+r.height/2<mid)t++;});to=t;
+      rows.forEach((r,i)=>{if(i===from)return;const s=from<to&&i>from&&i<=to?-shift:from>to&&i>=to&&i<from?shift:0;r.style.transform=s?`translateY(${s}px)`:'';});
+    };
+    const tick=()=>{const sr=scroller.getBoundingClientRect();let v=0;
+      if(lastY<sr.top+60)v=-Math.ceil((sr.top+60-lastY)/5);else if(lastY>sr.bottom-60)v=Math.ceil((lastY-sr.bottom+60)/5);
+      if(v){const b=scroller.scrollTop;scroller.scrollTop+=v;if(scroller.scrollTop!==b)layout();}
+      raf=requestAnimationFrame(tick);};
+    raf=requestAnimationFrame(tick);
+    const move=ev=>{if(ev.pointerId!==e.pointerId)return;ev.preventDefault();lastY=ev.clientY;layout();};
+    const up=ev=>{if(ev.pointerId!==e.pointerId)return;cancelAnimationFrame(raf);
+      window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);
+      rows.forEach(r=>r.style.transform='');row.classList.remove('dragging');list.classList.remove('sorting');
+      // a drag that ends over the dimmed backdrop must not count as a tap that closes the sheet
+      if(Math.abs(lastY-startY)>4){const eat=ev=>{ev.stopPropagation();ev.preventDefault();};
+        window.addEventListener('click',eat,true);setTimeout(()=>window.removeEventListener('click',eat,true),350);}
+      if(to!==from)onDrop(from,to);};
+    window.addEventListener('pointermove',move,{passive:false});window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);
+  });
 }
 function checklistEditSheet(){
   const body=document.createElement('div');
   body.innerHTML=`<div class="cl-add"><input class="inp" id="clNew" placeholder="Add an item" enterkeyhint="enter" autocapitalize="sentences">
       <button type="button" class="btn primary" id="clAddBtn">${I.plus} Add</button></div>
-    <p class="cl-tip">Paste a list to add several at once.</p>
-    <div id="clEditList"></div>
+    <p class="cl-tip">Paste a list to add several at once. Drag ${I.grip} to reorder, tap a name to edit it.</p>
+    <div id="clEditList" class="cl-rlist"></div>
     <button type="button" class="btn danger" id="clReset" style="margin-top:18px;width:100%">Uncheck everything (new check)</button>`;
   const foot=document.createElement('button');foot.className='btn primary block';foot.textContent='Done';
   const ctl=sheetShell({title:'Edit checklist',bodyNode:body,footNode:foot});
-  const sub=()=>{if(!body.isConnected){CL_SUBS.delete(sub);return;}if(!body.contains(document.activeElement)||document.activeElement===inp)drawList();};
-  const close=()=>{CL_SUBS.delete(sub);ctl.close();};
-  foot.onclick=close;
   const inp=body.querySelector('#clNew'),list=body.querySelector('#clEditList');
+  const sub=()=>{if(!body.isConnected){CL_SUBS.delete(sub);return;}
+    if(!list.classList.contains('sorting')&&(!body.contains(document.activeElement)||document.activeElement===inp))drawList();};
+  foot.onclick=()=>{CL_SUBS.delete(sub);ctl.close();};
   const add=names=>{let pos=Math.max(0,...S.checklist.map(i=>(i.pos??0)+1));
     names.map(n=>n.replace(/^\s*(?:[-*•]|\d+[.)])\s*/,'').trim()).filter(Boolean).forEach(name=>{
       const it={id:uid(),name,pos:pos++,createdAt:now(),trackReplace:CL_AUTO_TRACK.test(name),...CL_CLEAR_CHECK,...CL_CLEAR_ORDER};
@@ -1179,32 +1279,23 @@ function checklistEditSheet(){
   inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addTyped();}};
   inp.onpaste=e=>{const t=(e.clipboardData||window.clipboardData).getData('text');
     if(t&&/\n/.test(t.trim())){e.preventDefault();add(t.split(/\r?\n/));toast('Items added');}};
-  function move(id,dir){
-    const items=clSorted(),i=items.findIndex(x=>x.id===id),j=i+dir;if(i<0||j<0||j>=items.length)return;
-    [items[i],items[j]]=[items[j],items[i]];
+  dragReorder(list,'.cl-rrow',(from,to)=>{
+    const items=clSorted();const [m]=items.splice(from,1);items.splice(to,0,m);
     items.forEach((it,k)=>{if(it.pos!==k){it.pos=k;pPut('checklist',it).catch(()=>{});}});
     clChanged();drawList();
-  }
+  });
   function drawList(){
     const items=clSorted();
-    list.innerHTML=items.length?items.map((it,k)=>`<div class="cl-erow" data-id="${it.id}"><div class="cl-eline">
-        <input class="inp cl-ename" value="${esc(it.name)}" aria-label="Item name">
-        <button type="button" class="ib" data-up aria-label="Move up"${k?'':' disabled'}>${I.up}</button>
-        <button type="button" class="ib" data-down aria-label="Move down"${k<items.length-1?'':' disabled'}>${I.down}</button>
-        <button type="button" class="ib cl-del" data-del aria-label="Delete ${esc(it.name)}">${I.trash}</button></div>
-        <label class="cl-track"><input type="checkbox" data-track${it.trackReplace?' checked':''}> Track when it’s replaced</label></div>`).join('')
+    list.innerHTML=items.length?items.map(it=>`<div class="cl-rrow" data-id="${it.id}">
+        <span class="cl-drag" aria-label="Drag to reorder ${esc(it.name)}">${I.grip}</span>
+        <button type="button" class="cl-rname" data-edit>${esc(it.name)}</button>
+        <button type="button" class="ib cl-del" data-del aria-label="Remove ${esc(it.name)}">${I.trash}</button></div>`).join('')
       :`<p class="cl-tip" style="text-align:center;margin:18px 0">No items yet.</p>`;
-    list.querySelectorAll('.cl-erow').forEach(r=>{const id=r.dataset.id;
-      r.querySelector('.cl-ename').onchange=e=>{const v=e.target.value.trim(),it=clFind(id);if(!it)return;
-        if(!v){e.target.value=it.name;toast('Name can’t be blank');return;}it.name=v;clSave(it);};
-      r.querySelector('[data-track]').onchange=e=>{const it=clFind(id);if(!it)return;it.trackReplace=e.target.checked;clSave(it);};
-      r.querySelector('[data-up]').onclick=()=>move(id,-1);
-      r.querySelector('[data-down]').onclick=()=>move(id,1);
+    list.querySelectorAll('.cl-rrow').forEach(r=>{const id=r.dataset.id;
+      r.querySelector('[data-edit]').onclick=()=>clItemSheet(id);
       r.querySelector('[data-del]').onclick=async()=>{const it=clFind(id);if(!it)return;
         if(!await confirmDialog({title:'Remove item?',message:`“${it.name}” will be removed from the checklist.`,confirmText:'Remove'}))return;
-        S.checklist=S.checklist.filter(x=>x.id!==id);pDel('checklist',id).catch(()=>{});
-        clSorted().forEach((x,k)=>{if(x.pos!==k){x.pos=k;pPut('checklist',x).catch(()=>{});}});
-        clChanged();drawList();};
+        clRemove(id);drawList();};
     });
     body.querySelector('#clReset').disabled=!items.some(i=>i.checkedAt);
   }
