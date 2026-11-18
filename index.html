@@ -787,12 +787,15 @@ const COMPANY='Arctic';
    bar, and some iPhones report 0 for env(safe-area-inset-top). So: detect "drawn under the status bar"
    several ways, and set --safe-top in plain px (at least 62 in portrait). */
 const SAFE=(function(){
-  const root=document.documentElement;let probe=null;
+  const root=document.documentElement;
   const mm=q=>{try{return matchMedia(q).matches;}catch(e){return false;}};
-  const reported=()=>{try{if(!probe){probe=document.createElement('div');
-      probe.style.cssText='position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px)';
-      (document.body||root).appendChild(probe);}
-    return Math.round(parseFloat(getComputedStyle(probe).paddingTop)||0);}catch(e){return 0;}};
+  // measure what iOS reports, then take the probe straight back out. Newer iOS looks at whatever sits at
+  // the top edge of the page to style the status bar; a leftover invisible element there made it blur
+  // over the top bar. So: never position:fixed, never left in the page.
+  const reported=()=>{let p=null;try{p=document.createElement('div');
+      p.style.cssText='position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px)';
+      (document.body||root).appendChild(p);return Math.round(parseFloat(getComputedStyle(p).paddingTop)||0);}
+    catch(e){return 0;}finally{if(p&&p.parentNode)p.parentNode.removeChild(p);}};
   const ios=/iP(hone|od|ad)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
   const why=[];
   if(navigator.standalone===true)why.push('standalone');
@@ -811,7 +814,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 18 14:34';
+const BUILD='Nov 18 14:42';
 const buildInfoText=()=>`Build ${BUILD} · ${SAFE.app?'app':'browser'} · top ${SAFE.top}px (phone says ${SAFE.reported})`;
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],user:null,route:['jobs'],jobId:null,drawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
