@@ -215,21 +215,27 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .mk .tag{position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:3px;
   background:rgba(12,16,22,.86);color:#fff;font:600 10px/1.3 var(--font-mono);padding:1px 5px;border-radius:5px;white-space:nowrap}
 .mk.flash .ic{animation:mkflash 1s ease-out 3}
+.mk.lifted{z-index:5}
+.mk.lifted .ic{box-shadow:0 0 0 3px #2f9be6,0 6px 14px rgba(0,0,0,.35);transform:scale(1.18)}
+#ink .selbox{fill:rgba(47,155,230,.07);stroke:#2f9be6;stroke-width:1.5;stroke-dasharray:6 4}
+#ink .lasso{fill:rgba(47,155,230,.08);stroke:#2f9be6;stroke-width:1.5;stroke-dasharray:5 4}
+#ink path.sel{filter:drop-shadow(0 0 2px #2f9be6)}
 @keyframes mkflash{0%{box-shadow:0 0 0 0 rgba(47,155,230,.9)}100%{box-shadow:0 0 0 18px rgba(47,155,230,0)}}
 .drawing-mode .viewer{cursor:crosshair}
 .drawing-mode .viewer-wrap::after{content:"";position:absolute;inset:0;z-index:4;pointer-events:none;
   box-shadow:inset 0 0 0 3px var(--mk-exhaust)}
 
 /* draw toolbar (replaces the bottom bar while drawing) */
-.drawbar{flex:1;display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);
+.drawbar{flex:1;display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--line);
   border-radius:16px;padding:6px;box-shadow:0 4px 18px rgba(0,0,0,.25)}
-.drawbar .dt{width:44px;height:44px;flex:none;border:none;border-radius:11px;background:transparent;color:var(--fg);
+.drawbar .dt{width:40px;height:44px;flex:none;border:none;border-radius:11px;background:transparent;color:var(--fg);
   display:grid;place-items:center}
 .drawbar .dt svg{width:22px;height:22px}
 .drawbar .dt.on{background:color-mix(in srgb,var(--mk-exhaust) 22%,transparent);color:var(--mk-exhaust)}
 .drawbar .dt:active{background:var(--surface-2)}
 .drawbar .sw{width:24px;height:24px;border-radius:50%;border:2px solid var(--surface);box-shadow:0 0 0 1.5px var(--line)}
-.drawbar .done{margin-left:auto;min-height:44px;padding:0 16px}
+.drawbar .done{margin-left:auto;min-height:44px;padding:0 13px}
+@media (max-width:370px){.drawbar .dt{width:36px}}
 .palette{position:fixed;left:50%;transform:translateX(-50%);z-index:60;
   bottom:calc(84px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;
   background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:10px 12px;box-shadow:0 8px 28px rgba(0,0,0,.35);max-width:calc(100vw - 32px)}
@@ -292,6 +298,9 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .zoomcol button{width:46px;height:46px;border:none;background:color-mix(in srgb,var(--surface) 92%,transparent);
   backdrop-filter:blur(8px);color:var(--fg);display:grid;place-items:center;font-size:22px;font-weight:600}
 .zoomcol button:active{background:var(--surface-2)}
+.zoomcol button svg{width:21px;height:21px}
+.zoomcol .mkz{color:var(--mk-exhaust)}
+.zoomcol .mkz.off{color:var(--faint)}
 .zoomcol .hdz{font-size:14px;font-weight:800;letter-spacing:.03em;color:var(--faint)}
 .zoomcol .hdz[aria-pressed="true"]{background:var(--accent);color:#fff}
 .zoomcol .hdz.busy{color:var(--warn)}
@@ -502,6 +511,7 @@ const I = {
   pen:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 3.5a2.1 2.1 0 013 3L8 18l-4 1 1-4z"/><path d="M14 6l3 3"/></svg>',
   highlighter:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l-3 3h4l1.5-1.5"/><path d="M9 15l5.5-9.5a2 2 0 012.8-.7l1.4.8a2 2 0 01.7 2.8L14 17z"/><path d="M4 21h16"/></svg>',
   eraser:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H9l-5-5a2 2 0 010-2.8l8.2-8.2a2 2 0 012.8 0l5 5a2 2 0 010 2.8L13 19"/><path d="M9 9l6 6"/></svg>',
+  lasso:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="9.5" rx="8" ry="5.5" stroke-dasharray="3 2.6"/><path d="M8.5 14.4c-1 .9-1.5 2.1-1.5 3.6 0 1.4.6 2.5 1.6 3"/><circle cx="8.6" cy="15.3" r="1.4"/></svg>',
   undo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/></svg>',
   fan:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 11c-.6-2.6.2-6.5 3.2-6.9 2.3-.3 3.6 1.9 2.4 3.8-1.1 1.7-3.4 2.6-5.6 3.1zm1 1c2.6-.6 6.5.2 6.9 3.2.3 2.3-1.9 3.6-3.8 2.4-1.7-1.1-2.6-3.4-3.1-5.6zm-1 1c.6 2.6-.2 6.5-3.2 6.9-2.3.3-3.6-1.9-2.4-3.8 1.1-1.7 3.4-2.6 5.6-3.1zm-1-1c-2.6.6-6.5-.2-6.9-3.2-.3-2.3 1.9-3.6 3.8-2.4 1.7 1.1 2.6 3.4 3.1 5.6z"/><circle cx="12" cy="12" r="1.7"/></svg>',
   door:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1.5"/><rect x="8" y="8" width="8" height="8" rx=".5"/><path d="M14 12h.01"/></svg>',
@@ -991,6 +1001,7 @@ function viewDrawing(app){
         <div class="vchip" id="hintChip"></div>
       </div>
       <div class="zoomcol">
+        <button id="mkToggle" class="mkz" aria-pressed="false" aria-label="Hide markups"></button>
         <button id="hdToggle" class="hdz" aria-pressed="false" aria-label="Toggle high quality">HD</button>
         <button id="zin" aria-label="Zoom in">+</button>
         <button id="zout" aria-label="Zoom out">−</button>
@@ -1010,6 +1021,7 @@ function viewDrawing(app){
   const pinlayer=app.querySelector('#pinlayer');
   const hintChip=app.querySelector('#hintChip');
   const hdToggle=app.querySelector('#hdToggle');
+  const mkToggle=app.querySelector('#mkToggle');
   const vbar=app.querySelector('#vbar');
 
   VW={scale:1,tx:0,ty:0,baseW:0,baseH:0};
@@ -1025,6 +1037,8 @@ function viewDrawing(app){
     if(s.penColor)penColor=s.penColor;if(s.hlColor)hlColor=s.hlColor;if(s.penW)penW=s.penW;if(s.hlW)hlW=s.hlW;}catch(e){}
   const saveInkPrefs=()=>{try{localStorage.setItem('ductpro-ink',JSON.stringify({penColor,hlColor,penW,hlW}));}catch(e){}};
   let STROKES=[], undoStack=[], drawPid=null, drawType=null, cur=null, rafPending=false;
+  let sel={strokes:new Set(),markers:new Set()}, selBox=null, selRectEl=null;   // lasso selection
+  let lp=null, dragM=null, relocM=null, gC=null;   // long-press timer, marker being dragged, tap-to-move target, pinch anchor
   const strokeEls=new Map();
 
   function setBase(){
@@ -1051,6 +1065,7 @@ function viewDrawing(app){
   }
   function apply(){clamp();stage.style.transform=`translate(${VW.tx}px,${VW.ty}px) scale(${VW.scale})`;
     stage.querySelectorAll('.pin,.mk').forEach(p=>p.style.transform=`translate(-50%,-50%) scale(${1/VW.scale})`);
+    if(selBox){computeSelBox();drawSelBox();}
     scheduleRerender();}
   function zoomAt(cx,cy,factor){
     const rect=viewer.getBoundingClientRect();
@@ -1102,7 +1117,7 @@ function viewDrawing(app){
   // ---------- modes + bottom bar ----------
   const hint=(html,on)=>{hintChip.innerHTML=html;hintChip.classList.toggle('hint',!!on);};
   function renderBar(){
-    document.documentElement.classList.toggle('placing',mode==='place');
+    document.documentElement.classList.toggle('placing',mode==='place'||mode==='move');
     document.documentElement.classList.toggle('drawing-mode',mode==='draw');
     S.placing=(mode==='place');
     closePalette();
@@ -1117,17 +1132,27 @@ function viewDrawing(app){
       hint(I.pin+`<span>Tap the plan to place ${what}</span>`,true);
       vbar.innerHTML=`<button class="btn primary block" id="endPlace">${placeKind==='report'?I.x+' Cancel placing':I.check+' Done placing'}</button>`;
       vbar.querySelector('#endPlace').onclick=()=>setMode('view');
+    }else if(mode==='move'){
+      hint(I.move+`<span>Tap the new spot for ${esc(relocM?mkCode(relocM):'the marker')}</span>`,true);
+      vbar.innerHTML=`<button class="btn primary block" id="endMove">${I.x} Cancel move</button>`;
+      vbar.querySelector('#endMove').onclick=()=>setMode('view');
     }else{
-      hint(I.pen+`<span>${fingerDraws?'Draw with your finger · 2 fingers to move':'Pencil draws · fingers move'}</span>`,true);
+      const msg=tool==='lasso'?'Circle marks to select · drag inside to move':fingerDraws?'Draw with your finger · 2 fingers to move':'Pencil draws · fingers move';
+      hint((tool==='lasso'?I.lasso:I.pen)+`<span>${msg}</span>`,true);
+      const nSel=selCount();
       vbar.innerHTML=`<div class="drawbar">
           <button class="dt ${tool==='pen'?'on':''}" data-tool="pen" aria-label="Pen">${I.pen}</button>
           <button class="dt ${tool==='hl'?'on':''}" data-tool="hl" aria-label="Highlighter">${I.highlighter}</button>
           <button class="dt ${tool==='erase'?'on':''}" data-tool="erase" aria-label="Eraser">${I.eraser}</button>
-          <button class="dt" id="dColor" aria-label="Color and size"><span class="sw" style="background:${curColor()}"></span></button>
+          <button class="dt ${tool==='lasso'?'on':''}" data-tool="lasso" aria-label="Select and move">${I.lasso}</button>
+          ${tool==='lasso'
+            ?`<button class="dt" id="dDel" aria-label="Delete selection"${nSel?'':' disabled style="opacity:.35"'}>${I.trash}</button>`
+            :`<button class="dt" id="dColor" aria-label="Color and size"><span class="sw" style="background:${curColor()}"></span></button>`}
           <button class="dt" id="dUndo" aria-label="Undo">${I.undo}</button>
           <button class="btn primary done" id="dDone">Done</button></div>`;
-      vbar.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{tool=b.dataset.tool;renderBar();});
-      vbar.querySelector('#dColor').onclick=togglePalette;
+      vbar.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{tool=b.dataset.tool;if(tool!=='lasso')clearSel(true);renderBar();});
+      const dCol=vbar.querySelector('#dColor');if(dCol)dCol.onclick=togglePalette;
+      const dDel=vbar.querySelector('#dDel');if(dDel)dDel.onclick=deleteSelection;
       vbar.querySelector('#dUndo').onclick=undo;
       vbar.querySelector('#dDone').onclick=()=>setMode('view');
       refreshUndo();
@@ -1135,10 +1160,14 @@ function viewDrawing(app){
   }
   function setMode(m,kind){
     if(drawPid!==null)cancelStroke();
+    if(mode==='draw'&&m!=='draw')clearSel(true);
+    if(m!=='move')relocM=null;
     mode=m;placeKind=m==='place'?kind:null;renderBar();
   }
+  function mkUI(){mkToggle.innerHTML=mkHidden?I.eyeoff:I.eye;mkToggle.classList.toggle('off',mkHidden);
+    mkToggle.setAttribute('aria-pressed',mkHidden?'true':'false');mkToggle.setAttribute('aria-label',mkHidden?'Show markups':'Hide markups');}
   function setHidden(h){mkHidden=h;try{localStorage.setItem('ductpro-mkhide',h?'1':'0');}catch(e){}
-    vwrap.classList.toggle('hide-markups',h);}
+    vwrap.classList.toggle('hide-markups',h);mkUI();}
   function ensureShown(){if(mkHidden)setHidden(false);}
 
   function markupSheet(){
@@ -1148,9 +1177,8 @@ function viewDrawing(app){
     const dr=mkAction(I.pen,'Draw');
     const ds=doorSummary(d.jobId);
     const dl=mkAction(I.list,'Access doors needed'+(ds.total?` (${ds.total})`:''));
-    const hv=mkAction(mkHidden?I.eye:I.eyeoff,mkHidden?'Show markups':'Hide markups');
     const cl=mkAction(I.trash,'Clear drawings on this plan','danger');
-    body.append(ex,ac,dr,mkDiv(),dl,hv,cl);
+    body.append(ex,ac,dr,mkDiv(),dl,cl);
     ex.querySelector('svg').style.color='var(--mk-exhaust)';
     ac.querySelector('svg').style.color='var(--mk-access)';
     dr.querySelector('svg').style.color='var(--mk-exhaust)';
@@ -1159,7 +1187,6 @@ function viewDrawing(app){
     ac.onclick=()=>{ctl.close();ensureShown();setMode('place','access');};
     dr.onclick=()=>{ctl.close();ensureShown();setMode('draw');};
     dl.onclick=()=>{ctl.close();doorListSheet(d.jobId);};
-    hv.onclick=()=>{ctl.close();setHidden(!mkHidden);toast(mkHidden?'Markups hidden':'Markups shown');};
     cl.onclick=()=>{ctl.close();clearInk();};
   }
 
@@ -1230,6 +1257,7 @@ function viewDrawing(app){
   }
   function beginStroke(e){
     closePalette();
+    if(tool==='lasso'){lassoBegin(e);return;}
     if(tool==='erase'){cur={erase:true,last:{x:e.clientX,y:e.clientY}};eraseAt(e.clientX,e.clientY);return;}
     const w=(tool==='hl'?hlW:penW)/(VW.scale*VW.baseW);           // width relative to the page
     cur={tool,color:curColor(),w,pts:[],last:null,isPen:e.pointerType==='pen'};
@@ -1238,19 +1266,24 @@ function viewDrawing(app){
   }
   function extendStroke(e){
     if(!cur)return;
+    if(cur.lasso||cur.moveSel){lassoMove(e);return;}
     const evs=(e.getCoalescedEvents&&e.getCoalescedEvents())||[];const list=evs.length?evs:[e];
     if(cur.erase){list.forEach(ev=>eraseAt(ev.clientX,ev.clientY));cur.last={x:e.clientX,y:e.clientY};return;}
     list.forEach(addPoint);
     if(!rafPending){rafPending=true;requestAnimationFrame(()=>{rafPending=false;if(cur&&cur.el)cur.el.setAttribute('d',strokeD(cur));});}
   }
   function finishStroke(){
+    if(cur&&(cur.lasso||cur.moveSel)){lassoEnd();return;}
     const c=cur;cur=null;drawPid=null;drawType=null;
     if(!c||c.erase||!c.pts.length){if(c&&c.el)c.el.remove();refreshUndo();return;}
     const s={id:uid(),jobId:d.jobId,drawId:d.id,tool:c.tool,color:c.color,w:+c.w.toFixed(6),pts:c.pts,createdAt:now()};
     c.el.remove();addStroke(s);undoStack.push({type:'add',s});refreshUndo();
     pPut('strokes',s).catch(e=>{console.error(e);toast('Drawing not saved — check connection');});
   }
-  function cancelStroke(){if(cur&&cur.el)cur.el.remove();cur=null;drawPid=null;drawType=null;}
+  function cancelStroke(){
+    if(cur&&cur.moveSel){sel.strokes.forEach(id=>{const el=strokeEls.get(id);if(el)el.removeAttribute('transform');});
+      VW.renderMarkers();markSelected();drawSelBox();}
+    if(cur&&cur.el)cur.el.remove();cur=null;drawPid=null;drawType=null;}
   function segDist(px,py,ax,ay,bx,by){const dx=bx-ax,dy=by-ay,l=dx*dx+dy*dy;let t=l?((px-ax)*dx+(py-ay)*dy)/l:0;
     t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));}
   function eraseAt(cx,cy){
@@ -1267,11 +1300,110 @@ function viewDrawing(app){
     if(a.type==='add'){removeStroke(a.s.id);pDel('strokes',a.s.id).catch(()=>{});}
     else if(a.type==='erase'){addStroke(a.s);pPut('strokes',a.s).catch(()=>{});}
     else if(a.type==='clear'){a.list.forEach(s=>{addStroke(s);pPut('strokes',s).catch(()=>{});});}
+    else if(a.type==='move'){applyMove(a.sIds,a.mIds,-a.dxn,-a.dyn);if(selBox){computeSelBox();drawSelBox();}}
+    else if(a.type==='delsel'){a.strokes.forEach(s=>{addStroke(s);pPut('strokes',s).catch(()=>{});});
+      a.markers.forEach(m=>{S.markers.push(m);pPut('markers',m).catch(()=>{});});if(a.markers.length)VW.renderMarkers();}
     refreshUndo();
+  }
+  // ---------- lasso: select strokes/markers, drag to move, delete ----------
+  const svgU=(cx,cy)=>{const {nx,ny}=toNorm(cx,cy);return [nx*1000,ny*1000*(VW.baseH/VW.baseW)];};
+  const pxU=px=>px*1000/(VW.scale*VW.baseW);                     // screen px -> ink units
+  const svgEl=(tag,attrs)=>{const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const k in attrs)el.setAttribute(k,attrs[k]);return el;};
+  function pip(x,y,poly){let inside=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i][0],yi=poly[i][1],xj=poly[j][0],yj=poly[j][1];
+    if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))inside=!inside;}return inside;}
+  const selCount=()=>sel.strokes.size+sel.markers.size;
+  const markSelected=()=>{sel.strokes.forEach(id=>{const el=strokeEls.get(id);if(el)el.classList.add('sel');});
+    sel.markers.forEach(id=>{const el=mklayer.querySelector(`[data-id="${id}"]`);if(el)el.classList.add('lifted');});};
+  function clearSel(quiet){
+    sel.strokes.forEach(id=>{const el=strokeEls.get(id);if(el){el.classList.remove('sel');el.removeAttribute('transform');}});
+    sel.markers.forEach(id=>{const el=mklayer.querySelector(`[data-id="${id}"]`);if(el)el.classList.remove('lifted');});
+    sel={strokes:new Set(),markers:new Set()};selBox=null;
+    if(selRectEl){selRectEl.remove();selRectEl=null;}
+    if(!quiet&&mode==='draw')renderBar();
+  }
+  function computeSelBox(){
+    const a=VW.baseH/VW.baseW;let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+    sel.strokes.forEach(id=>{const s=STROKES.find(t=>t.id===id);if(!s)return;const hw=s.w*1000/2;
+      for(let i=0;i<s.pts.length;i+=3){const X=s.pts[i]*1000,Y=s.pts[i+1]*1000*a;
+        x0=Math.min(x0,X-hw);y0=Math.min(y0,Y-hw);x1=Math.max(x1,X+hw);y1=Math.max(y1,Y+hw);}});
+    const mr=pxU(16);
+    sel.markers.forEach(id=>{const m=S.markers.find(t=>t.id===id);if(!m)return;const X=m.nx*1000,Y=m.ny*1000*a;
+      x0=Math.min(x0,X-mr);y0=Math.min(y0,Y-mr);x1=Math.max(x1,X+mr);y1=Math.max(y1,Y+mr);});
+    if(x0>x1){selBox=null;return;}
+    const pad=pxU(8);selBox={x0:x0-pad,y0:y0-pad,x1:x1+pad,y1:y1+pad};
+  }
+  function drawSelBox(dx=0,dy=0){
+    if(!selBox){if(selRectEl){selRectEl.remove();selRectEl=null;}return;}
+    if(!selRectEl)selRectEl=svgEl('rect',{class:'selbox','vector-effect':'non-scaling-stroke'});
+    selRectEl.setAttribute('x',f1(selBox.x0+dx));selRectEl.setAttribute('y',f1(selBox.y0+dy));
+    selRectEl.setAttribute('width',f1(selBox.x1-selBox.x0));selRectEl.setAttribute('height',f1(selBox.y1-selBox.y0));
+    ink.appendChild(selRectEl);
+  }
+  function lassoBegin(e){
+    const [X,Y]=svgU(e.clientX,e.clientY);
+    if(selBox&&X>=selBox.x0&&X<=selBox.x1&&Y>=selBox.y0&&Y<=selBox.y1){   // drag the current selection
+      cur={moveSel:true,sx:X,sy:Y,dx:0,dy:0,last:{x:e.clientX,y:e.clientY}};return;
+    }
+    clearSel(true);
+    cur={lasso:true,poly:[[X,Y]],last:{x:e.clientX,y:e.clientY}};
+    cur.el=svgEl('path',{class:'lasso','vector-effect':'non-scaling-stroke'});ink.appendChild(cur.el);
+  }
+  function lassoMove(e){
+    const [X,Y]=svgU(e.clientX,e.clientY);cur.last={x:e.clientX,y:e.clientY};
+    if(cur.moveSel){
+      cur.dx=X-cur.sx;cur.dy=Y-cur.sy;const a=VW.baseH/VW.baseW;
+      sel.strokes.forEach(id=>{const el=strokeEls.get(id);if(el)el.setAttribute('transform',`translate(${f1(cur.dx)} ${f1(cur.dy)})`);});
+      sel.markers.forEach(id=>{const m=S.markers.find(t=>t.id===id),el=mklayer.querySelector(`[data-id="${id}"]`);
+        if(m&&el){el.style.left=((m.nx+cur.dx/1000)*VW.baseW)+'px';el.style.top=((m.ny+cur.dy/1000/a)*VW.baseH)+'px';}});
+      drawSelBox(cur.dx,cur.dy);return;
+    }
+    const P=cur.poly,L=P[P.length-1];if(Math.hypot(X-L[0],Y-L[1])<pxU(3))return;
+    P.push([X,Y]);cur.el.setAttribute('d','M'+P.map(p=>f1(p[0])+','+f1(p[1])).join('L')+'Z');
+  }
+  function lassoEnd(){
+    const c=cur;cur=null;drawPid=null;drawType=null;
+    if(c.moveSel){
+      if(Math.abs(c.dx)<pxU(2)&&Math.abs(c.dy)<pxU(2)){       // just a tap inside the selection
+        sel.strokes.forEach(id=>{const el=strokeEls.get(id);if(el)el.removeAttribute('transform');});drawSelBox();return;}
+      const a=VW.baseH/VW.baseW,dxn=c.dx/1000,dyn=c.dy/1000/a,sIds=[...sel.strokes],mIds=[...sel.markers];
+      applyMove(sIds,mIds,dxn,dyn);undoStack.push({type:'move',sIds,mIds,dxn,dyn});refreshUndo();
+      computeSelBox();drawSelBox();return;
+    }
+    if(c.el)c.el.remove();
+    if(c.poly.length<3){renderBar();return;}                    // a tap outside: selection already cleared
+    const poly=c.poly,a=VW.baseH/VW.baseW;
+    STROKES.forEach(s=>{let n=0,t=0;for(let i=0;i<s.pts.length;i+=3){t++;if(pip(s.pts[i]*1000,s.pts[i+1]*1000*a,poly))n++;}
+      if(t&&n/t>=0.5)sel.strokes.add(s.id);});
+    if(!mkHidden)drawMarkers(d.id).forEach(m=>{if(pip(m.nx*1000,m.ny*1000*a,poly))sel.markers.add(m.id);});
+    markSelected();computeSelBox();drawSelBox();renderBar();
+    if(!selCount())toast('Nothing selected — circle the marks you want');
+  }
+  // shift strokes/markers by a normalized offset and save them
+  function applyMove(sIds,mIds,dxn,dyn){
+    sIds.forEach(id=>{const s=STROKES.find(t=>t.id===id);if(!s)return;
+      for(let i=0;i<s.pts.length;i+=3){s.pts[i]=+(s.pts[i]+dxn).toFixed(5);s.pts[i+1]=+(s.pts[i+1]+dyn).toFixed(5);}
+      const el=strokeEls.get(id);if(el){el.removeAttribute('transform');el.setAttribute('d',strokeD(s));}
+      pPut('strokes',s).catch(()=>{});});
+    mIds.forEach(id=>{const m=S.markers.find(t=>t.id===id);if(!m)return;
+      m.nx=+Math.max(0,Math.min(1,m.nx+dxn)).toFixed(5);m.ny=+Math.max(0,Math.min(1,m.ny+dyn)).toFixed(5);
+      pPut('markers',m).catch(()=>{});});
+    if(mIds.length){VW.renderMarkers();markSelected();}
+  }
+  function deleteSelection(){
+    const strokes=[...sel.strokes].map(id=>STROKES.find(t=>t.id===id)).filter(Boolean);
+    const markers=[...sel.markers].map(id=>S.markers.find(t=>t.id===id)).filter(Boolean);
+    const n=strokes.length+markers.length;if(!n)return;
+    clearSel(true);
+    strokes.forEach(s=>{removeStroke(s.id);pDel('strokes',s.id).catch(()=>{});});
+    markers.forEach(m=>{S.markers=S.markers.filter(x=>x.id!==m.id);pDel('markers',m.id).catch(()=>{});});
+    if(markers.length)VW.renderMarkers();
+    undoStack.push({type:'delsel',strokes,markers});renderBar();
+    toast('Deleted '+n+' item'+(n!==1?'s':'')+' — Undo to restore');
   }
   async function clearInk(){
     if(!STROKES.length){toast('No drawings on this plan');return;}
     if(!await confirmDialog({title:'Clear drawings?',message:'Removes all '+STROKES.length+' drawn marks on this plan. Exhaust and access markers stay.',confirmText:'Clear'}))return;
+    clearSel(true);
     const list=STROKES.slice();list.forEach(s=>{removeStroke(s.id);pDel('strokes',s.id).catch(()=>{});});
     undoStack.push({type:'clear',list});toast('Drawings cleared — Undo in Draw if needed');
   }
@@ -1293,8 +1425,30 @@ function viewDrawing(app){
     const fb=paletteEl.querySelector('[data-finger]');if(fb)fb.onclick=()=>{fingerDraws=!fingerDraws;renderBar();};
   }
 
-  // ---------- pointer handling: draw / pan + pinch / tap ----------
+  // ---------- pointer handling: draw / pan + pinch / tap / drag markers ----------
   const pts=new Map();let startDist=0,startScale=1,moved=0,panStart=null,downPt=null;
+  const cancelLP=()=>{if(lp){clearTimeout(lp.timer);lp=null;}};
+  const mkOpts=m=>({onChange:()=>{if(VW&&VW.renderMarkers)VW.renderMarkers();},onMove:()=>{relocM=m;setMode('move');}});
+  function cancelDrag(){if(!dragM)return;dragM.m.nx=dragM.nx0;dragM.m.ny=dragM.ny0;dragM=null;VW.renderMarkers();renderBar();}
+  // press-and-hold a marker, then drag it
+  function startMarkerDrag(pid,m){
+    lp=null;if(!pts.has(pid)||pts.size!==1||moved>=8||mode==='draw')return;
+    const rect=viewer.getBoundingClientRect(),p=pts.get(pid);
+    const sx=rect.left+VW.tx+m.nx*VW.baseW*VW.scale, sy=rect.top+VW.ty+m.ny*VW.baseH*VW.scale;
+    dragM={m,pid,ox:p.x-sx,oy:p.y-sy,nx0:m.nx,ny0:m.ny,el:mklayer.querySelector(`[data-id="${m.id}"]`)};
+    if(dragM.el)dragM.el.classList.add('lifted');
+    panStart=null;moved=99;
+    try{navigator.vibrate&&navigator.vibrate(12);}catch(_){}
+    hint(I.move+`<span>Drag to move ${esc(mkCode(m))}</span>`,true);
+  }
+  // two fingers: zoom AND pan together, keeping the plan point under the fingers' midpoint pinned to it
+  function beginPinch(){
+    const a=[...pts.values()],r=viewer.getBoundingClientRect();
+    startDist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)||1;startScale=VW.scale;
+    const mx=(a[0].x+a[1].x)/2-r.left,my=(a[0].y+a[1].y)/2-r.top;
+    gC={x:(mx-VW.tx)/VW.scale,y:(my-VW.ty)/VW.scale};
+    panStart=null;moved=99;
+  }
   viewer.addEventListener('pointerdown',e=>{
     if(paletteEl)closePalette();
     if(mode==='draw'){
@@ -1305,24 +1459,39 @@ function viewDrawing(app){
         try{viewer.setPointerCapture(e.pointerId);}catch(_){}
         drawPid=e.pointerId;drawType=e.pointerType;beginStroke(e);return;
       }
-      if(drawPid!==null&&drawType!=='pen'&&!isPen){                 // 2nd finger: turn the finger stroke into a pinch
+      if(drawPid!==null&&drawType!=='pen'&&!isPen){                 // 2nd finger: drop the finger stroke, become a pinch/pan
         const pid=drawPid,last=cur&&cur.last;cancelStroke();
         if(last)pts.set(pid,{x:last.x,y:last.y});
       }
     }
     try{viewer.setPointerCapture(e.pointerId);}catch(_){}
     pts.set(e.pointerId,{x:e.clientX,y:e.clientY});moved=0;
-    if(pts.size===1){panStart={x:e.clientX,y:e.clientY,tx:VW.tx,ty:VW.ty};downPt={x:e.clientX,y:e.clientY};}
-    if(pts.size===2){const a=[...pts.values()];startDist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);startScale=VW.scale;panStart=null;moved=99;}
+    if(pts.size===1){
+      panStart={x:e.clientX,y:e.clientY,tx:VW.tx,ty:VW.ty};downPt={x:e.clientX,y:e.clientY};
+      if(mode!=='draw'&&mode!=='move'){const h=hitAny(e.clientX,e.clientY);
+        if(h&&h.type==='marker'){const pid=e.pointerId,m=h.m;lp={pid,timer:setTimeout(()=>startMarkerDrag(pid,m),380)};}}
+    }
+    if(pts.size===2){cancelLP();if(dragM)cancelDrag();beginPinch();}
   });
   viewer.addEventListener('pointermove',e=>{
     if(e.pointerId===drawPid){extendStroke(e);return;}
+    if(dragM&&e.pointerId===dragM.pid){
+      const {nx,ny}=toNorm(e.clientX-dragM.ox,e.clientY-dragM.oy);
+      dragM.m.nx=Math.max(0,Math.min(1,nx));dragM.m.ny=Math.max(0,Math.min(1,ny));
+      if(dragM.el){dragM.el.style.left=(dragM.m.nx*VW.baseW)+'px';dragM.el.style.top=(dragM.m.ny*VW.baseH)+'px';}
+      return;
+    }
     if(!pts.has(e.pointerId))return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
-    if(pts.size===2&&startDist){const a=[...pts.values()];const dist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
-      const mid={x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2};
-      const target=startScale*(dist/startDist);zoomAt(mid.x,mid.y,target/VW.scale);moved=99;return;}
+    if(pts.size===2&&startDist&&gC){
+      const a=[...pts.values()],r=viewer.getBoundingClientRect();
+      const dist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+      const mx=(a[0].x+a[1].x)/2-r.left,my=(a[0].y+a[1].y)/2-r.top;
+      const ns=Math.max(0.35,Math.min(14,startScale*dist/startDist));
+      VW.scale=ns;VW.tx=mx-gC.x*ns;VW.ty=my-gC.y*ns;apply();moved=99;return;
+    }
     if(pts.size===1&&panStart){const dx=e.clientX-panStart.x,dy=e.clientY-panStart.y;
-      moved=Math.max(moved,Math.hypot(dx,dy));VW.tx=panStart.tx+dx;VW.ty=panStart.ty+dy;apply();}
+      moved=Math.max(moved,Math.hypot(dx,dy));if(lp&&moved>=8)cancelLP();
+      VW.tx=panStart.tx+dx;VW.ty=panStart.ty+dy;apply();}
   });
   function endPt(e){
     if(e.pointerId===drawPid){
@@ -1330,16 +1499,36 @@ function viewDrawing(app){
       try{viewer.releasePointerCapture(e.pointerId);}catch(_){}
       return;
     }
+    if(dragM&&e.pointerId===dragM.pid){
+      const g=dragM;dragM=null;pts.delete(e.pointerId);
+      try{viewer.releasePointerCapture(e.pointerId);}catch(_){}
+      if(g.el)g.el.classList.remove('lifted');
+      if(e.type==='pointercancel'){g.m.nx=g.nx0;g.m.ny=g.ny0;VW.renderMarkers();}
+      else if(Math.abs(g.m.nx-g.nx0)>1e-5||Math.abs(g.m.ny-g.ny0)>1e-5){
+        g.m.nx=+g.m.nx.toFixed(5);g.m.ny=+g.m.ny.toFixed(5);
+        pPut('markers',g.m).catch(err=>{console.error(err);toast('Save failed — check connection');});
+        toast(mkCode(g.m)+' moved');
+      }
+      renderBar();return;
+    }
+    if(lp&&lp.pid===e.pointerId)cancelLP();
     const wasTap=pts.size===1&&moved<8&&downPt;
     try{viewer.releasePointerCapture(e.pointerId);}catch(_){}
     pts.delete(e.pointerId);
-    if(pts.size<2)startDist=0;
+    if(pts.size<2){startDist=0;gC=null;}
     if(pts.size===1){const p=[...pts.values()][0];panStart={x:p.x,y:p.y,tx:VW.tx,ty:VW.ty};}
     if(pts.size===0&&wasTap&&mode!=='draw'){
+      if(mode==='move'&&relocM){
+        const {nx,ny}=toNorm(downPt.x,downPt.y);
+        if(nx<0||nx>1||ny<0||ny>1){toast('Tap on the plan');return;}
+        const m=relocM;m.nx=+nx.toFixed(5);m.ny=+ny.toFixed(5);
+        pPut('markers',m).catch(err=>{console.error(err);toast('Save failed — check connection');});
+        setMode('view');VW.renderMarkers();toast(mkCode(m)+' moved');return;
+      }
       const hit=hitAny(downPt.x,downPt.y);
       if(hit){
         if(hit.type==='report'){if(mode==='place'&&placeKind==='report')setMode('view');reportPreview(hit.r);}
-        else markerSheet(hit.m,{onChange:()=>{if(VW&&VW.renderMarkers)VW.renderMarkers();}});
+        else markerSheet(hit.m,mkOpts(hit.m));
       }else if(mode==='place')placeAt(downPt.x,downPt.y);
     }
   }
@@ -1406,8 +1595,11 @@ function viewDrawing(app){
     }
   }
   hdToggle.onclick=()=>setHd(!hdOn,true);
+  mkToggle.onclick=()=>{const h=!mkHidden;
+    if(h&&(mode==='draw'||mode==='move'||(mode==='place'&&placeKind!=='report')))setMode('view');
+    setHidden(h);toast(h?'Markups hidden':'Markups shown');};
 
-  vwrap.classList.toggle('hide-markups',mkHidden);
+  vwrap.classList.toggle('hide-markups',mkHidden);mkUI();
   setBase();
   VW.renderPins();
   VW.renderMarkers();
@@ -1423,13 +1615,15 @@ function viewDrawing(app){
 let paletteEl=null;
 function closePalette(){if(paletteEl){paletteEl.remove();paletteEl=null;}}
 
-function markerSheet(m,{isNew=false,onChange}={}){
+function markerSheet(m,{isNew=false,onChange,onMove}={}){
   const k=MK[m.kind], dr=S.drawings.find(x=>x.id===m.drawId);
   const size0=normDoor(m.doorSize), qty0=Math.max(1,+m.doorQty||1);
   const body=document.createElement('div');
   body.innerHTML=`
     <div class="mk-head"><span class="ic ${m.kind}">${I[k.icon]}</span>
-      <div><b>${esc(k.label)} ${esc(mkCode(m))}</b><span>${esc(dr?dr.name:'')}</span></div></div>
+      <div style="flex:1;min-width:0"><b>${esc(k.label)} ${esc(mkCode(m))}</b><span>${esc(dr?dr.name:'')}</span></div>
+      ${onMove&&!isNew?`<button type="button" class="btn ghost" id="mkMove" style="min-height:40px;padding:0 12px;font-size:14px">${I.move} Move</button>`:''}</div>
+    ${onMove&&!isNew?'<div class="hintline" style="margin:-6px 0 14px">Tip: press and hold a marker on the plan to drag it.</div>':''}
     <div class="field"><label>Access door size needed <span style="color:var(--faint);font-weight:400">(optional)</span></label>
       <div class="chips" id="mkChips">${DOOR_SIZES.map(s=>`<button type="button" data-s="${s}" class="${size0===s?'on':''}">${s}</button>`).join('')}</div>
       <input class="inp mono" id="mkSize" placeholder="Other size, e.g. 20×14" autocomplete="off" value="${esc(DOOR_SIZES.includes(size0)?'':size0)}"></div>
@@ -1443,6 +1637,7 @@ function markerSheet(m,{isNew=false,onChange}={}){
   const save=document.createElement('button');save.className='btn primary block';save.textContent='Save';
   foot.append(left,save);
   const ctl=sheetShell({title:isNew?k.label+' placed':k.label,bodyNode:body,footNode:foot});
+  const mvBtn=body.querySelector('#mkMove');if(mvBtn)mvBtn.onclick=()=>{ctl.close();onMove();};
   const sizeIn=body.querySelector('#mkSize'),qtyF=body.querySelector('#mkQtyF'),qtyIn=body.querySelector('#mkQty');
   const curSize=()=>{const on=body.querySelector('#mkChips .on');return on?on.dataset.s:normDoor(sizeIn.value);};
   const syncQty=()=>{qtyF.hidden=!curSize();};
