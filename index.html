@@ -341,6 +341,15 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .mkchip svg{color:var(--mk-exhaust)}
 .mkchip.off{background:var(--accent);border-color:var(--accent);color:#fff}
 .mkchip.off svg{color:#fff}
+.hideall{width:100%;gap:9px;min-height:52px;font-size:16px}
+.hs-or{text-align:center;color:var(--muted);font-size:13.5px;margin:16px 0 2px}
+.hs-empty{text-align:center;color:var(--muted);font-size:14px;margin:16px 0 4px}
+.lyr.hrow{width:100%;text-align:left;font:inherit;color:var(--fg);cursor:pointer;min-height:52px}
+.lyr.hrow .nm small{display:block;font-weight:500;font-size:12px;color:var(--muted)}
+.lyr.hrow .eyeic{width:38px;height:38px;display:grid;place-items:center;flex:none}
+.lyr.hrow .eyeic svg{width:20px;height:20px}
+.lyr.hrow.off .eyeic{color:var(--faint)}
+.linkbtn{border:none;background:none;color:var(--accent);font:600 13.5px var(--font-body);padding:6px 2px}
 .vchip svg{width:16px;height:16px}
 #hires{position:absolute;left:0;top:0;pointer-events:none;display:none}
 .zoomcol{position:absolute;right:max(12px,env(safe-area-inset-right,0px));
@@ -1223,6 +1232,7 @@ function viewDrawing(app){
     return ids.size>1?ids:null;
   }
   function renderLegend(){
+    mkUI();
     const ids=mkHidden?null:layerColorMode();
     if(!ids){legend.hidden=true;legend.innerHTML='';return;}
     legend.hidden=false;
@@ -1324,8 +1334,73 @@ function viewDrawing(app){
     if(m!=='move')relocM=null;
     mode=m;placeKind=m==='place'?kind:null;renderBar();
   }
-  function mkUI(){mkToggle.innerHTML=(mkHidden?I.eyeoff:I.eye)+`<span>${mkHidden?'Show markups':'Hide markups'}</span>`;
-    mkToggle.classList.toggle('off',mkHidden);mkToggle.setAttribute('aria-pressed',mkHidden?'true':'false');}
+  // groups that have markups on this plan: {groupId:{tags,ink}}
+  function planGroups(){
+    const c={};const bump=(id,k)=>{(c[id]=c[id]||{tags:0,ink:0})[k]++;};
+    drawMarkers(d.id).forEach(m=>bump(mkGroupOf(m),'tags'));
+    STROKES.forEach(s=>bump(mkGroupOf(s),'ink'));
+    return c;
+  }
+  function mkUI(){
+    const ids=Object.keys(planGroups()),nHid=ids.filter(id=>!groupVisible(id)).length;
+    const all=mkHidden||(ids.length>0&&nHid===ids.length),off=all||nHid>0;
+    const label=all?'Markups hidden':nHid?`${nHid} group${nHid>1?'s':''} hidden`:'Hide markups';
+    mkToggle.innerHTML=(off?I.eyeoff:I.eye)+`<span>${label}</span>`;
+    mkToggle.classList.toggle('off',off);mkToggle.setAttribute('aria-pressed',off?'true':'false');
+    mkToggle.setAttribute('aria-haspopup','dialog');
+  }
+  // hide all markups, or pick which groups to hide (report pins always stay)
+  function leaveMarkupModeIfHidden(){
+    const busy=mode==='draw'||mode==='move'||(mode==='place'&&placeKind!=='report');
+    if(busy&&(mkHidden||(S.user&&!groupVisible(activeGroup().id))))setMode('view');
+  }
+  function hideSheet(){
+    const body=document.createElement('div');
+    const foot=document.createElement('button');foot.className='btn primary block';foot.textContent='Done';
+    const ctl=sheetShell({title:'Hide markups',bodyNode:body,footNode:foot});
+    foot.onclick=ctl.close;
+    const eye=on=>on?I.eye:I.eyeoff;
+    function draw(){
+      const pg=planGroups(),ids=Object.keys(pg);
+      const shown=id=>!mkHidden&&groupVisible(id);
+      const allHidden=mkHidden||(ids.length>0&&ids.every(id=>!groupVisible(id)));
+      const mine=[],others={};let legacy=false;
+      ids.forEach(id=>{if(id===LEGACY){legacy=true;return;}const g=groupById(id);
+        if(S.user&&g.ownerId===S.user.id)mine.push(g);else(others[g.ownerId||'?']=others[g.ownerId||'?']||[]).push(g);});
+      const byAge=(a,b)=>(a.createdAt||0)-(b.createdAt||0);
+      const sub=id=>{const c=pg[id],t=[];if(c.tags)t.push(c.tags+' tag'+(c.tags!==1?'s':''));if(c.ink)t.push('drawings');return t.join(' · ');};
+      const row=g=>`<button type="button" class="lyr hrow${shown(g.id)?'':' off'}" data-g="${g.id}" aria-pressed="${shown(g.id)?'false':'true'}">
+          <i class="dot" style="background:${g.color}"></i><span class="nm">${esc(g.name)}<small>${sub(g.id)}</small></span>
+          <span class="eyeic">${eye(shown(g.id))}</span></button>`;
+      const sec=(title,gs,key)=>{const any=gs.some(g=>shown(g.id));
+        return `<div class="lyr-sec lyr-person"><span>${esc(title)}</span>${gs.length>1?`<button type="button" class="linkbtn" data-person="${key}">${any?'Hide':'Show'} all ${gs.length}</button>`:''}</div>`
+          +gs.sort(byAge).map(row).join('');};
+      let h=`<button type="button" class="btn block hideall${allHidden?' primary':''}" id="hAll">${allHidden?I.eye:I.eyeoff}<span>${allHidden?'Show all markups':'Hide all markups'}</span></button>`;
+      if(!ids.length)h+=`<p class="hs-empty">No markups on this plan yet.</p>`;
+      else{
+        h+=`<div class="hs-or">or choose groups to hide</div>`;
+        if(mine.length)h+=sec('Yours',mine,'_me');
+        Object.keys(others).forEach(o=>{h+=sec(o==='?'?'Unknown':userName(o),others[o],o);});
+        if(legacy)h+=sec('Before names',[groupById(LEGACY)],LEGACY);
+      }
+      body.innerHTML=h;
+      body.querySelector('#hAll').onclick=()=>{
+        if(allHidden){setGroupsHidden(ids,false);setHidden(false);refreshLayers();toast('All markups shown');}
+        else{setHidden(true);leaveMarkupModeIfHidden();toast('All markups hidden');}
+        ctl.close();
+      };
+      // flip a set of groups; from "all hidden", showing one shows only that one
+      const flip=gids=>{
+        if(mkHidden){setGroupsHidden(ids,true);setGroupsHidden(gids,false);setHidden(false);}
+        else setGroupsHidden(gids,gids.some(groupVisible));
+        refreshLayers();leaveMarkupModeIfHidden();draw();
+      };
+      body.querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>flip([b.dataset.g]));
+      body.querySelectorAll('[data-person]').forEach(b=>b.onclick=()=>{const k=b.dataset.person;
+        flip((k==='_me'?mine:k===LEGACY?[groupById(LEGACY)]:others[k]).map(g=>g.id));});
+    }
+    draw();
+  }
   function setHidden(h){mkHidden=h;try{localStorage.setItem('ductpro-mkhide',h?'1':'0');}catch(e){}
     vwrap.classList.toggle('hide-markups',h);mkUI();renderLegend();}
   function ensureShown(){if(mkHidden)setHidden(false);}
@@ -1787,9 +1862,7 @@ function viewDrawing(app){
     }
   }
   hdToggle.onclick=()=>setHd(!hdOn,true);
-  mkToggle.onclick=()=>{const h=!mkHidden;
-    if(h&&(mode==='draw'||mode==='move'||(mode==='place'&&placeKind!=='report')))setMode('view');
-    setHidden(h);toast(h?'Markups hidden':'Markups shown');};
+  mkToggle.onclick=hideSheet;
 
   vwrap.classList.toggle('hide-markups',mkHidden);mkUI();
   setBase();
