@@ -334,6 +334,13 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   border:1px solid var(--line);border-radius:11px;padding:8px 12px;font-size:13px;font-weight:600;
   display:flex;align-items:center;gap:7px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
 .vchip.hint{color:var(--accent)}
+.viewer-overlay>.vrow{display:flex;align-items:flex-start;gap:8px;width:100%;pointer-events:none}
+.vrow>*{pointer-events:auto}
+.vrow>#hintChip{flex:0 1 auto;min-width:0}
+.mkchip{margin-left:auto;flex:none;white-space:nowrap;color:var(--fg);font:600 13px var(--font-body);min-height:36px}
+.mkchip svg{color:var(--mk-exhaust)}
+.mkchip.off{background:var(--accent);border-color:var(--accent);color:#fff}
+.mkchip.off svg{color:#fff}
 .vchip svg{width:16px;height:16px}
 #hires{position:absolute;left:0;top:0;pointer-events:none;display:none}
 .zoomcol{position:absolute;right:max(12px,env(safe-area-inset-right,0px));
@@ -343,8 +350,6 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   backdrop-filter:blur(8px);color:var(--fg);display:grid;place-items:center;font-size:22px;font-weight:600}
 .zoomcol button:active{background:var(--surface-2)}
 .zoomcol button svg{width:21px;height:21px}
-.zoomcol .mkz{color:var(--mk-exhaust)}
-.zoomcol .mkz.off{color:var(--faint)}
 .zoomcol .hdz{font-size:14px;font-weight:800;letter-spacing:.03em;color:var(--faint)}
 .zoomcol .hdz[aria-pressed="true"]{background:var(--accent);color:#fff}
 .zoomcol .hdz.busy{color:var(--warn)}
@@ -1111,11 +1116,13 @@ function viewDrawing(app){
         </div>
       </div>
       <div class="viewer-overlay">
-        <div class="vchip" id="hintChip"></div>
+        <div class="vrow">
+          <div class="vchip" id="hintChip"></div>
+          <button class="vchip mkchip" id="mkToggle" aria-pressed="false"></button>
+        </div>
         <div class="legend" id="legend" hidden></div>
       </div>
       <div class="zoomcol">
-        <button id="mkToggle" class="mkz" aria-pressed="false" aria-label="Hide markups"></button>
         <button id="hdToggle" class="hdz" aria-pressed="false" aria-label="Toggle high quality">HD</button>
         <button id="zin" aria-label="Zoom in">+</button>
         <button id="zout" aria-label="Zoom out">−</button>
@@ -1269,7 +1276,7 @@ function viewDrawing(app){
     S.placing=(mode==='place');
     closePalette();
     if(mode==='view'){
-      hint(I.move+'<span>Pinch to zoom · drag to pan</span>');
+      hint(I.move+'<span>Pinch to zoom · drag&nbsp;to&nbsp;pan</span>');
       vbar.innerHTML=`<button class="btn" id="mkBtn">${I.markup} Markup</button>
         <button class="btn primary block" id="addReport">${I.pin} Place report</button>`;
       vbar.querySelector('#mkBtn').onclick=()=>ensureUser().then(markupSheet);
@@ -1317,8 +1324,8 @@ function viewDrawing(app){
     if(m!=='move')relocM=null;
     mode=m;placeKind=m==='place'?kind:null;renderBar();
   }
-  function mkUI(){mkToggle.innerHTML=mkHidden?I.eyeoff:I.eye;mkToggle.classList.toggle('off',mkHidden);
-    mkToggle.setAttribute('aria-pressed',mkHidden?'true':'false');mkToggle.setAttribute('aria-label',mkHidden?'Show markups':'Hide markups');}
+  function mkUI(){mkToggle.innerHTML=(mkHidden?I.eyeoff:I.eye)+`<span>${mkHidden?'Show markups':'Hide markups'}</span>`;
+    mkToggle.classList.toggle('off',mkHidden);mkToggle.setAttribute('aria-pressed',mkHidden?'true':'false');}
   function setHidden(h){mkHidden=h;try{localStorage.setItem('ductpro-mkhide',h?'1':'0');}catch(e){}
     vwrap.classList.toggle('hide-markups',h);mkUI();renderLegend();}
   function ensureShown(){if(mkHidden)setHidden(false);}
