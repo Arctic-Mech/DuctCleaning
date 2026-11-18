@@ -13,10 +13,17 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
 - **Quick / HD**: the field view uses a fast preview image; the **HD** button renders the
   on-screen area from the PDF at full resolution.
 - **Markup** (internal planning, web view only, never exported):
-  - **Exhaust** and **Cleaning access** markers with an optional note, access door size,
-    and quantity. The job screen totals every access door needed by size.
-  - **Draw**: pen (pressure-sensitive with Apple Pencil), highlighter, eraser, colors,
-    sizes, undo. With a Pencil, the Pencil draws and fingers move the plan.
+  - **Exhaust**, **Cleaning access** and **Note** tags. Access/exhaust take an optional
+    note, door size and quantity. Switch what you're placing from the placing bar.
+  - **Draw**: pen (pressure-sensitive with Apple Pencil), highlighter, eraser, lasso
+    select/move, colors, sizes, undo. Two fingers pan and zoom.
+  - **People and groups**: you give your first and last name once per device (the same
+    name is the same account). Markups record who made them and go into your active group
+    (e.g. Precon vs Actual). Show/hide by group or by person; with more than one set
+    showing, each set is drawn in its own color.
+  - Tag numbers close up after a delete (delete 24 and 25 becomes 24).
+- **Job lists**: reports, cleaning access tags, exhaust tags, notes, and access doors needed
+  (filterable by group, copyable).
 - **Export**: one interactive PDF. Each plan is a full-resolution vector page with numbered
   pins, and tapping a pin jumps to that report's page.
 
@@ -29,8 +36,10 @@ Firebase Storage is not used, so the project stays on the free Spark plan.
 | `jobs`, `drawings`, `reports` | Core records (loaded at startup) |
 | `photos`    | One compressed photo per document (~1280px), loaded when a report opens |
 | `pdfchunks` | Plan PDFs as base64 chunks under the 1 MiB/document limit, shared across a PDF's pages |
-| `markers`   | Exhaust / cleaning-access markers, door size and quantity (loaded at startup) |
-| `strokes`   | One freehand markup stroke per document, loaded when a plan opens |
+| `markers`   | Exhaust / cleaning-access / note tags with author and group (loaded at startup) |
+| `strokes`   | One freehand markup stroke per document, with author and group, loaded when a plan opens |
+| `users`     | People, keyed by name (`u_first_last`) |
+| `mkgroups`  | Markup groups, owned by a person, with their set color |
 
 ### One-time setup
 Because there is no login, the Firestore rules must allow open access:
