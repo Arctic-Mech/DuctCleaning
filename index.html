@@ -464,10 +464,36 @@ async function photosByJob(jobId){
   const s=await fdb.collection('photos').where('jobId','==',jobId).get();
   return s.docs.map(d=>d.data());
 }
-// the plan PDF, stored as base64 chunks across its own docs (free: no Storage)
+// the plan PDF, stored as base64 chunks across its own docs (free: no Storage).
+// New uploads key chunks by a shared pdfKey (so multi-page PDFs are stored once);
+// older plans keyed chunks by drawId — both are still read here.
 async function pdfChunksByDraw(drawId){
   const s=await fdb.collection('pdfchunks').where('drawId','==',drawId).get();
   return s.docs.map(d=>d.data()).sort((a,b)=>a.idx-b.idx);
+}
+async function pdfChunksByKey(key){
+  const s=await fdb.collection('pdfchunks').where('pdfKey','==',key).get();
+  return s.docs.map(d=>d.data()).sort((a,b)=>a.idx-b.idx);
+}
+async function pdfChunksByJob(jobId){
+  const s=await fdb.collection('pdfchunks').where('jobId','==',jobId).get();
+  return s.docs.map(d=>d.data());
+}
+// fetch a drawing's PDF bytes (by shared key, else legacy per-drawing), or null
+async function loadDrawingPdfBytes(d){
+  try{
+    let ch=[];
+    if(d.pdfKey)ch=await pdfChunksByKey(d.pdfKey);
+    else if(d.pdfChunks)ch=await pdfChunksByDraw(d.id);
+    if(!ch.length)return null;
+    return b64ToBytes(ch.map(c=>c.data).join(''));
+  }catch(e){console.warn('pdf load failed',e);return null;}
+}
+// delete a shared PDF's chunks only when no remaining drawing still references it
+async function deletePdfKeyIfUnused(key){
+  if(!key)return;
+  if(S.drawings.some(d=>d.pdfKey===key))return;
+  try{const ch=await pdfChunksByKey(key);for(const c of ch)await pDel('pdfchunks',c.id);}catch(e){console.warn(e);}
 }
 
 // ---- compress a canvas to a JPEG data: URL under a byte budget (Firestore 1 MiB/doc) ----
@@ -753,10 +779,8 @@ function jobMenu(j){
     if(await confirmDialog({title:'Delete job?',message:'This permanently deletes "'+j.name+'", its plans, and all reports and photos.',confirmText:'Delete job'})){
       try{const ph=await photosByJob(j.id);for(const p of ph)await pDel('photos',p.id);}catch(e){console.warn(e);}
       for(const r of jobReports(j.id)){await pDel('reports',r.id);}
-      for(const dd of jobDrawings(j.id)){
-        try{const ts=await pdfChunksByDraw(dd.id);for(const t of ts)await pDel('pdfchunks',t.id);}catch(e){console.warn(e);}
-        await pDel('drawings',dd.id);
-      }
+      try{const ts=await pdfChunksByJob(j.id);for(const t of ts)await pDel('pdfchunks',t.id);}catch(e){console.warn(e);}
+      for(const dd of jobDrawings(j.id))await pDel('drawings',dd.id);
       await pDel('jobs',j.id);
       S.reports=S.reports.filter(r=>r.jobId!==j.id);S.drawings=S.drawings.filter(d=>d.jobId!==j.id);S.jobs=S.jobs.filter(x=>x.id!==j.id);
       S.route=['jobs'];render();toast('Job deleted');
@@ -766,43 +790,54 @@ function mkAction(icon,label,cls=''){const b=document.createElement('button');if
   b.innerHTML=icon+'<span>'+esc(label)+'</span>';return b;}
 function mkDiv(){const d=document.createElement('div');d.className='div';return d;}
 
-/* ---------- add plan: preview + name, then render hi-res tiles on save ---------- */
+/* ---------- add plan: preview + name; a multi-page PDF becomes one plan per page ---------- */
 async function addPlanFlow(job,file){
   const boot=document.getElementById('boot');boot.style.display='grid';
-  let page,preview;
-  try{page=await loadPdfFirstPage(file);preview=await renderPagePreview(page);}
-  catch(e){boot.style.display='none';console.error(e);toast('Could not read that PDF');return;}
+  let pdf,preview,numPages;
+  try{
+    const buf=await file.arrayBuffer();
+    pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    numPages=pdf.numPages;
+    preview=await renderPagePreview(await pdf.getPage(1));
+  }catch(e){boot.style.display='none';console.error(e);toast('Could not read that PDF');return;}
   boot.style.display='none';
-  // name modal (required before save)
   const body=document.createElement('div');
   const guess=file.name.replace(/\.pdf$/i,'').replace(/[_-]+/g,' ').trim();
   body.innerHTML=`
     <div style="border-radius:12px;overflow:hidden;border:1px solid var(--line);margin-bottom:16px;background:var(--surface-2)">
       <img src="${preview.url}" alt="Plan preview" style="width:100%;display:block;max-height:240px;object-fit:contain"></div>
+    ${numPages>1?`<div class="pkgbanner" style="margin:0 0 16px">${I.info}<div>This PDF has <b>${numPages} pages</b> — each becomes its own plan (named with a page number). Rename any of them afterward.</div></div>`:''}
     <div class="field"><label>Floor / area name <span class="req">*</span></label>
       <input class="inp" id="planName" placeholder="e.g. Level 0LL HVAC" value="${esc(guess)}">
       <div class="hintline">Name this plan by its floor or area so you can tell them apart.</div></div>`;
-  const foot=document.createElement('button');foot.className='btn primary block';foot.textContent='Save plan';
-  const ctl=sheetShell({title:'Name this plan',bodyNode:body,footNode:foot});
+  const foot=document.createElement('button');foot.className='btn primary block';foot.textContent='Save plan'+(numPages>1?'s':'');
+  const ctl=sheetShell({title:numPages>1?`Name these plans`:'Name this plan',bodyNode:body,footNode:foot});
   const nm=body.querySelector('#planName');setTimeout(()=>{nm.focus();nm.select();},250);
   foot.onclick=async()=>{
-    const name=nm.value.trim();if(!name){toast('Name the plan first');nm.focus();return;}
+    const base=nm.value.trim();if(!base){toast('Name the plan first');nm.focus();return;}
     foot.disabled=true;foot.textContent='Saving…';
-    const vp1=page.getViewport({scale:1});
-    const id=uid();
-    let chunks;
+    const pdfKey=uid();
+    let chunks,added=[];
     try{chunks=await fileToPdfChunks(file);}
     catch(e){console.error(e);foot.disabled=false;foot.textContent='Save plan';toast('Could not read that PDF');return;}
-    const d={id,jobId:job.id,name,img:preview.url,w:preview.w,h:preview.h,
-      pw:vp1.width,ph:vp1.height,pdfChunks:chunks.length,createdAt:now()};
     try{
-      await pPut('drawings',d);
+      // store the PDF once, shared across all its page-plans
       for(let i=0;i<chunks.length;i++){
-        foot.textContent='Saving… '+(i+1)+'/'+chunks.length;
-        await pPut('pdfchunks',{id:id+'_'+i,drawId:id,jobId:job.id,idx:i,data:chunks[i]});
+        foot.textContent='Saving PDF… '+(i+1)+'/'+chunks.length;
+        await pPut('pdfchunks',{id:pdfKey+'_'+i,pdfKey,jobId:job.id,idx:i,data:chunks[i]});
+      }
+      for(let p=0;p<numPages;p++){
+        if(numPages>1)foot.textContent='Saving page '+(p+1)+'/'+numPages+'…';
+        const page=await pdf.getPage(p+1);
+        const vp1=page.getViewport({scale:1});
+        const prev=p===0?preview:await renderPagePreview(page);
+        const d={id:uid(),jobId:job.id,name:numPages>1?(base+' — p'+(p+1)):base,
+          img:prev.url,w:prev.w,h:prev.h,pw:vp1.width,ph:vp1.height,
+          pdfKey,pageIndex:p,pdfChunks:chunks.length,createdAt:now()+p};
+        await pPut('drawings',d);S.drawings.push(d);added.push(d);
       }
     }catch(e){console.error(e);foot.disabled=false;foot.textContent='Save plan';toast('Save failed — check connection');return;}
-    S.drawings.push(d);ctl.close();go('drawing',{drawId:d.id});toast('Plan added');
+    ctl.close();go('drawing',{drawId:added[0].id});toast(numPages>1?numPages+' plans added':'Plan added');
   };
 }
 
@@ -965,12 +1000,11 @@ function viewDrawing(app){
   // ---- HD toggle: Quick (preview image, fast) <-> HD (render visible area from the PDF) ----
   async function loadPdf(){
     if(PDFPAGE||pdfTried)return PDFPAGE; pdfTried=true;
-    if(!d.pdfChunks)return null;
+    if(!d.pdfChunks&&!d.pdfKey)return null;
     try{
-      const chunks=await pdfChunksByDraw(d.id); if(!chunks.length)return null;
-      const bytes=b64ToBytes(chunks.map(c=>c.data).join(''));
+      const bytes=await loadDrawingPdfBytes(d); if(!bytes)return null;
       const pdf=await pdfjsLib.getDocument({data:bytes}).promise;
-      PDFPAGE=await pdf.getPage(1);
+      PDFPAGE=await pdf.getPage((d.pageIndex||0)+1);
     }catch(e){console.warn('HD unavailable',e);}
     return PDFPAGE;
   }
@@ -1029,10 +1063,15 @@ function viewDrawing(app){
 function drawMenu(d){
   const body=document.createElement('div');body.className='actionlist';
   const ren=mkAction(I.edit,'Rename plan');
+  const rep=mkAction(I.upload,'Replace PDF (keep tags)');
   const del=mkAction(I.trash,'Delete plan','danger');
-  body.append(ren,mkDiv(),del);
+  body.append(ren,rep,mkDiv(),del);
+  const repInput=document.createElement('input');repInput.type='file';repInput.accept='application/pdf';repInput.className='sr';
+  body.appendChild(repInput);
   const ctl=sheetShell({title:esc(d.name),bodyNode:body});
   ren.onclick=()=>{ctl.close();renamePlan(d);};
+  rep.onclick=()=>repInput.click();
+  repInput.onchange=async()=>{const f=repInput.files[0];repInput.value='';if(f){ctl.close();await replacePlanPdf(d,f);}};
   del.onclick=async()=>{ctl.close();
     const n=drawReports(d.id).length;
     if(await confirmDialog({title:'Delete plan?',message:'This deletes "'+d.name+'"'+(n?' and its '+n+' report'+(n!==1?'s':''):'')+'.',confirmText:'Delete plan'})){
@@ -1041,8 +1080,9 @@ function drawMenu(d){
         await pDel('reports',r.id);
       }
       S.reports=S.reports.filter(r=>r.drawId!==d.id);
-      try{const ts=await pdfChunksByDraw(d.id);for(const t of ts)await pDel('pdfchunks',t.id);}catch(e){console.warn(e);}
       await pDel('drawings',d.id);S.drawings=S.drawings.filter(x=>x.id!==d.id);
+      if(d.pdfKey)await deletePdfKeyIfUnused(d.pdfKey);
+      else{try{const ts=await pdfChunksByDraw(d.id);for(const t of ts)await pDel('pdfchunks',t.id);}catch(e){console.warn(e);}}
       VW=null;back();toast('Plan deleted');
     }};
 }
@@ -1053,6 +1093,45 @@ function renamePlan(d){
   const ctl=sheetShell({title:'Rename plan',bodyNode:body,footNode:foot});
   const inp=body.querySelector('#rn');setTimeout(()=>{inp.focus();inp.select();},250);
   foot.onclick=async()=>{const v=inp.value.trim();if(!v){toast('Enter a name');return;}d.name=v;await pPut('drawings',d);ctl.close();render();toast('Renamed');};
+}
+// swap a plan's PDF (e.g. a clean markup-free copy) while keeping the same plan id,
+// so every pin/report stays exactly where it is
+async function replacePlanPdf(d,file){
+  const boot=document.getElementById('boot');boot.style.display='grid';
+  let pdf,preview,vp1,numPages;
+  try{
+    const buf=await file.arrayBuffer();
+    pdf=await pdfjsLib.getDocument({data:buf}).promise;numPages=pdf.numPages;
+    const page=await pdf.getPage(1);vp1=page.getViewport({scale:1});preview=await renderPagePreview(page);
+  }catch(e){boot.style.display='none';console.error(e);toast('Could not read that PDF');return;}
+  boot.style.display='none';
+  const nPins=drawReports(d.id).length;
+  const body=document.createElement('div');
+  body.innerHTML=`
+    <div style="border-radius:12px;overflow:hidden;border:1px solid var(--line);margin-bottom:14px;background:var(--surface-2)">
+      <img src="${preview.url}" alt="New plan preview" style="width:100%;display:block;max-height:240px;object-fit:contain"></div>
+    <p style="color:var(--muted);font-size:14.5px;line-height:1.55;margin:0">
+      This replaces the drawing for <b>${esc(d.name)}</b>. All ${nPins} pin${nPins!==1?'s':''} and their reports stay exactly where they are —
+      use it to swap in a clean copy of the same drawing.${numPages>1?' Only page 1 of the new PDF is used.':''}</p>`;
+  const foot=document.createElement('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
+  const cancel=document.createElement('button');cancel.className='btn ghost block';cancel.textContent='Cancel';
+  const ok=document.createElement('button');ok.className='btn primary block';ok.textContent='Replace';
+  foot.append(cancel,ok);
+  const ctl=sheetShell({title:'Replace PDF',bodyNode:body,footNode:foot,full:true});
+  cancel.onclick=ctl.close;
+  ok.onclick=async()=>{
+    ok.disabled=true;cancel.disabled=true;ok.textContent='Saving…';
+    const oldKey=d.pdfKey, oldLegacy=!d.pdfKey&&d.pdfChunks, newKey=uid();
+    let chunks; try{chunks=await fileToPdfChunks(file);}catch(e){ok.disabled=false;cancel.disabled=false;ok.textContent='Replace';toast('Could not read that PDF');return;}
+    try{
+      for(let i=0;i<chunks.length;i++){ok.textContent='Saving… '+(i+1)+'/'+chunks.length;await pPut('pdfchunks',{id:newKey+'_'+i,pdfKey:newKey,jobId:d.jobId,idx:i,data:chunks[i]});}
+      d.img=preview.url;d.w=preview.w;d.h=preview.h;d.pw=vp1.width;d.ph=vp1.height;d.pdfKey=newKey;d.pageIndex=0;d.pdfChunks=chunks.length;
+      await pPut('drawings',d);
+    }catch(e){console.error(e);ok.disabled=false;cancel.disabled=false;ok.textContent='Replace';toast('Replace failed — check connection');return;}
+    if(oldKey)await deletePdfKeyIfUnused(oldKey);
+    else if(oldLegacy){try{const ts=await pdfChunksByDraw(d.id);for(const t of ts)await pDel('pdfchunks',t.id);}catch(e){console.warn(e);}}
+    ctl.close();VW=null;render();toast('Plan replaced — tags kept');
+  };
 }
 
 /* ============================ report editor ============================ */
@@ -1292,14 +1371,14 @@ async function exportInteractivePdf(j,btn,status){
     for(let di=0;di<draws.length;di++){
       const d=draws[di];set(`Loading plan ${di+1}/${draws.length}…`);
       let pdfBytes=null;
-      if(d.pdfChunks){try{const ch=await pdfChunksByDraw(d.id);if(ch.length)pdfBytes=b64ToBytes(ch.map(c=>c.data).join(''));}catch(e){console.warn(e);}}
+      if(d.pdfChunks||d.pdfKey){try{pdfBytes=await loadDrawingPdfBytes(d);}catch(e){console.warn(e);}}
       const reports=drawReports(d.id).map(r=>({
         num:r.num,type:r.type,typeOther:r.typeOther,status:r.status,revisit:r.revisit,
         equipment:r.equipment,area:r.area,nx:r.nx,ny:r.ny,
         before:(r.before||[]).map(id=>photoBytes[id]).filter(Boolean),
         after:(r.after||[]).map(id=>photoBytes[id]).filter(Boolean),
       }));
-      plans.push({name:d.name,pdfBytes,imgBytes:d.pdfChunks?null:dataUrlToBytes(d.img),pw:d.w,ph:d.h,reports});
+      plans.push({name:d.name,pdfBytes,pageIndex:d.pageIndex||0,imgBytes:pdfBytes?null:dataUrlToBytes(d.img),pw:d.w,ph:d.h,reports});
     }
     set('Building PDF…');
     const bytes=await makeExportPdf(PDFLib,{job:j,company:COMPANY,plans,logoPng});
@@ -1358,7 +1437,7 @@ async function makeExportPdf(PDFLib,{job,company,plans,logoPng}){
   async function embedJpgs(list){const a=[];for(const bz of (list||[])){try{a.push(await out.embedJpg(bz));}catch(e){}}return a;}
   for(const plan of plans){
     let pg;
-    if(plan.pdfBytes){const src=await PDFDocument.load(plan.pdfBytes);[pg]=await out.copyPages(src,[0]);out.addPage(pg);}
+    if(plan.pdfBytes){const src=await PDFDocument.load(plan.pdfBytes);const pi=Math.min(plan.pageIndex||0,src.getPageCount()-1);[pg]=await out.copyPages(src,[pi]);out.addPage(pg);}
     else{let img=null;try{img=await out.embedJpg(plan.imgBytes);}catch(e){}const w=(img?img.width:plan.pw)||1200,h=(img?img.height:plan.ph)||1600;pg=out.addPage([w,h]);if(img)pg.drawImage(img,{x:0,y:0,width:w,height:h});}
     const pw=pg.getWidth(), ph=pg.getHeight();
     const repPages=[];
