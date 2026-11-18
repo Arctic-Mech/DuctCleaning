@@ -68,12 +68,9 @@ body{
   -webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;
   overscroll-behavior-y:none;
 }
-/* space for the iPhone status bar. Opened from the Home Screen, the status bar sits on top of the page,
-   and some iOS versions report 0 for it, so the app adds a fixed blank space there (portrait only;
-   the status bar is hidden in landscape). */
+/* space for the iPhone status bar: set in px by safeTop() in the script (Home Screen app in portrait gets
+   at least 62px even when iOS reports 0); this is only the fallback */
 :root{--safe-top:env(safe-area-inset-top,0px)}
-html.ios-app{--safe-top:max(env(safe-area-inset-top,0px),62px)}
-@media (orientation:landscape){html.ios-app{--safe-top:env(safe-area-inset-top,0px)}}
 #app{min-height:100%;display:flex;flex-direction:column;padding-top:var(--safe-top)}
 h1,h2,h3{font-family:var(--font-head);font-weight:700;margin:0;letter-spacing:-.01em}
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
@@ -356,6 +353,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .lyr.hrow .eyeic svg{width:20px;height:20px}
 .lyr.hrow.off .eyeic{color:var(--faint)}
 .linkbtn{border:none;background:none;color:var(--accent);font:600 13.5px var(--font-body);padding:6px 2px}
+.buildinfo{margin-top:28px;text-align:center;font-size:11px;color:var(--faint);opacity:.75;line-height:1.4}
 /* truck checklist */
 .cl-eyebrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
 .cl-eyebrow .linkbtn{letter-spacing:0;text-transform:none}
@@ -785,9 +783,36 @@ function fitEncode(base,budget){
 
 /* ============================ state ============================ */
 const COMPANY='Arctic';
-// opened from the iPhone Home Screen (not in Safari): leave room for the status bar
-try{if(navigator.standalone===true||(matchMedia('(display-mode: standalone)').matches&&/iP(hone|od|ad)/.test(navigator.userAgent)))
-  document.documentElement.classList.add('ios-app');}catch(e){}
+/* Room for the iPhone status bar. Opened from the Home Screen, the page is drawn underneath the status
+   bar, and some iPhones report 0 for env(safe-area-inset-top). So: detect "drawn under the status bar"
+   several ways, and set --safe-top in plain px (at least 62 in portrait). */
+const SAFE=(function(){
+  const root=document.documentElement;let probe=null;
+  const mm=q=>{try{return matchMedia(q).matches;}catch(e){return false;}};
+  const reported=()=>{try{if(!probe){probe=document.createElement('div');
+      probe.style.cssText='position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px)';
+      (document.body||root).appendChild(probe);}
+    return Math.round(parseFloat(getComputedStyle(probe).paddingTop)||0);}catch(e){return 0;}};
+  const ios=/iP(hone|od|ad)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  const why=[];
+  if(navigator.standalone===true)why.push('standalone');
+  if(ios&&(mm('(display-mode: standalone)')||mm('(display-mode: fullscreen)')||mm('(display-mode: minimal-ui)')))why.push('display-mode');
+  // page covers the status bar too (Safari itself says standalone===false, so it never lands here)
+  if(ios&&navigator.standalone!==false&&innerHeight>innerWidth&&Math.abs(screen.height-innerHeight)<2)why.push('full-screen');
+  const S0={app:why.length>0,why:why.join('+'),reported:0,top:0};
+  if(S0.app)root.classList.add('ios-app');
+  function apply(){
+    S0.reported=reported();const portrait=innerHeight>innerWidth;
+    S0.top=S0.app&&portrait?Math.max(S0.reported,62):S0.reported;
+    root.style.setProperty('--safe-top',S0.top+'px');
+    const b=document.getElementById('buildInfo');if(b)b.textContent=buildInfoText();
+  }
+  S0.apply=apply;apply();
+  addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
+  return S0;
+})();
+const BUILD='Nov 18 14:34';
+const buildInfoText=()=>`Build ${BUILD} · ${SAFE.app?'app':'browser'} · top ${SAFE.top}px (phone says ${SAFE.reported})`;
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],user:null,route:['jobs'],jobId:null,drawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -1012,6 +1037,7 @@ function render(){
 
 /* ---------- view: jobs list ---------- */
 function viewJobs(app){
+  if(UPDATE_READY){UPDATE_READY=false;location.reload();return;}
   const jobs=[...S.jobs].sort((a,b)=>b.createdAt-a.createdAt);
   let rows='';
   jobs.forEach(j=>{
@@ -1036,6 +1062,7 @@ function viewJobs(app){
       ${jobs.length? `<div class="card stack" style="padding:0;gap:0">${rows.split('</button>').join('</button>')}</div>`
         : `<div class="empty"><div class="ic">${I.job}</div><h2>No jobs yet</h2>
              <p>Start a job to add floor plans and log duct cleaning reports in the field.</p></div>`}
+      <div class="buildinfo" id="buildInfo">${esc(buildInfoText())}</div>
     </div>
     <div class="bottombar"><button class="btn primary block" id="newJob">${I.plus} Start a job</button></div>`;
   // card rows: need per-row borders
@@ -2893,29 +2920,66 @@ function bootError(msg){
     '<div style="color:var(--danger);font-weight:700;font-size:17px;margin-bottom:8px">Couldn’t connect</div>'+
     '<div style="font-size:14px;line-height:1.5">'+esc(msg)+'</div></div>';
 }
+// what the app loads at startup: [state key, Firestore collection]
+const BOOT_STORES=[['jobs','jobs'],['drawings','drawings'],['reports','reports'],['markers','markers'],
+  ['users','users'],['groups','mkgroups'],['checklist','checklist']];
+// all collections at once. source 'cache' = what this phone already saved (instant, works with no signal)
+async function loadStores(source){
+  const out={};
+  await Promise.all(BOOT_STORES.map(async([k,coll])=>{
+    try{const snap=await fdb.collection(coll).get(source?{source}:undefined);out[k]=snap.docs.map(x=>x.data());}
+    catch(e){if(k==='jobs'||k==='drawings'||k==='reports')throw e;console.warn(coll+' load failed',e);out[k]=null;}
+  }));
+  return out;
+}
+function applyStores(d){for(const k in d)if(d[k])S[k]=d[k];}
+// who is using this device (asked once, by name)
+function restoreUser(){
+  try{const sv=JSON.parse(localStorage.getItem('ductpro-user')||'null');
+    if(sv&&sv.id){let u=S.users.find(x=>x.id===sv.id);
+      if(!u&&sv.first){u={id:sv.id,first:sv.first,last:sv.last||'',createdAt:sv.createdAt||now()};S.users.push(u);pPut('users',u).catch(()=>{});}
+      S.user=u||null;}}catch(e){}
+}
+// fresh data arrived after the app was already showing: redraw without yanking anything out from under you
+function refreshAfterSync(){
+  const route=S.route[S.route.length-1];
+  if(document.querySelector('#sheets .scrim'))return;            // a form is open; the next screen picks it up
+  if(route==='drawing'){if(VW&&VW.renderPins){VW.renderPins();VW.renderMarkers();}return;}
+  if(route==='export')return;
+  render();
+}
+// Home Screen apps can hang on to an old copy of the page. If the server has a newer build, load it
+// (right away at startup, otherwise the next time you're back on the home screen).
+let UPDATE_READY=false;
+function checkForUpdate(){
+  if(BUILD.indexOf('__')===0||!window.fetch)return;
+  const t0=Date.now();
+  fetch(location.pathname,{cache:'reload'}).then(r=>r.ok?r.text():'').then(t=>{
+    const m=t.match(/const BUILD='([^']+)'/);if(!m||m[1]===BUILD)return;
+    let tried=null;try{tried=sessionStorage.getItem('ductpro-update');}catch(e){}
+    if(tried===m[1])return;                                    // already reloaded for this build once; don't loop
+    try{sessionStorage.setItem('ductpro-update',m[1]);}catch(e){}
+    const route=S.route[S.route.length-1];
+    if(Date.now()-t0<8000&&!document.querySelector('#sheets .scrim')&&(route==='jobs'||document.getElementById('boot').style.display!=='none'))location.reload();
+    else UPDATE_READY=true;
+  }).catch(()=>{});
+}
 (async function boot(){
+  checkForUpdate();
   try{ await initStore(); }
   catch(e){ console.error(e); bootError('Could not reach Firebase. Check your internet connection and reload.'); return; }
-  try{
-    S.jobs=await pAll('jobs');S.drawings=await pAll('drawings');S.reports=await pAll('reports');
-    try{S.markers=await pAll('markers');}catch(e){console.warn('markers load failed',e);S.markers=[];}
-    try{S.users=await pAll('users');}catch(e){S.users=[];}
-    try{S.groups=await pAll('mkgroups');}catch(e){S.groups=[];}
-    try{S.checklist=await pAll('checklist');}catch(e){S.checklist=[];}
-    // who is using this device (asked once, by name)
-    try{const sv=JSON.parse(localStorage.getItem('ductpro-user')||'null');
-      if(sv&&sv.id){let u=S.users.find(x=>x.id===sv.id);
-        if(!u&&sv.first){u={id:sv.id,first:sv.first,last:sv.last||'',createdAt:sv.createdAt||now()};S.users.push(u);pPut('users',u).catch(()=>{});}
-        S.user=u||null;}}catch(e){}
-  }catch(e){
+  let shown=false;
+  const show=()=>{restoreUser();restoreNav();render();watchChecklist();document.getElementById('boot').style.display='none';shown=true;};
+  // 1) open with what this phone already has: no waiting on a weak signal
+  try{const c=await loadStores('cache');
+    if(c.jobs&&(c.jobs.length||(c.checklist&&c.checklist.length))){applyStores(c);show();}}catch(e){}
+  // 2) then the latest from the server
+  try{const f=await loadStores();applyStores(f);
+    if(!shown)show();else{restoreUser();refreshAfterSync();}}
+  catch(e){
     console.error(e);
-    bootError('Connected to Firebase, but reads were denied. Make sure Firestore and Storage security rules allow access, then reload.');
-    return;
+    if(!shown)bootError('Connected to Firebase, but reads were denied. Make sure Firestore and Storage security rules allow access, then reload.');
   }
-  restoreNav();
-  render();
-  watchChecklist();
-  document.getElementById('boot').style.display='none';
 })();
 </script>
 
