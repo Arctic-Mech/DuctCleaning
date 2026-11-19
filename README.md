@@ -55,9 +55,10 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   Per-run and per-estimate totals (linear ft / sq ft), counted as a union so the same run — or an
   overlapping branch tie-in — is never double-counted. Each run you start is **auto-labeled by duct
   type** (LPS 1, LPS 2, RET 1…) and can be renamed in its editor. A run is a group: its **branches**
-  snap to the main (no tie-in dot) and belong to it, and **Fill** links to a run too — you pick the
-  run first (a selector in the Fill bar), then pour; the fill takes that run's color and counts under
-  it. **Fill** is a paint-bucket: tap inside an enclosed duct and it floods the area to the
+  snap to the main (no tie-in dot) and belong to it. Hitting **Fill** asks what you're measuring —
+  **start a new run** (choose the duct type) or **add fill to an existing run** — so a fill can begin
+  a measurement or attach to a run you've already started; the fill takes that run's color and counts
+  under it. **Fill** is a paint-bucket: tap inside an enclosed duct and it floods the area to the
   surrounding lines; fills render with no border in the same translucent shade as measured bands, so
   everything blends together. A fill also yields **linear footage**: it finds the filled region's
   medial-axis **centerline** (which curves through radius elbows for the most accurate path), splits

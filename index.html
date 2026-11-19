@@ -884,7 +884,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 10:36';
+const BUILD='Nov 19 10:53';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -3123,8 +3123,24 @@ function estCenterline(r,img){const {mask,minx,miny,maxx,maxy}=r,W=img.W,H=img.H
   for(let gy=PAD;gy<gh-PAD;gy++)for(let gx=PAD;gx<gw-PAD;gx++){const ix=minx+Math.round((gx-PAD)/k),iy=miny+Math.round((gy-PAD)/k);if(ix>=0&&iy>=0&&ix<W&&iy<H&&mask[iy*W+ix])grid[gy*gw+gx]=1;}
   const sk=estSkeletonize(grid,gw,gh);
   const toNorm=c=>[(minx+(c[0]-PAD)/k)/W,(miny+(c[1]-PAD)/k)/H];
-  const polys=sk.polys.map(pp=>{const simp=estSimplify(pp.cells,1.2);const pts=[];simp.forEach(c=>{const n=toNorm(c);pts.push(+n[0].toFixed(5),+n[1].toFixed(5));});return {pts,isMain:pp.isMain};}).filter(pp=>pp.pts.length>=4);
-  return {polys,branches:sk.branches,tips:sk.tips};}
+  const eps=Math.max(2,sk.avgW*0.5);
+  const toPts=cells=>{const simp=estSimplify(cells,eps);const pts=[];simp.forEach(c=>{const n=toNorm(c);pts.push(+n[0].toFixed(5),+n[1].toFixed(5));});return pts;};
+  const out=[];
+  const mainCells=estStitch(sk.polys.filter(p=>p.isMain).map(p=>p.cells));
+  if(mainCells.length){const pts=toPts(mainCells);if(pts.length>=4)out.push({pts,isMain:true});}
+  sk.polys.filter(p=>!p.isMain).forEach(p=>{const pts=toPts(p.cells);if(pts.length>=4)out.push({pts,isMain:false});});
+  return {polys:out,branches:sk.branches,tips:sk.tips};}
+function estStitch(polys){if(!polys.length)return [];if(polys.length===1)return polys[0];
+  const same=(a,b)=>a[0]===b[0]&&a[1]===b[1];const used=new Array(polys.length).fill(false);
+  let chain=polys[0].slice();used[0]=true;let ext=true,guard=0;
+  while(ext&&guard++<polys.length+2){ext=false;
+    for(let i=0;i<polys.length;i++){if(used[i])continue;const p=polys[i];const h=chain[0],t=chain[chain.length-1];
+      if(same(t,p[0])){chain=chain.concat(p.slice(1));used[i]=true;ext=true;}
+      else if(same(t,p[p.length-1])){chain=chain.concat(p.slice(0,-1).reverse());used[i]=true;ext=true;}
+      else if(same(h,p[p.length-1])){chain=p.slice(0,-1).concat(chain);used[i]=true;ext=true;}
+      else if(same(h,p[0])){chain=p.slice(1).reverse().concat(chain);used[i]=true;ext=true;}}}
+  for(let i=0;i<polys.length;i++)if(!used[i])chain=chain.concat(polys[i]);
+  return chain;}
 // flood from a normalized point -> {fillFrac, fillPoly(normalized flat)} or {leak}/{onLine}
 function estFillAt(img,nx,ny,maxPx){
   const r=estFloodFill(img,Math.round(nx*img.W),Math.round(ny*img.H),maxPx);
@@ -3321,7 +3337,7 @@ function viewEstMeasure(app){
   const ink=app.querySelector('#eink'),labels=app.querySelector('#elabels'),hint=app.querySelector('#evHint');
   const sub=app.querySelector('#evSub'),totBtn=app.querySelector('#evTot'),vbar=app.querySelector('#evbar');
   let baseW=viewer.clientWidth||360, baseH=baseW*asp;
-  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true, tempTie=false, tempTieRun=null, runGroup=null, fillRun=null; // temp: flat normalized pts being placed
+  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true, tempTie=false, tempTieRun=null, runGroup=null, fillTarget=null; // temp: flat normalized pts being placed
   EVW={get scale(){return scale;},nc:(nx,ny)=>{const r=viewer.getBoundingClientRect();return [r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];}};
   const dotR=()=>Math.max(0.6,4200/(scale*baseW));   // ~4px on screen at any zoom
   const apply=()=>{stage.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;drawLabels();
@@ -3401,20 +3417,16 @@ function viewEstMeasure(app){
       vbar.querySelector('#eUndo').onclick=()=>{temp=temp.slice(0,-2);refresh();};
       vbar.querySelector('#eCancel').onclick=()=>{mode='view';temp=[];refresh();};
     }else if(mode==='fill'){
-      const rsF=estRunsOf(d.id);const mains=rsF.filter(estIsMain);
-      if(!mains.length){
-        hint.innerHTML=`${I.info}<span>Measure a run first — a fill links to a run</span>`;
-        vbar.innerHTML=`<button class="btn primary block" id="eFillDone">${I.check} Done</button>`;
-      }else{
-        if(fillRun&&!mains.some(m=>estGroupOf(m)===fillRun))fillRun=null;
-        if(mains.length===1)fillRun=estGroupOf(mains[0]);             // only one run: no ambiguity
-        const active=fillRun?estRunMain(rsF,fillRun):null;
-        hint.innerHTML=active?`${I.fill}<span>Filling into <b>${esc(active.label||'run')}</b> · tap inside the duct</span>`:`${I.info}<span>Pick the run this fill belongs to</span>`;
-        vbar.innerHTML=`<div class="estrun"><div class="estkinds estsel">${mains.map(m=>{const g=estGroupOf(m);return `<button type="button" data-run="${g}" class="${g===fillRun?'on':''}" style="--kc:${estKindOf(m).color}">${esc(m.label||'Run')}</button>`;}).join('')}</div>
-          <button class="btn primary block" id="eFillDone">${I.check} Finish</button></div>`;
-        vbar.querySelectorAll('.estsel [data-run]').forEach(b=>b.onclick=()=>{fillRun=b.dataset.run;renderBar();});
-      }
-      vbar.querySelector('#eFillDone').onclick=()=>{mode='view';refresh();};
+      const rsF=estRunsOf(d.id);
+      if(!fillTarget){fillChooser();return;}
+      let flabel,fcol;
+      if(fillTarget.mode==='new'){flabel='new '+DUCT_KINDS[fillTarget.kind].short+' run';fcol=DUCT_KINDS[fillTarget.kind].color;}
+      else{const m=estRunMain(rsF,fillTarget.group);flabel=(m&&m.label)||'run';fcol=m?estKindOf(m).color:'var(--fg)';}
+      hint.innerHTML=`${I.fill}<span>Filling <b>${esc(flabel)}</b> · tap inside the duct</span>`;
+      vbar.innerHTML=`<div class="estrun"><button class="btn" id="eFillWhat" style="justify-content:flex-start"><i class="estdot" style="background:${fcol};margin-right:8px"></i>${esc(flabel)} · change</button>
+        <button class="btn primary block" id="eFillDone">${I.check} Finish</button></div>`;
+      vbar.querySelector('#eFillWhat').onclick=()=>fillChooser();
+      vbar.querySelector('#eFillDone').onclick=()=>{mode='view';fillTarget=null;refresh();};
     }else{
       const nv=temp.length/2;
       const curRun=runGroup?estRunMain(estRunsOf(d.id),runGroup):null;
@@ -3432,16 +3444,35 @@ function viewEstMeasure(app){
   }
   function startCal(){mode='cal';temp=[];refresh();}
   function startRun(parent){mode='run';temp=[];tempTie=false;tempTieRun=null;runGroup=parent||null;refresh();}
-  function startFill(){mode='fill';temp=[];fillRun=null;refresh();estImage(d).catch(()=>{});}
-  async function doFill(cx,cy){const rsF=estRunsOf(d.id);const active=estRunMain(rsF,fillRun);
-    if(!active){toast('Pick a run to fill first');renderBar();return;}
+  function startFill(){fillChooser();}
+  function fillChooser(){
+    const rs=estRunsOf(d.id);const mains=rs.filter(estIsMain);let fk=estKind;
+    const body=document.createElement('div');
+    body.innerHTML=`<p class="cl-note">What do you want this fill to measure?</p>
+      <div class="cl-subhead" style="margin-top:12px">Start a new run</div>
+      <div class="estkinds" id="fcKind">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${k===fk?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
+      <button type="button" class="btn primary block" id="fcNew" style="margin-top:10px">${I.fill} Fill a new run</button>
+      ${mains.length?`<div class="cl-subhead" style="margin-top:18px">Add fill to an existing run</div>
+        <div class="stack" id="fcList" style="margin-top:4px">${mains.map(m=>`<button type="button" class="row" data-g="${estGroupOf(m)}"><span class="thumb" style="background:${estKindOf(m).color}22;color:${estKindOf(m).color}">${I.fill}</span><span class="grow"><h3>${esc(m.label||'Run')}</h3><span class="meta">${estKindOf(m).label}</span></span><span class="chev">${I.chev}</span></button>`).join('')}</div>`:''}`;
+    const ctl=sheetShell({title:'Fill — what are you measuring?',bodyNode:body});
+    body.querySelectorAll('#fcKind [data-k]').forEach(b=>b.onclick=()=>{fk=b.dataset.k;body.querySelectorAll('#fcKind [data-k]').forEach(x=>x.classList.toggle('on',x.dataset.k===fk));});
+    body.querySelector('#fcNew').onclick=()=>{estKind=fk;try{localStorage.setItem('ductpro-est-kind',fk);}catch(e){}fillTarget={mode:'new',kind:fk,group:null};ctl.close();mode='fill';refresh();estImage(d).catch(()=>{});};
+    body.querySelectorAll('#fcList [data-g]').forEach(b=>b.onclick=()=>{const g=b.dataset.g,m=estRunMain(rs,g);fillTarget={mode:'add',group:g,kind:m?m.kind:'mps'};ctl.close();mode='fill';refresh();estImage(d).catch(()=>{});});
+    ctl.scrim.addEventListener('click',e=>{if(e.target===ctl.scrim&&!fillTarget){mode='view';refresh();}});
+  }
+  async function doFill(cx,cy){
+    if(!fillTarget){fillChooser();return;}
     const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap inside the drawing');return;}
     hint.innerHTML=`${I.info}<span>Filling…</span>`;
     try{const img=await estImage(d);const res=estFillAt(img,nx,ny,Math.round(img.W*img.H*0.06));
       if(res.onLine){toast('Tap in the open space inside the duct');renderBar();return;}
       if(res.leak||!res.fillPoly){toast('That space isn’t closed off — draw the run instead');renderBar();return;}
-      const run={id:uid(),estId:d.estId,drawId:d.id,kind:active.kind||'mps',widthMode:'fill',fillFrac:res.fillFrac,fillPoly:res.fillPoly,center:res.center||[],centerBranches:res.centerBranches||0,centerTips:res.centerTips||0,pts:[+nx.toFixed(5),+ny.toFixed(5)],groupId:estGroupOf(active),role:'fill',label:'',createdAt:now()};
-      S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));refresh();toast(ft1(estRunLenFt(run,d))+' lf · '+Math.round(estAreaFt(run,d))+' sq ft into '+(active.label||'run'));
+      const rs=estRunsOf(d.id);const id=uid();let groupId,role,kind,label='';
+      if(fillTarget.mode==='new'){kind=fillTarget.kind;groupId=id;role='main';label=estAutoLabel(rs,kind);fillTarget={mode:'add',group:id,kind};}
+      else{const m=estRunMain(rs,fillTarget.group);kind=m?m.kind:(fillTarget.kind||'mps');groupId=fillTarget.group;role='fill';}
+      const run={id,estId:d.estId,drawId:d.id,kind,widthMode:'fill',fillFrac:res.fillFrac,fillPoly:res.fillPoly,center:res.center||[],centerBranches:res.centerBranches||0,centerTips:res.centerTips||0,pts:[+nx.toFixed(5),+ny.toFixed(5)],groupId,role,label,createdAt:now()};
+      S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));refresh();
+      toast(ft1(estRunLenFt(run,d))+' lf · '+Math.round(estAreaFt(run,d))+' sq ft'+(role==='main'?(' · '+label):''));
     }catch(e){console.warn(e);toast('Fill failed — try again');renderBar();}}
   function snapPoint(cx,cy){const thr=16;let best=null,bd=thr,bestRun=null;const r=viewer.getBoundingClientRect();
     const sc=(nx,ny)=>[r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];
