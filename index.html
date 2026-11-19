@@ -207,6 +207,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 /* ---------- markup: planning markers + freehand ink ---------- */
 :root{--mk-exhaust:#7c3aed;--mk-access:#0891b2;--mk-note:#db2777}
 #ink{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+#eink,#elabels{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
 #mklayer{position:absolute;left:0;top:0}
 .hide-markups #ink,.hide-markups #mklayer{display:none}
 .mk{position:absolute;transform:translate(-50%,-50%);transform-origin:center center;
@@ -868,7 +869,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 07:36';
+const BUILD='Nov 19 07:47';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -3115,10 +3116,10 @@ function viewEstMeasure(app){
     // the filled area (duct width out to the bold lines): translucent band of the measured width
     if(sw>0)s+=`<path d="${dstr}" fill="none" stroke="${col}" stroke-opacity="0.3" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
     // the line you drew (linear): a crisp centerline on top
-    s+=`<path d="${dstr}" fill="none" stroke="${col}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${temp?' stroke-dasharray="6 4"':` data-run="${id}" style="cursor:pointer"`}/>`;
+    s+=`<path d="${dstr}" fill="none" stroke="${col}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${temp?' stroke-dasharray="6 4"':` data-run="${id}" style="cursor:pointer;pointer-events:auto"`}/>`;
     if(!temp&&id){const [x0,y0]=toPx(pts[0],pts[1]),[x1,y1]=toPx(pts[pts.length-2],pts[pts.length-1]);
-      s+=`<circle cx="${x0}" cy="${y0}" r="4.5" fill="#fff" stroke="${col}" stroke-width="2.2" vector-effect="non-scaling-stroke" data-run="${id}" style="cursor:pointer"/>`;
-      s+=`<circle cx="${x1}" cy="${y1}" r="4.5" fill="#fff" stroke="${col}" stroke-width="2.2" vector-effect="non-scaling-stroke" data-run="${id}" style="cursor:pointer"/>`;}
+      s+=`<circle cx="${x0}" cy="${y0}" r="4.5" fill="#fff" stroke="${col}" stroke-width="2.2" vector-effect="non-scaling-stroke" data-run="${id}" style="cursor:pointer;pointer-events:auto"/>`;
+      s+=`<circle cx="${x1}" cy="${y1}" r="4.5" fill="#fff" stroke="${col}" stroke-width="2.2" vector-effect="non-scaling-stroke" data-run="${id}" style="cursor:pointer;pointer-events:auto"/>`;}
     return s;}
   function drawLabels(){
     let h='';estRunsOf(d.id).forEach(r=>{if(r.pts.length<4)return;const mid=Math.floor(r.pts.length/4)*2;
