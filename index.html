@@ -885,7 +885,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 15:23';
+const BUILD='Nov 19 15:33';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -3330,7 +3330,7 @@ function viewEstMeasure(app){
   const ink=app.querySelector('#eink'),labels=app.querySelector('#elabels'),hint=app.querySelector('#evHint'),ehires=app.querySelector('#ehires');
   const sub=app.querySelector('#evSub'),totBtn=app.querySelector('#evTot'),vbar=app.querySelector('#evbar');
   let baseW=viewer.clientWidth||360, baseH=baseW*asp;
-  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true, tempTie=false, tempTieRun=null, runGroup=null, fillTarget=null, fillStep='pour', fillGroupId=null, fillLeadId=null, fillTemp=[]; // temp: flat normalized pts being placed
+  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true, tempTie=false, tempTieRun=null, runGroup=null, fillTarget=null, fillStep='pour', fillGroupId=null, fillLeadId=null, fillTemp=[], editRun=null, editTool='add', editR=14, editCv=null, editGW=0, editGH=0, editGroupCol='#000', editPainting=false; // temp: flat normalized pts being placed
   EVW={get scale(){return scale;},nc:(nx,ny)=>{const r=viewer.getBoundingClientRect();return [r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];}};
   const dotR=()=>Math.max(0.6,4200/(scale*baseW));   // ~4px on screen at any zoom
   const apply=()=>{stage.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;drawLabels();
@@ -3386,7 +3386,7 @@ function viewEstMeasure(app){
     // fills of one run share a single 0.3-opacity group, so overlapping pours read as ONE flat shade
     const fillG={},fo=[];
     rs.forEach(r=>{if(r.widthMode==='fill'&&r.fillPoly&&r.fillPoly.length>=6){const g=estGroupOf(r);if(!fillG[g]){fillG[g]=[];fo.push(g);}fillG[g].push(r);}});
-    fo.forEach(g=>{let a='';fillG[g].forEach(r=>{const col=estKindOf(r).color;let dd='';for(let i=0;i<r.fillPoly.length;i+=2){const [x,y]=toPx(r.fillPoly[i],r.fillPoly[i+1]);dd+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}dd+='Z';
+    fo.forEach(g=>{let a='';fillG[g].forEach(r=>{if(mode==='filledit'&&r.id===editRun)return;const col=estKindOf(r).color;let dd='';for(let i=0;i<r.fillPoly.length;i+=2){const [x,y]=toPx(r.fillPoly[i],r.fillPoly[i+1]);dd+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}dd+='Z';
       a+=`<path d="${dd}" fill="${col}" stroke="none" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;});
       h+=`<g opacity="0.3">${a}</g>`;});
     // strokes (centerlines for fills, bands+lines for drawn runs) at full opacity on top
@@ -3465,6 +3465,18 @@ function viewEstMeasure(app){
         vbar.querySelector('#eFillLineStart').onclick=()=>{if(!fillGroupId){toast('Fill an area first');return;}fillStep='trace';refresh();};
         vbar.querySelector('#eFillDone').onclick=()=>fillFinish();
       }
+    }else if(mode==='filledit'){
+      const r=S.estruns.find(x=>x.id===editRun);const lab=r?(estGroupLabel(estRunsOf(d.id),r)||'fill'):'fill';
+      hint.innerHTML=`${I.fill}<span>${editTool==='add'?'Paint':'Erase'} <b>${esc(lab)}</b> fill · drag on the drawing · ${editR<10?'small':editR<24?'medium':'large'} brush</span>`;
+      vbar.innerHTML=`<div class="estrun"><div class="seg" id="efTool" style="max-width:220px"><button type="button" data-t="add"${editTool==='add'?' class="on"':''}>Paint</button><button type="button" data-t="erase"${editTool==='erase'?' class="on"':''}>Erase</button></div>
+        <div class="drawbar"><button class="dt" id="efMinus" title="Smaller brush">−</button><button class="dt" id="efPlus" title="Bigger brush">+</button>
+        <button class="btn block" id="efCancel">${I.x} Cancel</button>
+        <button class="btn primary done" id="efDone">${I.check} Done</button></div></div>`;
+      vbar.querySelectorAll('#efTool [data-t]').forEach(b=>b.onclick=()=>{editTool=b.dataset.t;renderBar();});
+      vbar.querySelector('#efMinus').onclick=()=>{editR=Math.max(3,Math.round(editR/1.3));renderBar();};
+      vbar.querySelector('#efPlus').onclick=()=>{editR=Math.min(400,Math.round(editR*1.3));renderBar();};
+      vbar.querySelector('#efCancel').onclick=()=>editCancel();
+      vbar.querySelector('#efDone').onclick=()=>editDone();
     }else{
       const nv=temp.length/2;
       const curRun=runGroup?estRunMain(estRunsOf(d.id),runGroup):null;
@@ -3522,6 +3534,25 @@ function viewEstMeasure(app){
     if(lead){lead.center=[{pts:fillTemp.slice(),isMain:true}];pPut('estruns',lead).catch(()=>{});}
     const lf=lead?estRunLenFt(lead,d):0;fillFinish();toast('Line measured · '+ft1(lf)+' lf'); }
   function fillFinish(){mode='view';fillTarget=null;fillStep='pour';fillGroupId=null;fillLeadId=null;fillTemp=[];refresh();}
+  function startFillEdit(id){const r=S.estruns.find(x=>x.id===id);if(!r||r.widthMode!=='fill'){toast('Only a fill can be painted');return;}
+    editRun=id;editTool='add';editGW=1200;editGH=Math.max(1,Math.round(editGW*asp));editGroupCol=estKindOf(r).color;editR=Math.round(editGW*0.012);
+    editCv=document.createElement('canvas');editCv.width=editGW;editCv.height=editGH;editCv.id='efedit';
+    const g=editCv.getContext('2d');g.fillStyle=editGroupCol;
+    if(r.fillPoly&&r.fillPoly.length>=6){g.beginPath();for(let i=0;i<r.fillPoly.length;i+=2){const x=r.fillPoly[i]*editGW,y=r.fillPoly[i+1]*editGH;i?g.lineTo(x,y):g.moveTo(x,y);}g.closePath();g.fill();}
+    editCv.style.cssText='position:absolute;left:0;top:0;opacity:0.5;pointer-events:none';editCv.style.width=baseW+'px';editCv.style.height=baseH+'px';
+    stage.insertBefore(editCv,ink);mode='filledit';refresh();toast('Paint to add, Erase to remove — pinch/FIT to frame first');}
+  function editPaint(cx,cy){if(!editCv)return;const {nx,ny}=toNorm(cx,cy);const gx=nx*editGW,gy=ny*editGH;const g=editCv.getContext('2d');
+    if(editTool==='erase'){g.save();g.globalCompositeOperation='destination-out';g.beginPath();g.arc(gx,gy,editR,0,7);g.fill();g.restore();}
+    else{g.globalCompositeOperation='source-over';g.fillStyle=editGroupCol;g.beginPath();g.arc(gx,gy,editR,0,7);g.fill();}}
+  function editCleanup(){if(editCv&&editCv.parentNode)editCv.parentNode.removeChild(editCv);editCv=null;editRun=null;editPainting=false;}
+  function editCancel(){editCleanup();mode='view';refresh();}
+  function editDone(){const r=S.estruns.find(x=>x.id===editRun);
+    if(editCv&&r){const g=editCv.getContext('2d');const dta=g.getImageData(0,0,editGW,editGH).data;
+      let count=0,minx=editGW,miny=editGH,maxx=0,maxy=0;const mask=new Uint8Array(editGW*editGH);
+      for(let pq=0,i=0;pq<mask.length;pq++,i+=4){if(dta[i+3]>=128){mask[pq]=1;count++;const x=pq%editGW,y=(pq/editGW)|0;if(x<minx)minx=x;if(x>maxx)maxx=x;if(y<miny)miny=y;if(y>maxy)maxy=y;}}
+      if(count<9){S.estruns=S.estruns.filter(x=>x.id!==editRun);pDel('estruns',editRun).catch(()=>{});toast('Fill erased');}
+      else{const c=estMaskContour({mask,W:editGW,H:editGH,minx,miny,maxx,maxy});if(c.length>=3){const poly=[];c.forEach(pt=>poly.push(+(pt[0]/editGW).toFixed(5),+(pt[1]/editGH).toFixed(5)));r.fillPoly=poly;}r.fillFrac=count/(editGW*editGH);pPut('estruns',r).catch(()=>{});toast(Math.round(estAreaFt(r,d))+' sq ft');}}
+    editCleanup();mode='view';refresh();}
   function snapPoint(cx,cy){const thr=16;let best=null,bd=thr,bestRun=null;const r=viewer.getBoundingClientRect();
     const sc=(nx,ny)=>[r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];
     estRunsOf(d.id).forEach(run=>{if(estIsFill(run))return;for(let i=0;i+3<run.pts.length;i+=2){const [ax,ay]=sc(run.pts[i],run.pts[i+1]),[bx,by]=sc(run.pts[i+2],run.pts[i+3]);
@@ -3593,7 +3624,7 @@ function viewEstMeasure(app){
         <div class="cl-subhead">Duct type</div>
         <div class="estkinds" id="rKind">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${(cur.kind||'mps')===k?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
         <div class="field" style="margin-top:12px"><label>Run name</label><input class="inp" id="rLabel" value="${esc(glabel)}" placeholder="e.g. LPS 1"></div>
-        ${isFill?'':`<div class="cl-subhead">Width</div>
+        ${isFill?`<button type="button" class="btn" id="rEditFill" style="width:100%;margin-top:16px">${I.fill} Edit fill area (paint / erase)</button>`:`<div class="cl-subhead">Width</div>
         <div class="seg" id="rWmode" style="margin-top:6px"><button type="button" data-w="auto"${cur.widthMode==='auto'?' class="on"':''}>Auto width</button><button type="button" data-w="manual"${cur.widthMode==='manual'?' class="on"':''}>Set width</button></div>
         ${cur.widthMode==='manual'?`<div class="field" style="margin-top:10px"><label>Duct width</label><input class="inp" id="rWidth" inputmode="decimal" value="${ftIn(estWidthFt(cur,d))}" placeholder="e.g. 12&quot;"></div>`:''}
         <button type="button" class="btn" id="rBranch" style="width:100%;margin-top:16px">${I.plus} Add a branch</button>`}
@@ -3604,6 +3635,7 @@ function viewEstMeasure(app){
           return h;})()}</div>`;
       body.querySelectorAll('#rKind [data-k]').forEach(b=>b.onclick=()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.kind=b.dataset.k;pPut('estruns',c).catch(()=>{});draw();refresh();});
       body.querySelector('#rLabel').onchange=ev=>{const rsL=estRunsOf(d.id);const cc=S.estruns.find(x=>x.id===id);const m=estRunMain(rsL,estGroupOf(cc))||cc;if(!m)return;m.label=ev.target.value.trim();pPut('estruns',m).catch(()=>{});refresh();};
+      {const ef=body.querySelector('#rEditFill');if(ef)ef.onclick=()=>{ctl.close();startFillEdit(id);};}
       body.querySelectorAll('[data-w]').forEach(b=>b.onclick=async()=>{const c=S.estruns.find(x=>x.id===id);if(!c||c.widthMode==='fill')return;
         if(b.dataset.w==='manual'){c.widthMode='manual';if(!c.manualWidthFt)c.manualWidthFt=estWidthFt(c,d)||1;}
         else{c.widthMode='auto';try{const img=await estImage(d);const e=estDetectEdges(c.pts,img,estMaxPx(d,img));if(e){c.edgeL=e.edgeL;c.edgeR=e.edgeR;}else{const w=estDetectWidthFrac(c.pts,img);if(w)c.widthFrac=w.frac;}}catch(e){}}
@@ -3665,17 +3697,17 @@ function viewEstMeasure(app){
 
   // ---- pan / zoom / tap ----
   const ptrs=new Map();let panStart=null,pinch=null,moved=0,downXY=null;
-  viewer.addEventListener('pointerdown',ev=>{viewer.setPointerCapture(ev.pointerId);ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+  viewer.addEventListener('pointerdown',ev=>{if(mode==='filledit'){viewer.setPointerCapture(ev.pointerId);editPainting=true;editPaint(ev.clientX,ev.clientY);return;}viewer.setPointerCapture(ev.pointerId);ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
     if(ptrs.size===1){panStart={x:ev.clientX,y:ev.clientY,tx,ty};downXY={x:ev.clientX,y:ev.clientY};moved=0;}
     else if(ptrs.size===2){const p=[...ptrs.values()];const mx=(p[0].x+p[1].x)/2,my=(p[0].y+p[1].y)/2;
       const r=viewer.getBoundingClientRect();pinch={d:Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y),scale,cx:mx-r.left,cy:my-r.top,
         ax:((mx-r.left)-tx)/scale,ay:((my-r.top)-ty)/scale};panStart=null;}});
-  viewer.addEventListener('pointermove',ev=>{if(!ptrs.has(ev.pointerId))return;ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+  viewer.addEventListener('pointermove',ev=>{if(mode==='filledit'){if(editPainting)editPaint(ev.clientX,ev.clientY);return;}if(!ptrs.has(ev.pointerId))return;ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
     if(pinch&&ptrs.size>=2){const p=[...ptrs.values()];const nd=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y)||1;
       scale=Math.max(0.2,Math.min(16,pinch.scale*(nd/pinch.d)));tx=pinch.cx-pinch.ax*scale;ty=pinch.cy-pinch.ay*scale;apply();}
     else if(panStart&&ptrs.size===1){tx=panStart.tx+(ev.clientX-panStart.x);ty=panStart.ty+(ev.clientY-panStart.y);
       moved=Math.max(moved,Math.hypot(ev.clientX-downXY.x,ev.clientY-downXY.y));apply();}});
-  function up(ev){if(!ptrs.has(ev.pointerId))return;const was1=ptrs.size===1;ptrs.delete(ev.pointerId);
+  function up(ev){if(mode==='filledit'){editPainting=false;return;}if(!ptrs.has(ev.pointerId))return;const was1=ptrs.size===1;ptrs.delete(ev.pointerId);
     if(ptrs.size<2)pinch=null;if(ptrs.size===0){if(was1&&moved<6){if(mode==='fill'){if(fillStep==='trace')fillAddPoint(ev.clientX,ev.clientY);else doFill(ev.clientX,ev.clientY);}else if(mode!=='view')addPoint(ev.clientX,ev.clientY);else{const id=runAt(ev.clientX,ev.clientY);if(id)runSheet(id);}}panStart=null;}}
   viewer.addEventListener('pointerup',up);viewer.addEventListener('pointercancel',up);
   // mouse-wheel / trackpad zoom around the cursor

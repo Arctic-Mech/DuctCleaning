@@ -64,6 +64,8 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   **Measure line** and lay down a continuous line — tap the start, any bends, then the end — which is
   exactly your line (no auto-guessing). You establish the main by measuring it first, then add taps as
   their own fills. Filling each duct separately also lets you measure ducts stacked on each other.
+  Open a fill from its run editor to **Edit fill area** — Paint to add or Erase to remove, with an
+  adjustable brush size — to fine-tune the square footage.
   Deleting a run segment offers **Delete this branch/fill** or **Delete
   the whole run** (the main with all its branches and fills). **Undo** (button in the measure bar, or
   Ctrl/⌘-Z) removes the most recent run or fill. A **branch load** accounts for branches being slower
