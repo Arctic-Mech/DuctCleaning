@@ -884,7 +884,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 10:23';
+const BUILD='Nov 19 10:36';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -3321,7 +3321,7 @@ function viewEstMeasure(app){
   const ink=app.querySelector('#eink'),labels=app.querySelector('#elabels'),hint=app.querySelector('#evHint');
   const sub=app.querySelector('#evSub'),totBtn=app.querySelector('#evTot'),vbar=app.querySelector('#evbar');
   let baseW=viewer.clientWidth||360, baseH=baseW*asp;
-  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true, tempTie=false, tempTieRun=null, branchParent=null, fillRun=null; // temp: flat normalized pts being placed
+  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true, tempTie=false, tempTieRun=null, runGroup=null, fillRun=null; // temp: flat normalized pts being placed
   EVW={get scale(){return scale;},nc:(nx,ny)=>{const r=viewer.getBoundingClientRect();return [r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];}};
   const dotR=()=>Math.max(0.6,4200/(scale*baseW));   // ~4px on screen at any zoom
   const apply=()=>{stage.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;drawLabels();
@@ -3406,9 +3406,10 @@ function viewEstMeasure(app){
         hint.innerHTML=`${I.info}<span>Measure a run first — a fill links to a run</span>`;
         vbar.innerHTML=`<button class="btn primary block" id="eFillDone">${I.check} Done</button>`;
       }else{
-        if(!fillRun||!mains.some(m=>estGroupOf(m)===fillRun))fillRun=estGroupOf(mains[mains.length-1]);
-        const active=estRunMain(rsF,fillRun);
-        hint.innerHTML=`${I.fill}<span>Filling into <b>${esc(active.label||'run')}</b> · tap inside the duct</span>`;
+        if(fillRun&&!mains.some(m=>estGroupOf(m)===fillRun))fillRun=null;
+        if(mains.length===1)fillRun=estGroupOf(mains[0]);             // only one run: no ambiguity
+        const active=fillRun?estRunMain(rsF,fillRun):null;
+        hint.innerHTML=active?`${I.fill}<span>Filling into <b>${esc(active.label||'run')}</b> · tap inside the duct</span>`:`${I.info}<span>Pick the run this fill belongs to</span>`;
         vbar.innerHTML=`<div class="estrun"><div class="estkinds estsel">${mains.map(m=>{const g=estGroupOf(m);return `<button type="button" data-run="${g}" class="${g===fillRun?'on':''}" style="--kc:${estKindOf(m).color}">${esc(m.label||'Run')}</button>`;}).join('')}</div>
           <button class="btn primary block" id="eFillDone">${I.check} Finish</button></div>`;
         vbar.querySelectorAll('.estsel [data-run]').forEach(b=>b.onclick=()=>{fillRun=b.dataset.run;renderBar();});
@@ -3416,7 +3417,9 @@ function viewEstMeasure(app){
       vbar.querySelector('#eFillDone').onclick=()=>{mode='view';refresh();};
     }else{
       const nv=temp.length/2;
-      hint.innerHTML=`${I.pen}<span>Tap along the duct · <b>Add run</b> for each branch${nv?' · '+nv+' point'+(nv!==1?'s':''):''}</span>`;
+      const curRun=runGroup?estRunMain(estRunsOf(d.id),runGroup):null;
+      const lead=curRun?`Adding to <b>${esc(curRun.label||'this run')}</b>`:'Tap along the duct';
+      hint.innerHTML=`${I.pen}<span>${lead} · <b>Add run</b> keeps the same run, <b>Finish</b> ends it${nv?' · '+nv+' pt'+(nv!==1?'s':''):''}</span>`;
       vbar.innerHTML=`<div class="estrun"><div class="estkinds">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${k===estKind?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
         <div class="drawbar"><button class="dt" id="eUndo"${temp.length?'':' disabled style="opacity:.4"'}>${I.undo}</button>
         <button class="btn block" id="eFinish">${I.check} Finish</button>
@@ -3428,8 +3431,8 @@ function viewEstMeasure(app){
     }
   }
   function startCal(){mode='cal';temp=[];refresh();}
-  function startRun(parent){mode='run';temp=[];tempTie=false;tempTieRun=null;branchParent=parent||null;refresh();}
-  function startFill(){mode='fill';temp=[];refresh();estImage(d).catch(()=>{});}
+  function startRun(parent){mode='run';temp=[];tempTie=false;tempTieRun=null;runGroup=parent||null;refresh();}
+  function startFill(){mode='fill';temp=[];fillRun=null;refresh();estImage(d).catch(()=>{});}
   async function doFill(cx,cy){const rsF=estRunsOf(d.id);const active=estRunMain(rsF,fillRun);
     if(!active){toast('Pick a run to fill first');renderBar();return;}
     const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap inside the drawing');return;}
@@ -3479,14 +3482,15 @@ function viewEstMeasure(app){
       ctl.close();mode='view';temp=[];refresh();toast('Scale set');};
   }
   async function addRun(exit){
-    if(temp.length<4){if(exit){mode='view';temp=[];tempTie=false;tempTieRun=null;branchParent=null;refresh();}else toast('Tap at least two points');return;}
+    if(temp.length<4){if(exit){mode='view';temp=[];tempTie=false;tempTieRun=null;runGroup=null;refresh();}else toast('Tap at least two points');return;}
     const id=uid();const pts=temp.slice();const rsA=estRunsOf(d.id);
     let groupId,role,label='';
-    if(branchParent){groupId=branchParent;role='branch';}
-    else if(tempTie&&tempTieRun){groupId=tempTieRun;role='branch';}
-    else{groupId=id;role='main';label=estAutoLabel(rsA,estKind);}
+    if(tempTie&&tempTieRun){groupId=tempTieRun;role='branch';}        // tapped onto an existing run -> branch of it
+    else if(runGroup){groupId=runGroup;role='branch';}               // same measuring session -> branch of the current run
+    else{groupId=id;role='main';label=estAutoLabel(rsA,estKind);}    // first piece -> the main run
+    if(!runGroup)runGroup=groupId;                                    // lock this session to one run until Finish
     const run={id,estId:d.estId,drawId:d.id,pts,kind:estKind,widthMode:'auto',edgeL:null,edgeR:null,widthFrac:0,manualWidthFt:0,tieStart:role==='branch'?true:tempTie,groupId,role,label,createdAt:now()};
-    temp=[];tempTie=false;tempTieRun=null;branchParent=null;if(exit)mode='view';   // otherwise stay in run mode for the next branch
+    temp=[];tempTie=false;tempTieRun=null;if(exit){mode='view';runGroup=null;}   // Add run stays on the same run; Finish ends it
     hint.innerHTML=`${I.info}<span>Reading width…</span>`;renderInk();
     try{const img=await estImage(d);const e=estDetectEdges(pts,img,estMaxPx(d,img));
       if(e){run.edgeL=e.edgeL;run.edgeR=e.edgeR;}
