@@ -884,7 +884,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 10:08';
+const BUILD='Nov 19 10:23';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2910,7 +2910,7 @@ function estAutoLabel(rs,kind){const n=rs.filter(x=>estIsMain(x)&&(x.kind||'mps'
 function estDefaultKind(){try{const k=localStorage.getItem('ductpro-est-kind');if(DUCT_KINDS[k])return k;}catch(e){}return 'mps';}
 // estimating standards (shared): hours per lf/sf and one access door every N feet of run
 function estSettings(){const d={hrPerLf:0,hrPerSf:0,lfPerDoor:0,hrPerBranch:0,pctPerBranch:0};const v=S.estsetArr&&S.estsetArr[0];if(v){['hrPerLf','hrPerSf','lfPerDoor','hrPerBranch','pctPerBranch'].forEach(k=>{if(typeof v[k]==='number')d[k]=v[k];});}return d;}
-function estBranchCount(estId){let n=0;estDrawsOf(estId).forEach(d=>{estRunsOf(d.id).forEach(r=>{if(r.role==='branch'||(!r.role&&r.tieStart&&r.widthMode!=='fill'))n++;});});return n;}
+function estBranchCount(estId){let n=0;estDrawsOf(estId).forEach(d=>{estRunsOf(d.id).forEach(r=>{if(r.widthMode==='fill')n+=(r.centerBranches||0);else if(r.role==='branch'||(!r.role&&r.tieStart))n++;});});return n;}
 function estStandardsSheet(){
   const cur=estSettings();const body=document.createElement('div');
   body.innerHTML=`<p class="cl-note">Rules of thumb used to turn measured duct into labor hours and access doors. They apply to every estimate.</p>
@@ -2955,6 +2955,12 @@ function estWidthFt(r,d){ if(r.widthMode==='manual')return +r.manualWidthFt||0;
   if(estHasEdges(r)){const L=estLenFt(r.pts,d);return L>0?estPolyAreaFt(r,d)/L:0;}
   return (r.widthFrac||0)*(d.w||1)*estFpp(d); }
 function estAreaFt(r,d){ if(r.widthMode==='fill')return (r.fillFrac||0)*(d.w||1)*(d.h||1)*estFpp(d)*estFpp(d); if(estHasEdges(r))return estPolyAreaFt(r,d); return estLenFt(r.pts,d)*estWidthFt(r,d); }
+// linear footage of a fill, from its detected centerline (medial axis), with the end-trim added back
+function estCenterLenFt(r,d){ if(!r.center||!r.center.length)return 0; let raw=0;r.center.forEach(p=>raw+=estLenFt(p.pts,d));
+  const area=(r.fillFrac||0)*(d.w||1)*(d.h||1)*estFpp(d)*estFpp(d);const w=raw>0?area/raw:0;const tips=(typeof r.centerTips==='number')?r.centerTips:((r.centerBranches||0)+2);
+  return raw+tips*(w/2); }
+// a run's linear footage: drawn length for runs, detected centerline for fills
+function estRunLenFt(r,d){ return r.widthMode==='fill'?estCenterLenFt(r,d):estLenFt(r.pts,d); }
 // uniform band thickness (plan-width fraction) — used for manual width or legacy single-width runs
 function estEffFrac(r,d){ const fpp=estFpp(d); if(!fpp||!d.w)return 0; return estWidthFt(r,d)/(d.w*fpp); }
 const ft1=n=>Math.round(n*10)/10;
@@ -3064,13 +3070,69 @@ function estSimplify(pts,eps){if(pts.length<4)return pts;const keep=new Array(pt
     for(let i=a+1;i<b;i++){const [px,py]=pts[i];const d=Math.abs((px-ax)*dy-(py-ay)*dx)/L;if(d>dm){dm=d;idx=i;}}
     if(dm>eps&&idx>0){keep[idx]=true;st.push([a,idx],[idx,b]);}}
   const out=[];for(let i=0;i<pts.length;i++)if(keep[i])out.push(pts[i]);return out;}
+// ---- medial-axis skeleton of a filled region -> centerline (linear footage + branch detection) ----
+function estZhangSuen(g,gw,gh){const idx=(x,y)=>y*gw+x;
+  const P=(x,y)=>[g[idx(x,y-1)],g[idx(x+1,y-1)],g[idx(x+1,y)],g[idx(x+1,y+1)],g[idx(x,y+1)],g[idx(x-1,y+1)],g[idx(x-1,y)],g[idx(x-1,y-1)]];
+  const trans=p=>{let c=0;for(let i=0;i<8;i++)if(p[i]===0&&p[(i+1)%8]===1)c++;return c;};
+  let changed=true,del=[],guard=0;
+  while(changed&&guard++<400){changed=false;
+    for(let step=0;step<2;step++){del.length=0;
+      for(let y=1;y<gh-1;y++)for(let x=1;x<gw-1;x++){if(!g[idx(x,y)])continue;const p=P(x,y);
+        const B=p[0]+p[1]+p[2]+p[3]+p[4]+p[5]+p[6]+p[7];if(B<2||B>6)continue;if(trans(p)!==1)continue;
+        if(step===0){if(p[0]&&p[2]&&p[4])continue;if(p[2]&&p[4]&&p[6])continue;}else{if(p[0]&&p[2]&&p[6])continue;if(p[0]&&p[4]&&p[6])continue;}
+        del.push(idx(x,y));}
+      if(del.length){changed=true;for(const i of del)g[i]=0;}}}
+  return g;}
+function estSkelTrace(g,gw,gh){const idx=(x,y)=>y*gw+x;
+  const isS=(x,y)=>x>=0&&y>=0&&x<gw&&y<gh&&g[idx(x,y)];
+  const nbrs=(x,y)=>{const o=[];for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dy)continue;if(isS(x+dx,y+dy))o.push([x+dx,y+dy]);}return o;};
+  const deg=(x,y)=>nbrs(x,y).length;const isNode=(x,y)=>{const d=deg(x,y);return d===1||d>=3;};
+  const key=(a,b)=>a[0]+','+a[1]+'>'+b[0]+','+b[1];const used=new Set(),edges=[],nodes=[];
+  for(let y=0;y<gh;y++)for(let x=0;x<gw;x++)if(g[idx(x,y)]&&isNode(x,y))nodes.push([x,y]);
+  for(const n of nodes)for(const nb of nbrs(n[0],n[1])){if(used.has(key(n,nb)))continue;
+    let prev=n,cur=nb;const path=[n,nb];used.add(key(n,nb));let guard=0;
+    while(!isNode(cur[0],cur[1])&&guard++<gw*gh){const ns=nbrs(cur[0],cur[1]).filter(m=>!(m[0]===prev[0]&&m[1]===prev[1]));if(!ns.length)break;const nx=ns[0];used.add(key(cur,nx));path.push(nx);prev=cur;cur=nx;}
+    if(path.length>=2)used.add(key(path[path.length-1],path[path.length-2]));edges.push(path);}
+  if(!edges.length){let st=null;for(let y=0;y<gh&&!st;y++)for(let x=0;x<gw;x++)if(g[idx(x,y)]){st=[x,y];break;}
+    if(st){let prev=null,cur=st;const path=[st];let guard=0;
+      while(guard++<gw*gh){const ns=nbrs(cur[0],cur[1]).filter(m=>!prev||!(m[0]===prev[0]&&m[1]===prev[1]));if(!ns.length)break;const nx=ns[0];if(nx[0]===st[0]&&nx[1]===st[1])break;path.push(nx);prev=cur;cur=nx;}
+      edges.push(path);}}
+  return {edges,deg};}
+function estPathLenC(p){let L=0;for(let i=1;i<p.length;i++)L+=Math.hypot(p[i][0]-p[i-1][0],p[i][1]-p[i-1][1]);return L;}
+function estPrune(g,gw,gh,thresh){const idx=(x,y)=>y*gw+x;let changed=true,passes=0;
+  while(changed&&passes++<80){changed=false;const {edges,deg}=estSkelTrace(g,gw,gh);
+    for(const e of edges){const a=e[0],b=e[e.length-1],aL=deg(a[0],a[1])===1,bL=deg(b[0],b[1])===1,L=estPathLenC(e);
+      if(aL&&bL){if(L<thresh){for(const c of e)g[idx(c[0],c[1])]=0;changed=true;}}
+      else if(aL||bL){if(L<thresh){const keep=aL?b:a;for(const c of e){if(c[0]===keep[0]&&c[1]===keep[1])continue;g[idx(c[0],c[1])]=0;}changed=true;}}}}}
+function estClassifyMain(edges){const nk=p=>p[0]+','+p[1];const adj={};
+  edges.forEach((e,i)=>{const a=nk(e[0]),b=nk(e[e.length-1]),L=estPathLenC(e);(adj[a]=adj[a]||[]).push({to:b,i,L});(adj[b]=adj[b]||[]).push({to:a,i,L});});
+  const nodes=Object.keys(adj);if(!nodes.length)return {mainSet:new Set(edges.map((_,i)=>i)),branches:0};
+  const far=start=>{const seen={};seen[start]=true;const st=[{n:start,d:0}];let best={n:start,d:0},parent={};
+    while(st.length){const c=st.pop();if(c.d>best.d)best=c;for(const e of (adj[c.n]||[])){if(seen[e.to])continue;seen[e.to]=true;parent[e.to]={from:c.n,i:e.i};st.push({n:e.to,d:c.d+e.L});}}return {best,parent};};
+  const a=far(nodes[0]).best.n;const {best:bb,parent}=far(a);const mainSet=new Set();let cur=bb.n;while(parent[cur]){mainSet.add(parent[cur].i);cur=parent[cur].from;}
+  let leaves=0;for(const n of nodes)if((adj[n]||[]).length===1)leaves++;return {mainSet,branches:Math.max(0,leaves-2)};}
+function estSkeletonize(grid,gw,gh){let filled=0;for(let i=0;i<grid.length;i++)filled+=grid[i];
+  const g=Uint8Array.from(grid);estZhangSuen(g,gw,gh);let skelLen=0;for(let i=0;i<g.length;i++)skelLen+=g[i];
+  const avgW=skelLen?filled/skelLen:0;estPrune(g,gw,gh,Math.max(5,avgW*1.2));
+  const {edges}=estSkelTrace(g,gw,gh);const {mainSet,branches}=estClassifyMain(edges);
+  const polys=edges.map((e,i)=>({cells:e,isMain:mainSet.has(i)}));return {polys,branches,tips:branches+2,avgW};}
+// flood result mask -> centerline polylines (normalized) + branch count
+function estCenterline(r,img){const {mask,minx,miny,maxx,maxy}=r,W=img.W,H=img.H;
+  const bw=maxx-minx+1,bh=maxy-miny+1;if(bw<3||bh<3)return {polys:[],branches:0,tips:0};
+  const k=Math.min(1,360/Math.max(bw,bh)),PAD=2,gw=Math.ceil(bw*k)+PAD*2,gh=Math.ceil(bh*k)+PAD*2;const grid=new Uint8Array(gw*gh);
+  for(let gy=PAD;gy<gh-PAD;gy++)for(let gx=PAD;gx<gw-PAD;gx++){const ix=minx+Math.round((gx-PAD)/k),iy=miny+Math.round((gy-PAD)/k);if(ix>=0&&iy>=0&&ix<W&&iy<H&&mask[iy*W+ix])grid[gy*gw+gx]=1;}
+  const sk=estSkeletonize(grid,gw,gh);
+  const toNorm=c=>[(minx+(c[0]-PAD)/k)/W,(miny+(c[1]-PAD)/k)/H];
+  const polys=sk.polys.map(pp=>{const simp=estSimplify(pp.cells,1.2);const pts=[];simp.forEach(c=>{const n=toNorm(c);pts.push(+n[0].toFixed(5),+n[1].toFixed(5));});return {pts,isMain:pp.isMain};}).filter(pp=>pp.pts.length>=4);
+  return {polys,branches:sk.branches,tips:sk.tips};}
 // flood from a normalized point -> {fillFrac, fillPoly(normalized flat)} or {leak}/{onLine}
 function estFillAt(img,nx,ny,maxPx){
   const r=estFloodFill(img,Math.round(nx*img.W),Math.round(ny*img.H),maxPx);
   if(r.onLine)return {onLine:true};if(r.leak||!r.mask)return {leak:true};
   const c=estMaskContour(r);if(c.length<3)return {leak:true};
   const poly=[];c.forEach(pt=>poly.push(+(pt[0]/img.W).toFixed(5),+(pt[1]/img.H).toFixed(5)));
-  return {fillFrac:r.count/(img.W*img.H),fillPoly:poly};
+  let cl={polys:[],branches:0,tips:0};try{cl=estCenterline(r,img);}catch(e){console.warn('centerline failed',e);}
+  return {fillFrac:r.count/(img.W*img.H),fillPoly:poly,center:cl.polys,centerBranches:cl.branches,centerTips:cl.tips};
 }
 // total area of a drawing's runs as a UNION (rasterized), so tie-ins/overlaps are not double counted
 function estUnionAreaFt(d,runs){ if(!runs.length||!estFpp(d))return 0;
@@ -3133,9 +3195,9 @@ function estForm(existing){
 function viewEstimate(app){
   const e=estFind(S.estId);if(!e){S.route=['estimates'];return render();}
   const draws=estDrawsOf(e.id);
-  let totL=0,totA=0;draws.forEach(d=>{estRunsOf(d.id).forEach(r=>{totL+=estLenFt(r.pts,d);});totA+=estUnionAreaFt(d,estRunsOf(d.id));});
+  let totL=0,totA=0;draws.forEach(d=>{estRunsOf(d.id).forEach(r=>{totL+=estRunLenFt(r,d);});totA+=estUnionAreaFt(d,estRunsOf(d.id));});
   let list='';
-  draws.forEach(d=>{const rs=estRunsOf(d.id);let l=0;rs.forEach(r=>l+=estLenFt(r.pts,d));
+  draws.forEach(d=>{const rs=estRunsOf(d.id);let l=0;rs.forEach(r=>l+=estRunLenFt(r,d));
     list+=`<button class="row" data-d="${d.id}"><span class="thumb">${d.img?`<img src="${esc(d.img)}" alt="">`:I.plan}</span>
       <span class="grow"><h3>${esc(d.name)}</h3><span class="meta">${d.cal?'':'No scale yet · '}${rs.length} run${rs.length!==1?'s':''}${rs.length?' · '+ft1(l)+' lf':''}</span></span>
       <span class="chev">${I.chev}</span></button>`;});
@@ -3290,7 +3352,8 @@ function viewEstMeasure(app){
     let h='';
     estRunsOf(d.id).forEach(r=>{const col=estKindOf(r).color;
       if(r.widthMode==='fill'&&r.fillPoly&&r.fillPoly.length>=6){let dd='';for(let i=0;i<r.fillPoly.length;i+=2){const [x,y]=toPx(r.fillPoly[i],r.fillPoly[i+1]);dd+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}dd+='Z';
-        h+=`<path d="${dd}" fill="${col}" fill-opacity="0.3" stroke="none" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;}
+        h+=`<path d="${dd}" fill="${col}" fill-opacity="0.3" stroke="none" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;
+        if(r.center&&r.center.length)r.center.forEach(cp=>{h+=`<path d="${ptsPath(cp.pts)}" fill="none" stroke="${col}" stroke-width="${cp.isMain?2.6:2}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${cp.isMain?'':' stroke-dasharray="7 4"'} data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;});}
       else h+=bandSvg(r,col)+lineSvg(r.pts,col,r.id,false,r.tieStart);});
     if(d.cal&&showCal){const [ax,ay]=toPx(d.cal.a[0],d.cal.a[1]),[bx,by]=toPx(d.cal.b[0],d.cal.b[1]);
       h+=`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="var(--warn)" stroke-width="3" stroke-dasharray="8 5" vector-effect="non-scaling-stroke"/>`;
@@ -3309,7 +3372,7 @@ function viewEstMeasure(app){
   function refresh(){renderInk();drawLabels();updateChrome();}
   function updateChrome(){
     sub.textContent=d.cal?('Scale set · '+estRunsOf(d.id).length+' run'+(estRunsOf(d.id).length!==1?'s':'')):'No scale yet — set one first';
-    let L=0;estRunsOf(d.id).forEach(r=>{L+=estLenFt(r.pts,d);});const A=estUnionAreaFt(d,estRunsOf(d.id));
+    let L=0;estRunsOf(d.id).forEach(r=>{L+=estRunLenFt(r,d);});const A=estUnionAreaFt(d,estRunsOf(d.id));
     if(estRunsOf(d.id).length){totBtn.hidden=false;totBtn.innerHTML=`${I.ruler}<b>${ft1(L)}</b> lf · <b>${Math.round(A)}</b> sq ft`;}
     else totBtn.hidden=true;
     const used=[...new Set(estRunsOf(d.id).map(r=>r.kind||'mps'))];
@@ -3374,8 +3437,8 @@ function viewEstMeasure(app){
     try{const img=await estImage(d);const res=estFillAt(img,nx,ny,Math.round(img.W*img.H*0.06));
       if(res.onLine){toast('Tap in the open space inside the duct');renderBar();return;}
       if(res.leak||!res.fillPoly){toast('That space isn’t closed off — draw the run instead');renderBar();return;}
-      const run={id:uid(),estId:d.estId,drawId:d.id,kind:active.kind||'mps',widthMode:'fill',fillFrac:res.fillFrac,fillPoly:res.fillPoly,pts:[+nx.toFixed(5),+ny.toFixed(5)],groupId:estGroupOf(active),role:'fill',label:'',createdAt:now()};
-      S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));refresh();toast(Math.round(estAreaFt(run,d))+' sq ft filled into '+(active.label||'run'));
+      const run={id:uid(),estId:d.estId,drawId:d.id,kind:active.kind||'mps',widthMode:'fill',fillFrac:res.fillFrac,fillPoly:res.fillPoly,center:res.center||[],centerBranches:res.centerBranches||0,centerTips:res.centerTips||0,pts:[+nx.toFixed(5),+ny.toFixed(5)],groupId:estGroupOf(active),role:'fill',label:'',createdAt:now()};
+      S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));refresh();toast(ft1(estRunLenFt(run,d))+' lf · '+Math.round(estAreaFt(run,d))+' sq ft into '+(active.label||'run'));
     }catch(e){console.warn(e);toast('Fill failed — try again');renderBar();}}
   function snapPoint(cx,cy){const thr=16;let best=null,bd=thr,bestRun=null;const r=viewer.getBoundingClientRect();
     const sc=(nx,ny)=>[r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];
@@ -3441,9 +3504,9 @@ function viewEstMeasure(app){
       const glabel=gmain.label||'Run';const isBranch=cur.role==='branch'||(!cur.role&&cur.tieStart&&!isFill);
       const part=isFill?'Fill':(isBranch?'Branch':'Main run');
       body.innerHTML=`<div class="cl-stat"><div class="cl-statrow"><i class="estdot" style="background:${estKindOf(cur).color}"></i><span><b>${esc(glabel)}</b> · ${part} · ${estKindOf(cur).label}${isFill
-          ?` · <b>${Math.round(estAreaFt(cur,d))} sq ft</b>`
+          ?` · linear <b>${ft1(estRunLenFt(cur,d))} ft</b>${cur.centerBranches?` · <b>${cur.centerBranches} branch${cur.centerBranches!==1?'es':''}</b>`:''} · <b>${Math.round(estAreaFt(cur,d))} sq ft</b>`
           :` · linear <b>${ft1(estLenFt(cur.pts,d))} ft</b> · width <b>${ftIn(estWidthFt(cur,d))}</b> · <b>${Math.round(estAreaFt(cur,d))} sq ft</b>`}</span></div>
-        <div class="cl-statrow"><span>${isFill?'Area poured inside the duct outline.':('Width read '+(cur.widthMode==='auto'?'automatically from the drawing':'by hand')+'.')}</span></div></div>
+        <div class="cl-statrow"><span>${isFill?'Linear footage measured from the duct centerline (follows elbows); area poured inside the outline.':('Width read '+(cur.widthMode==='auto'?'automatically from the drawing':'by hand')+'.')}</span></div></div>
         <div class="cl-subhead">Duct type</div>
         <div class="estkinds" id="rKind">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${(cur.kind||'mps')===k?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
         <div class="field" style="margin-top:12px"><label>Run name</label><input class="inp" id="rLabel" value="${esc(glabel)}" placeholder="e.g. LPS 1"></div>
@@ -3492,11 +3555,11 @@ function viewEstMeasure(app){
     let L=0;rs.forEach(r=>{L+=estLenFt(r.pts,d);});const A=estUnionAreaFt(d,rs);
     const groups=[];const seen={};rs.forEach(r=>{const g=estGroupOf(r);if(!seen[g]){seen[g]=[];groups.push(g);}seen[g].push(r);});
     const rowsHtml=groups.map(g=>{const mem=seen[g];const main=estRunMain(rs,g)||mem[0];const glabel=main.label||estGroupLabel(rs,main)||'Run';
-      let gl=0;mem.forEach(m=>gl+=estLenFt(m.pts,d));const ga=estUnionAreaFt(d,mem);
+      let gl=0;mem.forEach(m=>gl+=estRunLenFt(m,d));const ga=estUnionAreaFt(d,mem);
       let h=`<button type="button" class="row" data-r="${main.id}"><span class="grow"><h3 style="font-size:15px">${esc(glabel)}</h3>
         <span class="meta">${estKindOf(main).label} · ${ft1(gl)} lf · ${Math.round(ga)} sq ft${mem.length>1?(' · '+mem.length+' parts'):''}</span></span><span class="chev">${I.chev}</span></button>`;
-      mem.filter(m=>m.id!==main.id).forEach(m=>{h+=`<button type="button" class="row" data-r="${m.id}" style="padding-left:28px"><span class="grow"><h3 style="font-size:13px;font-weight:600">${m.widthMode==='fill'?'Fill':'Branch'}</h3>
-        <span class="meta">${m.widthMode==='fill'?(Math.round(estAreaFt(m,d))+' sq ft'):(ft1(estLenFt(m.pts,d))+' lf · '+Math.round(estAreaFt(m,d))+' sq ft')}</span></span><span class="chev">${I.chev}</span></button>`;});
+      mem.filter(m=>m.id!==main.id).forEach(m=>{h+=`<button type="button" class="row" data-r="${m.id}" style="padding-left:28px"><span class="grow"><h3 style="font-size:13px;font-weight:600">${m.widthMode==='fill'?('Fill'+(m.centerBranches?' · '+m.centerBranches+' br':'')):'Branch'}</h3>
+        <span class="meta">${ft1(estRunLenFt(m,d))+' lf · '+Math.round(estAreaFt(m,d))+' sq ft'}</span></span><span class="chev">${I.chev}</span></button>`;});
       return h;}).join('');
     body.innerHTML=(rs.length?rowsHtml:`<p class="cl-note">No runs yet.</p>`)+`<div class="cl-stat" style="margin-top:12px"><div class="cl-statrow">${I.ruler}<span>Total <b>${ft1(L)} lf</b> · <b>${Math.round(A)} sq ft</b></span></div></div>`;
     const ctl=sheetShell({title:'Runs',bodyNode:body,full:true});

@@ -59,7 +59,11 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   run first (a selector in the Fill bar), then pour; the fill takes that run's color and counts under
   it. **Fill** is a paint-bucket: tap inside an enclosed duct and it floods the area to the
   surrounding lines; fills render with no border in the same translucent shade as measured bands, so
-  everything blends together. Deleting a run segment offers **Delete this branch/fill** or **Delete
+  everything blends together. A fill also yields **linear footage**: it finds the filled region's
+  medial-axis **centerline** (which curves through radius elbows for the most accurate path), splits
+  it into a main run and branches, and counts that length toward the totals — the detected centerline
+  is drawn over the fill (main solid, branches dashed). It's the accurate-but-slower method, and it
+  lets you measure ducts stacked on each other by filling each separately. Deleting a run segment offers **Delete this branch/fill** or **Delete
   the whole run** (the main with all its branches and fills). **Undo** (button in the measure bar, or
   Ctrl/⌘-Z) removes the most recent run or fill. A **branch load** accounts for branches being slower
   to clean than a straight run: Standards holds both a flat *hours per branch* and a *% per branch*,
