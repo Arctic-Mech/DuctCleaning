@@ -384,24 +384,27 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .cl-chev{color:var(--faint);transition:transform .2s;flex:none;display:grid}
 .cl-chev svg{width:20px;height:20px}
 .cl-chev.open{transform:rotate(90deg)}
-.cl-list{border-top:1px solid var(--line)}
-.cl-item{display:flex;align-items:stretch;padding-right:10px;border-top:1px solid var(--line)}
-.cl-item:first-child{border-top:none}
-.cl-check{flex:none;align-self:stretch;width:58px;display:grid;place-items:center;border:none;background:transparent;padding:0 0 0 4px}
+.cl-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;padding:8px}
+.cl-cell{display:flex;align-items:stretch;gap:4px;border:1px solid var(--line);border-radius:11px;
+  background:var(--surface-2);min-height:50px;overflow:hidden}
+.cl-cell.in{border-color:color-mix(in srgb,var(--good) 45%,var(--line));background:color-mix(in srgb,var(--good) 9%,var(--surface-2))}
+.cl-check{flex:none;align-self:stretch;width:44px;display:grid;place-items:center;border:none;background:transparent}
 .cl-check:active .cl-box{transform:scale(.9)}
-.cl-tap{flex:1;min-width:0;display:flex;align-items:center;gap:8px;padding:12px 0 12px 2px;min-height:58px;
-  border:none;background:transparent;text-align:left;color:var(--fg)}
-.cl-tap:active{background:var(--surface-2)}
-.cl-tap .cl-txt{flex:1}
-.cl-go{color:var(--faint);flex:none;display:grid}
-.cl-go svg{width:18px;height:18px}
-.cl-box{width:27px;height:27px;border-radius:8px;border:2px solid color-mix(in srgb,var(--fg) 28%,transparent);
+.cl-open{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:4px;
+  padding:8px 8px 8px 0;border:none;background:transparent;text-align:left;color:var(--fg)}
+.cl-open:active{background:color-mix(in srgb,var(--fg) 6%,transparent)}
+.cl-box{width:25px;height:25px;border-radius:7px;border:2px solid color-mix(in srgb,var(--fg) 28%,transparent);
   display:grid;place-items:center;flex:none;color:transparent;transition:background .15s,border-color .15s,transform .1s}
-.cl-box svg{width:17px;height:17px}
-.cl-item.in .cl-box{background:var(--good);border-color:var(--good);color:#fff}
-.cl-item.ord:not(.in) .cl-box{border-color:var(--warn)}
-.cl-txt{min-width:0;display:flex;flex-direction:column;gap:3px}
-.cl-name{font-size:16px;font-weight:600;line-height:1.25}
+.cl-box svg{width:16px;height:16px}
+.cl-cell.in .cl-box{background:var(--good);border-color:var(--good);color:#fff}
+.cl-name{font-size:14px;font-weight:600;line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cl-badges{display:flex;flex-wrap:wrap;gap:4px}
+.cl-bdg{font-size:10px;font-weight:700;letter-spacing:.02em;padding:2px 6px;border-radius:999px;white-space:nowrap}
+.cl-bdg.need{background:var(--warn);color:#241700}
+.cl-bdg.ord{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn)}
+.cl-bdg.over{background:var(--danger);color:#fff}
+.cl-bdg.soon{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--warn)}
+.cl-bdg.rep{background:color-mix(in srgb,var(--fg) 10%,transparent);color:var(--muted)}
 .cl-sub{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:4px;line-height:1.3}
 .cl-sub svg{width:13px;height:13px;color:var(--good);flex:none}
 .cl-sub.ord{color:var(--warn);font-weight:600}
@@ -836,7 +839,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 18 17:21';
+const BUILD='Nov 19 06:40';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],user:null,route:['jobs'],jobId:null,drawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -1187,22 +1190,24 @@ function renderChecklistCard(card){
       <button type="button" class="btn" id="clAddFirst">${I.plus} Add items</button></div>`;
     card.querySelector('#clAddFirst').onclick=checklistEditSheet;return;
   }
-  const open=clIsOpen(),nIn=items.filter(i=>i.checkedAt).length,nOrd=items.filter(i=>i.orderedAt).length;
+  const open=clIsOpen(),nIn=items.filter(i=>i.checkedAt).length;
+  const nNeed=items.filter(i=>i.needOrder&&!i.orderedAt).length;
+  const nOrd=items.filter(i=>i.orderedAt).length;
   const nOver=items.filter(i=>(clDue(i)||{}).cls==='over').length;
   const row=it=>{
-    const due=clDue(it);let sub='';
-    if(it.checkedAt)sub+=`<span class="cl-sub">${I.check}<span>${esc(it.checkedName||'')} · ${fmtStamp(it.checkedAt)}</span></span>`;
-    if(it.orderedAt)sub+=`<span class="cl-sub ord"><span>Replacement ordered on ${fmtDay(it.orderedAt)}${it.orderedName?' · '+esc(it.orderedName):''}</span></span>`;
-    if(it.trackReplace)sub+=`<span class="cl-sub rep">${I.refresh}<span>${it.replacedAt?`Replaced ${fmtDay(it.replacedAt)} · ${agoDays(it.replacedAt)}`:'No replacement logged'}</span></span>`;
-    if(due)sub+=`<span class="cl-sub due ${due.cls}">${I.clock}<span>${due.text}</span></span>`;
-    return `<div class="cl-item${it.checkedAt?' in':''}${it.orderedAt?' ord':''}" data-cl="${it.id}">
+    const due=clDue(it),b=[];
+    if(it.needOrder&&!it.orderedAt)b.push('<span class="cl-bdg need">To order</span>');
+    if(it.orderedAt)b.push('<span class="cl-bdg ord">Ordered</span>');
+    if(it.trackReplace&&due)b.push(`<span class="cl-bdg ${due.cls==='over'?'over':due.cls==='soon'?'soon':'rep'}">${due.cls==='over'?'Overdue':'Due '+esc(fmtDay(it.replaceBy))}</span>`);
+    else if(it.trackReplace&&it.replacedAt)b.push(`<span class="cl-bdg rep">${esc(agoDays(it.replacedAt))}</span>`);
+    return `<div class="cl-cell${it.checkedAt?' in':''}" data-cl="${it.id}">
       <button type="button" class="cl-check" data-check="${it.id}" aria-pressed="${!!it.checkedAt}" aria-label="${it.checkedAt?'Uncheck':'Check off'} ${esc(it.name)}"><span class="cl-box">${I.check}</span></button>
-      <button type="button" class="cl-tap" data-edit="${it.id}">
-        <span class="cl-txt"><span class="cl-name">${esc(it.name)}</span>${sub}</span><span class="cl-go">${I.chev}</span></button>
+      <button type="button" class="cl-open" data-edit="${it.id}">
+        <span class="cl-name">${esc(it.name)}</span>${b.length?`<span class="cl-badges">${b.join('')}</span>`:''}</button>
     </div>`;
   };
   card.innerHTML=`<button type="button" class="cl-head" id="clHead" aria-expanded="${open}">
-      <span class="cl-sum"><span><b>${nIn}</b> of ${items.length} in truck${nOrd?` · <span class="cl-warn">${nOrd} ordered</span>`:''}${nOver?` · <span class="cl-over">${nOver} overdue</span>`:''}</span>
+      <span class="cl-sum"><span><b>${nIn}</b> of ${items.length} in truck${nNeed?` · <span class="cl-warn">${nNeed} to order</span>`:''}${nOrd?` · <span class="cl-warn">${nOrd} ordered</span>`:''}${nOver?` · <span class="cl-over">${nOver} overdue</span>`:''}</span>
         <span class="cl-bar"><i style="width:${Math.round(nIn/items.length*100)}%"></i></span></span>
       <span class="cl-chev${open?' open':''}">${I.chev}</span></button>
     ${open?`<div class="cl-list">${items.map(row).join('')}</div>`:''}`;
@@ -1249,6 +1254,10 @@ function clItemSheet(id){
     body.innerHTML=`<div class="field" style="margin-bottom:0"><label>Item</label><input class="inp" id="edName" value="${esc(c.name)}"></div>
       <p class="cl-instat">${c.checkedAt?`${I.check}<span>In the truck · checked by <b>${esc(c.checkedName||'')}</b> · ${fmtStamp(c.checkedAt)}</span>`:'<span>Not checked off — use the box on the list</span>'}</p>
       <div class="cl-sec">
+        <label class="cl-swrow"><span><b>Need to order new / more</b><small>${c.needOrder&&!c.orderedAt?'On the shopping list':'Flag this when you’re out or running low'}</small></span>
+          <input type="checkbox" class="sw warn" id="edNeed"${c.needOrder&&!c.orderedAt?' checked':''}></label>
+      </div>
+      <div class="cl-sec">
         <label class="cl-swrow"><span><b>Replacement ordered</b><small>${c.orderedAt?`Marked by ${esc(c.orderedName||'')}. Checking it off clears this.`:'Turn on when a new one is ordered'}</small></span>
           <input type="checkbox" class="sw warn" id="edOrd"${c.orderedAt?' checked':''}></label>
         ${c.orderedAt?`<div class="field"><label>Ordered on</label><input type="date" class="inp" id="edOrdDate" value="${isoDay(c.orderedAt)}" max="${today}"></div>`:''}
@@ -1273,9 +1282,10 @@ function clItemSheet(id){
     const $=s=>body.querySelector(s);
     $('#edName').onchange=e=>{const v=e.target.value.trim(),cur=clFind(id);if(!cur)return;
       if(!v){e.target.value=cur.name;toast('Name can’t be blank');return;}cur.name=v;save(cur);};
+    $('#edNeed').onchange=e=>{const cur=clFind(id);if(!cur)return;cur.needOrder=e.target.checked;save(cur);};
     $('#edOrd').onchange=async e=>{const on=e.target.checked;e.target.checked=!on;
       if(on){const u=await ensureUser(CL_ASK);const cur=clFind(id);if(!cur)return;
-        Object.assign(cur,{orderedAt:now(),orderedBy:u.id,orderedName:fullName(u)});save(cur);toast('Marked as ordered');}
+        Object.assign(cur,{orderedAt:now(),orderedBy:u.id,orderedName:fullName(u),needOrder:false});save(cur);toast('Marked as ordered');}
       else{const cur=clFind(id);if(!cur)return;Object.assign(cur,CL_CLEAR_ORDER);save(cur);toast('Order cleared');}};
     if($('#edOrdDate'))$('#edOrdDate').onchange=e=>{const cur=clFind(id);if(!cur||!e.target.value)return;cur.orderedAt=dayAt(e.target.value);save(cur);};
     $('#edTrack').onchange=e=>{const cur=clFind(id);if(!cur)return;cur.trackReplace=e.target.checked;save(cur);};
