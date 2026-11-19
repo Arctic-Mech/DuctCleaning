@@ -435,6 +435,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .estkinds button{flex:1;min-width:0;border:1.5px solid var(--line);background:var(--surface-2);color:var(--muted);
   border-radius:999px;padding:8px 4px;font:700 12px var(--font-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .estkinds button.on{border-color:var(--kc);color:#fff;background:var(--kc)}
+.estsel{flex-wrap:wrap;max-height:88px;overflow:auto}
+.estsel button{flex:0 1 auto;padding:0 11px}
 .estdot{width:12px;height:12px;border-radius:50%;flex:none;margin-top:3px}
 .evcalt{color:var(--fg);font:600 12.5px var(--font-body);white-space:nowrap}
 .evcalt.on{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 55%,var(--line))}
@@ -882,7 +884,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 09:29';
+const BUILD='Nov 19 09:54';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2898,6 +2900,13 @@ const DUCT_KINDS={mps:{label:'Med. supply',short:'MPS',color:'#ea580c'},
   ret:{label:'Return',short:'Return',color:'#16a34a'},
   exh:{label:'Exhaust',short:'Exhaust',color:'#7c3aed'}};
 const estKindOf=r=>(DUCT_KINDS[r&&r.kind]||DUCT_KINDS.mps);
+const LABELCODE={mps:'MPS',lps:'LPS',ret:'RET',exh:'EXH'};
+const estIsFill=r=>!!(r&&r.widthMode==='fill');
+const estIsMain=r=>!!(r&&(r.role?r.role==='main':(!estIsFill(r)&&!r.tieStart)));
+const estGroupOf=r=>(r&&(r.groupId||r.id))||'';
+function estRunMain(rs,gid){return rs.find(x=>x.id===gid)||rs.find(x=>estGroupOf(x)===gid&&estIsMain(x))||rs.find(x=>estGroupOf(x)===gid)||null;}
+function estGroupLabel(rs,r){const m=estRunMain(rs,estGroupOf(r));return (m&&m.label)||(r&&r.label)||'';}
+function estAutoLabel(rs,kind){const n=rs.filter(x=>estIsMain(x)&&(x.kind||'mps')===kind).length+1;return (LABELCODE[kind]||String(kind).toUpperCase())+' '+n;}
 function estDefaultKind(){try{const k=localStorage.getItem('ductpro-est-kind');if(DUCT_KINDS[k])return k;}catch(e){}return 'mps';}
 // estimating standards (shared): hours per lf/sf and one access door every N feet of run
 function estSettings(){const d={hrPerLf:0,hrPerSf:0,lfPerDoor:0};const v=S.estsetArr&&S.estsetArr[0];if(v){['hrPerLf','hrPerSf','lfPerDoor'].forEach(k=>{if(typeof v[k]==='number')d[k]=v[k];});}return d;}
@@ -3229,7 +3238,7 @@ function viewEstMeasure(app){
   const ink=app.querySelector('#eink'),labels=app.querySelector('#elabels'),hint=app.querySelector('#evHint');
   const sub=app.querySelector('#evSub'),totBtn=app.querySelector('#evTot'),vbar=app.querySelector('#evbar');
   let baseW=viewer.clientWidth||360, baseH=baseW*asp;
-  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true, tempTie=false; // temp: flat normalized pts being placed
+  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true, tempTie=false, tempTieRun=null, branchParent=null, fillRun=null; // temp: flat normalized pts being placed
   EVW={get scale(){return scale;},nc:(nx,ny)=>{const r=viewer.getBoundingClientRect();return [r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];}};
   const dotR=()=>Math.max(0.6,4200/(scale*baseW));   // ~4px on screen at any zoom
   const apply=()=>{stage.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;drawLabels();
@@ -3308,10 +3317,18 @@ function viewEstMeasure(app){
       vbar.querySelector('#eUndo').onclick=()=>{temp=temp.slice(0,-2);refresh();};
       vbar.querySelector('#eCancel').onclick=()=>{mode='view';temp=[];refresh();};
     }else if(mode==='fill'){
-      hint.innerHTML=`${I.fill}<span>Tap inside a duct to fill it</span>`;
-      vbar.innerHTML=`<div class="estrun"><div class="estkinds">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${k===estKind?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
-        <button class="btn primary block" id="eFillDone">${I.check} Finish</button></div>`;
-      vbar.querySelectorAll('.estkinds [data-k]').forEach(b=>b.onclick=()=>{estKind=b.dataset.k;try{localStorage.setItem('ductpro-est-kind',estKind);}catch(e){}renderBar();});
+      const rsF=estRunsOf(d.id);const mains=rsF.filter(estIsMain);
+      if(!mains.length){
+        hint.innerHTML=`${I.info}<span>Measure a run first — a fill links to a run</span>`;
+        vbar.innerHTML=`<button class="btn primary block" id="eFillDone">${I.check} Done</button>`;
+      }else{
+        if(!fillRun||!mains.some(m=>estGroupOf(m)===fillRun))fillRun=estGroupOf(mains[mains.length-1]);
+        const active=estRunMain(rsF,fillRun);
+        hint.innerHTML=`${I.fill}<span>Filling into <b>${esc(active.label||'run')}</b> · tap inside the duct</span>`;
+        vbar.innerHTML=`<div class="estrun"><div class="estkinds estsel">${mains.map(m=>{const g=estGroupOf(m);return `<button type="button" data-run="${g}" class="${g===fillRun?'on':''}" style="--kc:${estKindOf(m).color}">${esc(m.label||'Run')}</button>`;}).join('')}</div>
+          <button class="btn primary block" id="eFillDone">${I.check} Finish</button></div>`;
+        vbar.querySelectorAll('.estsel [data-run]').forEach(b=>b.onclick=()=>{fillRun=b.dataset.run;renderBar();});
+      }
       vbar.querySelector('#eFillDone').onclick=()=>{mode='view';refresh();};
     }else{
       const nv=temp.length/2;
@@ -3327,22 +3344,24 @@ function viewEstMeasure(app){
     }
   }
   function startCal(){mode='cal';temp=[];refresh();}
-  function startRun(){mode='run';temp=[];tempTie=false;refresh();}
+  function startRun(parent){mode='run';temp=[];tempTie=false;tempTieRun=null;branchParent=parent||null;refresh();}
   function startFill(){mode='fill';temp=[];refresh();estImage(d).catch(()=>{});}
-  async function doFill(cx,cy){const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap inside the drawing');return;}
+  async function doFill(cx,cy){const rsF=estRunsOf(d.id);const active=estRunMain(rsF,fillRun);
+    if(!active){toast('Pick a run to fill first');renderBar();return;}
+    const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap inside the drawing');return;}
     hint.innerHTML=`${I.info}<span>Filling…</span>`;
     try{const img=await estImage(d);const res=estFillAt(img,nx,ny,Math.round(img.W*img.H*0.06));
       if(res.onLine){toast('Tap in the open space inside the duct');renderBar();return;}
       if(res.leak||!res.fillPoly){toast('That space isn’t closed off — draw the run instead');renderBar();return;}
-      const run={id:uid(),estId:d.estId,drawId:d.id,kind:estKind,widthMode:'fill',fillFrac:res.fillFrac,fillPoly:res.fillPoly,pts:[+nx.toFixed(5),+ny.toFixed(5)],label:'',createdAt:now()};
-      S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));refresh();toast(Math.round(estAreaFt(run,d))+' sq ft filled');
+      const run={id:uid(),estId:d.estId,drawId:d.id,kind:active.kind||'mps',widthMode:'fill',fillFrac:res.fillFrac,fillPoly:res.fillPoly,pts:[+nx.toFixed(5),+ny.toFixed(5)],groupId:estGroupOf(active),role:'fill',label:'',createdAt:now()};
+      S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));refresh();toast(Math.round(estAreaFt(run,d))+' sq ft filled into '+(active.label||'run'));
     }catch(e){console.warn(e);toast('Fill failed — try again');renderBar();}}
-  function snapPoint(cx,cy){const thr=16;let best=null,bd=thr;const r=viewer.getBoundingClientRect();
+  function snapPoint(cx,cy){const thr=16;let best=null,bd=thr,bestRun=null;const r=viewer.getBoundingClientRect();
     const sc=(nx,ny)=>[r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];
-    estRunsOf(d.id).forEach(run=>{for(let i=0;i+3<run.pts.length;i+=2){const [ax,ay]=sc(run.pts[i],run.pts[i+1]),[bx,by]=sc(run.pts[i+2],run.pts[i+3]);
+    estRunsOf(d.id).forEach(run=>{if(estIsFill(run))return;for(let i=0;i+3<run.pts.length;i+=2){const [ax,ay]=sc(run.pts[i],run.pts[i+1]),[bx,by]=sc(run.pts[i+2],run.pts[i+3]);
       const L2=((bx-ax)**2+(by-ay)**2)||1,t=Math.max(0,Math.min(1,((cx-ax)*(bx-ax)+(cy-ay)*(by-ay))/L2));
-      const px=ax+(bx-ax)*t,py=ay+(by-ay)*t,dd=Math.hypot(cx-px,cy-py);if(dd<bd){bd=dd;best=[px,py];}}});
-    return best;}
+      const px=ax+(bx-ax)*t,py=ay+(by-ay)*t,dd=Math.hypot(cx-px,cy-py);if(dd<bd){bd=dd;best=[px,py];bestRun=estGroupOf(run);}}});
+    return best?{x:best[0],y:best[1],runId:bestRun}:null;}
   function runAt(cx,cy){const r=viewer.getBoundingClientRect();const sc=(nx,ny)=>[r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];
     let best=null,bd=18;
     estRunsOf(d.id).forEach(run=>{
@@ -3355,7 +3374,7 @@ function viewEstMeasure(app){
       const px=ax+(bx-ax)*t,py=ay+(by-ay)*t,dd=Math.hypot(cx-px,cy-py);if(dd<bd){bd=dd;best=run.id;}}});
     return best;}
   function addPoint(cx,cy){
-    if(mode==='run'&&temp.length===0){const sp=snapPoint(cx,cy);if(sp){cx=sp[0];cy=sp[1];tempTie=true;}}
+    if(mode==='run'&&temp.length===0){const sp=snapPoint(cx,cy);if(sp){cx=sp.x;cy=sp.y;tempTie=true;tempTieRun=sp.runId;}}
     const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap on the drawing');return;}
     temp.push(+nx.toFixed(5),+ny.toFixed(5));
     if(mode==='cal'&&temp.length===4)askLength();
@@ -3376,44 +3395,58 @@ function viewEstMeasure(app){
       ctl.close();mode='view';temp=[];refresh();toast('Scale set');};
   }
   async function addRun(exit){
-    if(temp.length<4){if(exit){mode='view';temp=[];refresh();}else toast('Tap at least two points');return;}
-    const pts=temp.slice();const run={id:uid(),estId:d.estId,drawId:d.id,pts,kind:estKind,widthMode:'auto',edgeL:null,edgeR:null,widthFrac:0,manualWidthFt:0,tieStart:tempTie,label:'',createdAt:now()};
-    temp=[];tempTie=false;if(exit)mode='view';   // otherwise stay in run mode for the next branch
+    if(temp.length<4){if(exit){mode='view';temp=[];tempTie=false;tempTieRun=null;branchParent=null;refresh();}else toast('Tap at least two points');return;}
+    const id=uid();const pts=temp.slice();const rsA=estRunsOf(d.id);
+    let groupId,role,label='';
+    if(branchParent){groupId=branchParent;role='branch';}
+    else if(tempTie&&tempTieRun){groupId=tempTieRun;role='branch';}
+    else{groupId=id;role='main';label=estAutoLabel(rsA,estKind);}
+    const run={id,estId:d.estId,drawId:d.id,pts,kind:estKind,widthMode:'auto',edgeL:null,edgeR:null,widthFrac:0,manualWidthFt:0,tieStart:role==='branch'?true:tempTie,groupId,role,label,createdAt:now()};
+    temp=[];tempTie=false;tempTieRun=null;branchParent=null;if(exit)mode='view';   // otherwise stay in run mode for the next branch
     hint.innerHTML=`${I.info}<span>Reading width…</span>`;renderInk();
     try{const img=await estImage(d);const e=estDetectEdges(pts,img,estMaxPx(d,img));
       if(e){run.edgeL=e.edgeL;run.edgeR=e.edgeR;}
       else{const w=estDetectWidthFrac(pts,img);if(w&&w.frac>0)run.widthFrac=w.frac;else{run.widthMode='manual';run.manualWidthFt=1;toast('Couldn’t read the width — set it by hand');}}
     }catch(e){console.warn(e);run.widthMode='manual';run.manualWidthFt=1;}
     S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));
-    refresh();toast(ft1(estLenFt(run.pts,d))+' lf added');
+    refresh();toast((role==='branch'?'Branch':run.label)+' · '+ft1(estLenFt(run.pts,d))+' lf added');
   }
   function runSheet(id){
     const r=S.estruns.find(x=>x.id===id);if(!r)return;
     const body=document.createElement('div');
     const draw=()=>{const cur=S.estruns.find(x=>x.id===id);if(!cur){ctl.close();return;}
       const isFill=cur.widthMode==='fill';
-      body.innerHTML=`<div class="cl-stat"><div class="cl-statrow"><i class="estdot" style="background:${estKindOf(cur).color}"></i><span>${isFill
-          ?`<b>${estKindOf(cur).label}</b> · poured area · <b>${Math.round(estAreaFt(cur,d))} sq ft</b>`
-          :`<b>${estKindOf(cur).label}</b> · linear <b>${ft1(estLenFt(cur.pts,d))} ft</b> · width <b>${ftIn(estWidthFt(cur,d))}</b> · area <b>${Math.round(estAreaFt(cur,d))} sq ft</b>`}</span></div>
+      const rsS=estRunsOf(d.id);const gid=estGroupOf(cur);const members=rsS.filter(x=>estGroupOf(x)===gid);const gmain=estRunMain(rsS,gid)||cur;
+      const glabel=gmain.label||'Run';const isBranch=cur.role==='branch'||(!cur.role&&cur.tieStart&&!isFill);
+      const part=isFill?'Fill':(isBranch?'Branch':'Main run');
+      body.innerHTML=`<div class="cl-stat"><div class="cl-statrow"><i class="estdot" style="background:${estKindOf(cur).color}"></i><span><b>${esc(glabel)}</b> · ${part} · ${estKindOf(cur).label}${isFill
+          ?` · <b>${Math.round(estAreaFt(cur,d))} sq ft</b>`
+          :` · linear <b>${ft1(estLenFt(cur.pts,d))} ft</b> · width <b>${ftIn(estWidthFt(cur,d))}</b> · <b>${Math.round(estAreaFt(cur,d))} sq ft</b>`}</span></div>
         <div class="cl-statrow"><span>${isFill?'Area poured inside the duct outline.':('Width read '+(cur.widthMode==='auto'?'automatically from the drawing':'by hand')+'.')}</span></div></div>
         <div class="cl-subhead">Duct type</div>
         <div class="estkinds" id="rKind">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${(cur.kind||'mps')===k?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
-        <div class="field" style="margin-top:12px"><label>Label (optional)</label><input class="inp" id="rLabel" value="${esc(cur.label||'')}" placeholder="e.g. Main supply"></div>
+        <div class="field" style="margin-top:12px"><label>Run name</label><input class="inp" id="rLabel" value="${esc(glabel)}" placeholder="e.g. LPS 1"></div>
         ${isFill?'':`<div class="cl-subhead">Width</div>
         <div class="seg" id="rWmode" style="margin-top:6px"><button type="button" data-w="auto"${cur.widthMode==='auto'?' class="on"':''}>Auto width</button><button type="button" data-w="manual"${cur.widthMode==='manual'?' class="on"':''}>Set width</button></div>
         ${cur.widthMode==='manual'?`<div class="field" style="margin-top:10px"><label>Duct width</label><input class="inp" id="rWidth" inputmode="decimal" value="${ftIn(estWidthFt(cur,d))}" placeholder="e.g. 12&quot;"></div>`:''}
         <button type="button" class="btn" id="rBranch" style="width:100%;margin-top:16px">${I.plus} Add a branch</button>`}
-        <button type="button" class="btn danger" id="rDel" style="width:100%;margin-top:10px">Delete ${isFill?'fill':'run'}</button>`;
+        <div id="rDelWrap">${(function(){let h='';const only=members.length<=1;
+          if(isFill){h+=`<button type="button" class="btn danger" id="rDelOne" style="width:100%;margin-top:10px">Delete this fill</button>`;if(!only)h+=`<button type="button" class="btn danger" id="rDelAll" style="width:100%;margin-top:8px">Delete whole run · ${esc(glabel)}</button>`;}
+          else if(isBranch){h+=`<button type="button" class="btn danger" id="rDelOne" style="width:100%;margin-top:10px">Delete this branch</button><button type="button" class="btn danger" id="rDelAll" style="width:100%;margin-top:8px">Delete whole run · ${esc(glabel)}</button>`;}
+          else{if(only)h+=`<button type="button" class="btn danger" id="rDelOne" style="width:100%;margin-top:10px">Delete run</button>`;else h+=`<button type="button" class="btn danger" id="rDelAll" style="width:100%;margin-top:10px">Delete whole run · ${esc(glabel)} (${members.length} parts)</button>`;}
+          return h;})()}</div>`;
       body.querySelectorAll('#rKind [data-k]').forEach(b=>b.onclick=()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.kind=b.dataset.k;pPut('estruns',c).catch(()=>{});draw();refresh();});
-      body.querySelector('#rLabel').onchange=ev=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.label=ev.target.value.trim();pPut('estruns',c).catch(()=>{});};
+      body.querySelector('#rLabel').onchange=ev=>{const rsL=estRunsOf(d.id);const cc=S.estruns.find(x=>x.id===id);const m=estRunMain(rsL,estGroupOf(cc))||cc;if(!m)return;m.label=ev.target.value.trim();pPut('estruns',m).catch(()=>{});refresh();};
       body.querySelectorAll('[data-w]').forEach(b=>b.onclick=async()=>{const c=S.estruns.find(x=>x.id===id);if(!c||c.widthMode==='fill')return;
         if(b.dataset.w==='manual'){c.widthMode='manual';if(!c.manualWidthFt)c.manualWidthFt=estWidthFt(c,d)||1;}
         else{c.widthMode='auto';try{const img=await estImage(d);const e=estDetectEdges(c.pts,img,estMaxPx(d,img));if(e){c.edgeL=e.edgeL;c.edgeR=e.edgeR;}else{const w=estDetectWidthFrac(c.pts,img);if(w)c.widthFrac=w.frac;}}catch(e){}}
         pPut("estruns",c).catch(()=>{});draw();refresh();});
       const wi=body.querySelector('#rWidth');if(wi)wi.onchange=ev=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;const ft=parseFeet(ev.target.value);if(ft&&ft>0){c.manualWidthFt=ft;pPut('estruns',c).catch(()=>{});draw();refresh();}else{toast('Enter a width');}};
-      {const bb=body.querySelector('#rBranch');if(bb)bb.onclick=()=>{const c=S.estruns.find(x=>x.id===id);ctl.close();if(c&&c.kind)estKind=c.kind;startRun();toast('Tap on a run to start the branch');};}
-      body.querySelector('#rDel').onclick=async()=>{if(!await confirmDialog({title:'Delete run?',message:'This measured run will be removed.',confirmText:'Delete'}))return;
-        S.estruns=S.estruns.filter(x=>x.id!==id);pDel('estruns',id).catch(()=>{});ctl.close();refresh();toast('Run deleted');};
+      {const bb=body.querySelector('#rBranch');if(bb)bb.onclick=()=>{const c=S.estruns.find(x=>x.id===id);ctl.close();if(c&&c.kind)estKind=c.kind;startRun(estGroupOf(c));toast('Tap on the main to start the branch');};}
+      {const one=body.querySelector('#rDelOne');if(one)one.onclick=async()=>{if(!await confirmDialog({title:'Delete '+(isFill?'fill':(isBranch?'branch':'run'))+'?',message:'This '+(isFill?'fill':(isBranch?'branch':'run'))+' will be removed.',confirmText:'Delete'}))return;
+        S.estruns=S.estruns.filter(x=>x.id!==id);pDel('estruns',id).catch(()=>{});ctl.close();refresh();toast((isFill?'Fill':(isBranch?'Branch':'Run'))+' deleted');};}
+      {const all=body.querySelector('#rDelAll');if(all)all.onclick=async()=>{if(!await confirmDialog({title:'Delete whole run?',message:'“'+glabel+'” and all its branches and fills ('+members.length+' part'+(members.length!==1?'s':'')+') will be removed.',confirmText:'Delete all'}))return;
+        const ids=members.map(m=>m.id);S.estruns=S.estruns.filter(x=>ids.indexOf(x.id)<0);ids.forEach(mid=>pDel('estruns',mid).catch(()=>{}));ctl.close();refresh();toast('Run deleted');};}
     };
     const ctl=sheetShell({title:'Measured run',bodyNode:body});draw();
   }
@@ -3436,9 +3469,15 @@ function viewEstMeasure(app){
   function runsListSheet(){
     const body=document.createElement('div');const rs=estRunsOf(d.id);
     let L=0;rs.forEach(r=>{L+=estLenFt(r.pts,d);});const A=estUnionAreaFt(d,rs);
-    body.innerHTML=(rs.length?rs.map((r,i)=>`<button type="button" class="row" data-r="${r.id}"><span class="grow"><h3 style="font-size:15px">${esc(r.label||('Run '+(i+1)))}</h3>
-        <span class="meta">${r.widthMode==='fill'?('Area fill · '+Math.round(estAreaFt(r,d))+' sq ft'):(ft1(estLenFt(r.pts,d))+' lf · '+ftIn(estWidthFt(r,d))+' · '+Math.round(estAreaFt(r,d))+' sq ft')}</span></span><span class="chev">${I.chev}</span></button>`).join('')
-      :`<p class="cl-note">No runs yet.</p>`)+`<div class="cl-stat" style="margin-top:12px"><div class="cl-statrow">${I.ruler}<span>Total <b>${ft1(L)} lf</b> · <b>${Math.round(A)} sq ft</b></span></div></div>`;
+    const groups=[];const seen={};rs.forEach(r=>{const g=estGroupOf(r);if(!seen[g]){seen[g]=[];groups.push(g);}seen[g].push(r);});
+    const rowsHtml=groups.map(g=>{const mem=seen[g];const main=estRunMain(rs,g)||mem[0];const glabel=main.label||estGroupLabel(rs,main)||'Run';
+      let gl=0;mem.forEach(m=>gl+=estLenFt(m.pts,d));const ga=estUnionAreaFt(d,mem);
+      let h=`<button type="button" class="row" data-r="${main.id}"><span class="grow"><h3 style="font-size:15px">${esc(glabel)}</h3>
+        <span class="meta">${estKindOf(main).label} · ${ft1(gl)} lf · ${Math.round(ga)} sq ft${mem.length>1?(' · '+mem.length+' parts'):''}</span></span><span class="chev">${I.chev}</span></button>`;
+      mem.filter(m=>m.id!==main.id).forEach(m=>{h+=`<button type="button" class="row" data-r="${m.id}" style="padding-left:28px"><span class="grow"><h3 style="font-size:13px;font-weight:600">${m.widthMode==='fill'?'Fill':'Branch'}</h3>
+        <span class="meta">${m.widthMode==='fill'?(Math.round(estAreaFt(m,d))+' sq ft'):(ft1(estLenFt(m.pts,d))+' lf · '+Math.round(estAreaFt(m,d))+' sq ft')}</span></span><span class="chev">${I.chev}</span></button>`;});
+      return h;}).join('');
+    body.innerHTML=(rs.length?rowsHtml:`<p class="cl-note">No runs yet.</p>`)+`<div class="cl-stat" style="margin-top:12px"><div class="cl-statrow">${I.ruler}<span>Total <b>${ft1(L)} lf</b> · <b>${Math.round(A)} sq ft</b></span></div></div>`;
     const ctl=sheetShell({title:'Runs',bodyNode:body,full:true});
     body.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{ctl.close();runSheet(b.dataset.r);});
   }

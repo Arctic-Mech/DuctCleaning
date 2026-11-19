@@ -53,11 +53,15 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   supply yellow, return green, exhaust purple — chosen while measuring or in the run sheet, with a
   legend on the plan. Pinch, the zoom buttons, or the mouse wheel / trackpad zoom around the cursor.
   Per-run and per-estimate totals (linear ft / sq ft), counted as a union so the same run — or an
-  overlapping branch tie-in — is never double-counted. **Fill** is a paint-bucket: tap inside an
-  enclosed duct and it floods the area to the surrounding lines; fills render with no border in the
-  same translucent shade as measured bands, so everything blends together. **Undo** (button in the
-  measure bar, or Ctrl/⌘-Z) removes the most recent run or fill. Branches snap to the main (no
-  tie-in dot). A **Standards** screen sets hours per linear foot, hours per square foot, and one
+  overlapping branch tie-in — is never double-counted. Each run you start is **auto-labeled by duct
+  type** (LPS 1, LPS 2, RET 1…) and can be renamed in its editor. A run is a group: its **branches**
+  snap to the main (no tie-in dot) and belong to it, and **Fill** links to a run too — you pick the
+  run first (a selector in the Fill bar), then pour; the fill takes that run's color and counts under
+  it. **Fill** is a paint-bucket: tap inside an enclosed duct and it floods the area to the
+  surrounding lines; fills render with no border in the same translucent shade as measured bands, so
+  everything blends together. Deleting a run segment offers **Delete this branch/fill** or **Delete
+  the whole run** (the main with all its branches and fills). **Undo** (button in the measure bar, or
+  Ctrl/⌘-Z) removes the most recent run or fill. A **Standards** screen sets hours per linear foot, hours per square foot, and one
   access door every N feet; because crews price labor two ways, each estimate shows **hours by lf**
   and **hours by sf** side by side (not summed) plus access doors — pick whichever your crew prices
   by. Estimating is desktop/laptop oriented (mouse wheel zooms); the drawing renders at high
