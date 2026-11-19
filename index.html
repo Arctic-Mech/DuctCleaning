@@ -422,6 +422,19 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
   border-radius:7px;padding:2px 6px;font:700 11px var(--font-mono);color:var(--fg);white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.25)}
 .evtot{font:600 13px var(--font-body);color:var(--fg);white-space:nowrap}
 .evtot b{font-family:var(--font-mono)}
+.viewer-overlay>.vrow{display:flex;gap:8px;width:100%;pointer-events:none}
+.vrow>*{pointer-events:auto}
+.estleg{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-top:2px;pointer-events:none}
+.estleg span{background:color-mix(in srgb,var(--surface) 90%,transparent);border:1px solid var(--line);border-radius:999px;
+  padding:3px 9px;font:600 11px var(--font-body);color:var(--fg);display:flex;align-items:center;gap:5px;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.estleg i{width:9px;height:9px;border-radius:50%;flex:none}
+.elabel i{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:0}
+.estrun{display:flex;flex-direction:column;gap:8px;width:100%}
+.estkinds{display:flex;gap:6px}
+.estkinds button{flex:1;min-width:0;border:1.5px solid var(--line);background:var(--surface-2);color:var(--muted);
+  border-radius:999px;padding:8px 4px;font:700 12px var(--font-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.estkinds button.on{border-color:var(--kc);color:#fff;background:var(--kc)}
+.estdot{width:12px;height:12px;border-radius:50%;flex:none;margin-top:3px}
 .cl-empty{display:flex;align-items:center;gap:12px;padding:15px}
 .cl-empty .grow{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;font-size:15px}
 .cl-empty .grow span{font-size:13px;color:var(--muted)}
@@ -855,7 +868,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 07:20';
+const BUILD='Nov 19 07:36';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2864,6 +2877,14 @@ const estDrawsOf=id=>S.estdraws.filter(d=>d.estId===id).sort((a,b)=>a.createdAt-
 const estRunsOf=drawId=>S.estruns.filter(r=>r.drawId===drawId).sort((a,b)=>a.createdAt-b.createdAt);
 const estFind=id=>S.estimates.find(e=>e.id===id);
 const estDrawFind=id=>S.estdraws.find(d=>d.id===id);
+// duct types and their colors (medium-pressure supply orange, low-pressure supply yellow,
+// return green, exhaust purple)
+const DUCT_KINDS={mps:{label:'Med. supply',short:'MPS',color:'#ea580c'},
+  lps:{label:'Low supply',short:'LPS',color:'#eab308'},
+  ret:{label:'Return',short:'Return',color:'#16a34a'},
+  exh:{label:'Exhaust',short:'Exhaust',color:'#7c3aed'}};
+const estKindOf=r=>(DUCT_KINDS[r&&r.kind]||DUCT_KINDS.mps);
+function estDefaultKind(){try{const k=localStorage.getItem('ductpro-est-kind');if(DUCT_KINDS[k])return k;}catch(e){}return 'mps';}
 // feet per plan-pixel for a drawing (from its calibration)
 function estFpp(d){ if(!d||!d.cal)return 0; const W=d.w||1,H=d.h||1,c=d.cal;
   const px=Math.hypot((c.b[0]-c.a[0])*W,(c.b[1]-c.a[1])*H)||1; return c.ft/px; }
@@ -3055,8 +3076,8 @@ function viewEstMeasure(app){
         <svg id="eink" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 ${VB}" preserveAspectRatio="none"></svg>
         <div id="elabels"></div>
       </div></div>
-      <div class="viewer-overlay"><div class="vchip" id="evHint"></div>
-        <button class="vchip evtot" id="evTot" hidden></button></div>
+      <div class="viewer-overlay"><div class="vrow"><div class="vchip" id="evHint"></div>
+        <button class="vchip evtot" id="evTot" hidden></button></div><div class="estleg" id="evLegend" hidden></div></div>
       <div class="zoomcol"><button id="ezin">+</button><button id="ezout">−</button>
         <button id="ezfit" style="font-size:13px;font-weight:700">FIT</button></div>
     </div>
@@ -3065,7 +3086,7 @@ function viewEstMeasure(app){
   const ink=app.querySelector('#eink'),labels=app.querySelector('#elabels'),hint=app.querySelector('#evHint');
   const sub=app.querySelector('#evSub'),totBtn=app.querySelector('#evTot'),vbar=app.querySelector('#evbar');
   let baseW=viewer.clientWidth||360, baseH=baseW*asp;
-  let scale=1,tx=0,ty=0, mode='view', temp=[]; // temp: flat normalized pts being placed
+  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(); // temp: flat normalized pts being placed
   EVW={get scale(){return scale;},nc:(nx,ny)=>{const r=viewer.getBoundingClientRect();return [r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];}};
   const apply=()=>{stage.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;drawLabels();};
   function setBase(){baseW=viewer.clientWidth||360;baseH=baseW*asp;stage.style.width=baseW+'px';stage.style.height=baseH+'px';
@@ -3079,24 +3100,30 @@ function viewEstMeasure(app){
   function renderInk(){
     let h='';
     // saved runs
-    estRunsOf(d.id).forEach(r=>{const sw=estEffFrac(r,d)*1000; h+=runPath(r.pts,sw,'var(--accent)',r.id);});
+    estRunsOf(d.id).forEach(r=>{const sw=estEffFrac(r,d)*1000; h+=runPath(r.pts,sw,estKindOf(r).color,r.id);});
     // calibration line
     if(d.cal){const [ax,ay]=toPx(d.cal.a[0],d.cal.a[1]),[bx,by]=toPx(d.cal.b[0],d.cal.b[1]);
       h+=`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="var(--warn)" stroke-width="2.5" stroke-dasharray="7 5" vector-effect="non-scaling-stroke"/>`;}
     // temp placing
-    if(temp.length>=2){h+=runPath(temp,0,mode==='cal'?'var(--warn)':'var(--mk-exhaust)','tmp',true);}
-    for(let i=0;i<temp.length;i+=2){const [x,y]=toPx(temp[i],temp[i+1]);h+=`<circle cx="${x}" cy="${y}" r="5" fill="${mode==='cal'?'var(--warn)':'var(--mk-exhaust)'}" vector-effect="non-scaling-stroke"/>`;}
+    const tcol=mode==='cal'?'var(--warn)':DUCT_KINDS[estKind].color;
+    if(temp.length>=2){h+=runPath(temp,0,tcol,'tmp',true);}
+    for(let i=0;i<temp.length;i+=2){const [x,y]=toPx(temp[i],temp[i+1]);h+=`<circle cx="${x}" cy="${y}" r="5" fill="${tcol}" vector-effect="non-scaling-stroke"/>`;}
     ink.innerHTML=h;ink.querySelectorAll('[data-run]').forEach(el=>el.addEventListener('click',ev=>{ev.stopPropagation();runSheet(el.getAttribute('data-run'));}));
   }
   function runPath(pts,sw,col,id,temp){let dstr='';for(let i=0;i<pts.length;i+=2){const [x,y]=toPx(pts[i],pts[i+1]);dstr+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}
     let s='';
-    if(sw>0)s+=`<path d="${dstr}" fill="none" stroke="color-mix(in srgb,${col} 32%,transparent)" stroke-width="${sw}" stroke-linecap="butt" stroke-linejoin="round"/>`;
-    s+=`<path d="${dstr}" fill="none" stroke="${col}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${temp?' stroke-dasharray="6 4"':` data-run="${id}" style="cursor:pointer"`}/>`;
+    // the filled area (duct width out to the bold lines): translucent band of the measured width
+    if(sw>0)s+=`<path d="${dstr}" fill="none" stroke="${col}" stroke-opacity="0.3" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    // the line you drew (linear): a crisp centerline on top
+    s+=`<path d="${dstr}" fill="none" stroke="${col}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${temp?' stroke-dasharray="6 4"':` data-run="${id}" style="cursor:pointer"`}/>`;
+    if(!temp&&id){const [x0,y0]=toPx(pts[0],pts[1]),[x1,y1]=toPx(pts[pts.length-2],pts[pts.length-1]);
+      s+=`<circle cx="${x0}" cy="${y0}" r="4.5" fill="#fff" stroke="${col}" stroke-width="2.2" vector-effect="non-scaling-stroke" data-run="${id}" style="cursor:pointer"/>`;
+      s+=`<circle cx="${x1}" cy="${y1}" r="4.5" fill="#fff" stroke="${col}" stroke-width="2.2" vector-effect="non-scaling-stroke" data-run="${id}" style="cursor:pointer"/>`;}
     return s;}
   function drawLabels(){
     let h='';estRunsOf(d.id).forEach(r=>{if(r.pts.length<4)return;const mid=Math.floor(r.pts.length/4)*2;
       const nx=(r.pts[mid]+r.pts[mid+2>=r.pts.length?mid:mid+2])/2,ny=(r.pts[mid+1]+r.pts[mid+3>=r.pts.length?mid+1:mid+3])/2;
-      h+=`<div class="elabel" style="left:${nx*baseW}px;top:${ny*baseH}px;transform:translate(-50%,-50%) scale(${1/scale})">${ft1(estLenFt(r.pts,d))} lf · ${ftIn(estWidthFt(r,d))}</div>`;});
+      h+=`<div class="elabel" style="left:${nx*baseW}px;top:${ny*baseH}px;transform:translate(-50%,-50%) scale(${1/scale})"><i style="background:${estKindOf(r).color}"></i>${ft1(estLenFt(r.pts,d))} lf · ${Math.round(estAreaFt(r,d))} sf</div>`;});
     labels.innerHTML=h;}
 
   function refresh(){renderInk();drawLabels();updateChrome();}
@@ -3105,6 +3132,10 @@ function viewEstMeasure(app){
     let L=0,A=0;estRunsOf(d.id).forEach(r=>{L+=estLenFt(r.pts,d);A+=estAreaFt(r,d);});
     if(estRunsOf(d.id).length){totBtn.hidden=false;totBtn.innerHTML=`${I.ruler}<b>${ft1(L)}</b> lf · <b>${Math.round(A)}</b> sq ft`;}
     else totBtn.hidden=true;
+    const used=[...new Set(estRunsOf(d.id).map(r=>r.kind||'mps'))];
+    if(used.length){const legend=app.querySelector('#evLegend');legend.hidden=false;
+      legend.innerHTML=used.map(k=>`<span><i style="background:${DUCT_KINDS[k].color}"></i>${DUCT_KINDS[k].label}</span>`).join('');}
+    else app.querySelector('#evLegend').hidden=true;
     renderBar();
   }
   function renderBar(){
@@ -3124,9 +3155,11 @@ function viewEstMeasure(app){
     }else{
       const nv=temp.length/2;
       hint.innerHTML=`${I.pen}<span>Tap along the duct${nv?' · '+nv+' point'+(nv!==1?'s':''):''}</span>`;
-      vbar.innerHTML=`<div class="drawbar"><button class="dt" id="eUndo"${temp.length?'':' disabled style="opacity:.4"'}>${I.undo}</button>
+      vbar.innerHTML=`<div class="estrun"><div class="estkinds">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${k===estKind?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
+        <div class="drawbar"><button class="dt" id="eUndo"${temp.length?'':' disabled style="opacity:.4"'}>${I.undo}</button>
         <button class="btn block" id="eCancel">Cancel</button>
-        <button class="btn primary done" id="eDone"${temp.length>=4?'':' disabled style="opacity:.5"'}>Done</button></div>`;
+        <button class="btn primary done" id="eDone"${temp.length>=4?'':' disabled style="opacity:.5"'}>Done</button></div></div>`;
+      vbar.querySelectorAll('.estkinds [data-k]').forEach(b=>b.onclick=()=>{estKind=b.dataset.k;try{localStorage.setItem('ductpro-est-kind',estKind);}catch(e){}renderBar();renderInk();});
       vbar.querySelector('#eUndo').onclick=()=>{temp=temp.slice(0,-2);refresh();};
       vbar.querySelector('#eCancel').onclick=()=>{mode='view';temp=[];refresh();};
       vbar.querySelector('#eDone').onclick=finishRun;
@@ -3155,7 +3188,7 @@ function viewEstMeasure(app){
   }
   async function finishRun(){
     if(temp.length<4){toast('Tap at least two points');return;}
-    const pts=temp.slice();const run={id:uid(),estId:d.estId,drawId:d.id,pts,widthMode:'auto',widthFrac:0,manualWidthFt:0,label:'',createdAt:now()};
+    const pts=temp.slice();const run={id:uid(),estId:d.estId,drawId:d.id,pts,kind:estKind,widthMode:'auto',widthFrac:0,manualWidthFt:0,label:'',createdAt:now()};
     mode='view';temp=[];hint.innerHTML=`${I.info}<span>Reading width…</span>`;
     try{const img=await estImage(d);const w=estDetectWidthFrac(pts,img);
       if(w&&w.frac>0){run.widthFrac=w.frac;}
@@ -3168,12 +3201,16 @@ function viewEstMeasure(app){
     const r=S.estruns.find(x=>x.id===id);if(!r)return;
     const body=document.createElement('div');
     const draw=()=>{const cur=S.estruns.find(x=>x.id===id);if(!cur){ctl.close();return;}
-      body.innerHTML=`<div class="cl-stat"><div class="cl-statrow">${I.ruler}<span>Linear <b>${ft1(estLenFt(cur.pts,d))} ft</b> · width <b>${ftIn(estWidthFt(cur,d))}</b> · area <b>${Math.round(estAreaFt(cur,d))} sq ft</b></span></div>
+      body.innerHTML=`<div class="cl-stat"><div class="cl-statrow"><i class="estdot" style="background:${estKindOf(cur).color}"></i><span><b>${estKindOf(cur).label}</b> · linear <b>${ft1(estLenFt(cur.pts,d))} ft</b> · width <b>${ftIn(estWidthFt(cur,d))}</b> · area <b>${Math.round(estAreaFt(cur,d))} sq ft</b></span></div>
         <div class="cl-statrow"><span>Width read ${cur.widthMode==='auto'?'automatically from the drawing':'by hand'}.</span></div></div>
-        <div class="field" style="margin-top:14px"><label>Label (optional)</label><input class="inp" id="rLabel" value="${esc(cur.label||'')}" placeholder="e.g. Main supply"></div>
-        <div class="seg" id="rWmode" style="margin-top:8px"><button type="button" data-w="auto"${cur.widthMode==='auto'?' class="on"':''}>Auto width</button><button type="button" data-w="manual"${cur.widthMode==='manual'?' class="on"':''}>Set width</button></div>
+        <div class="cl-subhead">Duct type</div>
+        <div class="estkinds" id="rKind">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${(cur.kind||'mps')===k?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
+        <div class="field" style="margin-top:12px"><label>Label (optional)</label><input class="inp" id="rLabel" value="${esc(cur.label||'')}" placeholder="e.g. Main supply"></div>
+        <div class="cl-subhead">Width</div>
+        <div class="seg" id="rWmode" style="margin-top:6px"><button type="button" data-w="auto"${cur.widthMode==='auto'?' class="on"':''}>Auto width</button><button type="button" data-w="manual"${cur.widthMode==='manual'?' class="on"':''}>Set width</button></div>
         ${cur.widthMode==='manual'?`<div class="field" style="margin-top:10px"><label>Duct width</label><input class="inp" id="rWidth" inputmode="decimal" value="${ftIn(estWidthFt(cur,d))}" placeholder="e.g. 12&quot;"></div>`:''}
         <button type="button" class="btn danger" id="rDel" style="width:100%;margin-top:18px">Delete run</button>`;
+      body.querySelectorAll('#rKind [data-k]').forEach(b=>b.onclick=()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.kind=b.dataset.k;pPut('estruns',c).catch(()=>{});draw();refresh();});
       body.querySelector('#rLabel').onchange=ev=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.label=ev.target.value.trim();pPut('estruns',c).catch(()=>{});};
       body.querySelectorAll('[data-w]').forEach(b=>b.onclick=async()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;
         if(b.dataset.w==='manual'){c.widthMode='manual';if(!c.manualWidthFt)c.manualWidthFt=estWidthFt(c,d)||1;}
@@ -3230,6 +3267,11 @@ function viewEstMeasure(app){
   function up(ev){if(!ptrs.has(ev.pointerId))return;const was1=ptrs.size===1;ptrs.delete(ev.pointerId);
     if(ptrs.size<2)pinch=null;if(ptrs.size===0){if(was1&&moved<6&&mode!=='view')addPoint(ev.clientX,ev.clientY);panStart=null;}}
   viewer.addEventListener('pointerup',up);viewer.addEventListener('pointercancel',up);
+  // mouse-wheel / trackpad zoom around the cursor
+  viewer.addEventListener('wheel',ev=>{ev.preventDefault();const r=viewer.getBoundingClientRect();
+    const cx=ev.clientX-r.left,cy=ev.clientY-r.top;const f=Math.exp(-ev.deltaY*0.0015);
+    const ns=Math.max(0.2,Math.min(16,scale*f));const ax=(cx-tx)/scale,ay=(cy-ty)/scale;
+    scale=ns;tx=cx-ax*scale;ty=cy-ay*scale;apply();},{passive:false});
 
   requestAnimationFrame(()=>{fit();refresh();});
 }
