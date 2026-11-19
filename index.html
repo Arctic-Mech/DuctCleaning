@@ -444,6 +444,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .est-card .stats .s span{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .est-card .linkbtn{letter-spacing:0;text-transform:none}
 .evcalt svg{color:var(--warn)}
+.evundo{color:var(--fg);font:600 12.5px var(--font-body);display:flex;align-items:center;gap:5px}
+.evundo svg{width:15px;height:15px}
 .elabel-cal{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 55%,var(--line));font-weight:700}
 .elabel-cal svg{width:12px;height:12px;vertical-align:-2px;margin-right:3px}
 .cl-empty{display:flex;align-items:center;gap:12px;padding:15px}
@@ -880,7 +882,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 09:11';
+const BUILD='Nov 19 09:29';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2914,7 +2916,8 @@ function estStandardsSheet(){
 }
 // labor + access-door estimate from totals and the standards
 function estDerived(totL,totA){const s=estSettings();
-  return {hrs:totL*s.hrPerLf+totA*s.hrPerSf, doors:s.lfPerDoor>0?Math.ceil(totL/s.lfPerDoor):0,
+  return {hrsLf:totL*s.hrPerLf, hrsSf:totA*s.hrPerSf, doors:s.lfPerDoor>0?Math.ceil(totL/s.lfPerDoor):0,
+    hasLf:s.hrPerLf>0, hasSf:s.hrPerSf>0, hasDoor:s.lfPerDoor>0,
     any:s.hrPerLf>0||s.hrPerSf>0||s.lfPerDoor>0};}
 // feet per plan-pixel for a drawing (from its calibration)
 function estFpp(d){ if(!d||!d.cal)return 0; const W=d.w||1,H=d.h||1,c=d.cal;
@@ -3128,9 +3131,10 @@ function viewEstimate(app){
           <div class="s"><b>${Math.round(totA)}</b><span>Sq ft</span></div></div></div>
       ${(()=>{const dv=estDerived(totL,totA);return `<div class="card est-card" style="padding:14px 16px;margin-top:12px">
         <div class="eyebrow" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><span>Estimate</span><button type="button" class="linkbtn" id="estEditStd">Standards</button></div>
-        <div class="stats"><div class="s"><b>${dv.any&&dv.hrs?ft1(dv.hrs):'—'}</b><span>Labor hrs</span></div>
-          <div class="s"><b>${dv.any&&dv.doors?dv.doors:'—'}</b><span>Access doors</span></div></div>
-        ${dv.any?'':'<p class="cl-note" style="margin:10px 0 0">Set your standards (hours per lf/sf, access door spacing) to estimate labor and doors.</p>'}</div>`;})()}
+        <div class="stats"><div class="s"><b>${dv.hasLf?ft1(dv.hrsLf):'—'}</b><span>Hrs by lf</span></div>
+          <div class="s"><b>${dv.hasSf?ft1(dv.hrsSf):'—'}</b><span>Hrs by sf</span></div>
+          <div class="s"><b>${dv.hasDoor?dv.doors:'—'}</b><span>Access doors</span></div></div>
+        ${dv.any?'<p class="cl-note" style="margin:10px 0 0;font-size:12.5px">Two ways to estimate labor — pick whichever your crew prices by.</p>':'<p class="cl-note" style="margin:10px 0 0">Set your standards (hours per lf and/or sf, access door spacing) to estimate labor and doors.</p>'}</div>`;})()}
       <div class="section-head"><h2>Drawings</h2></div>
       ${draws.length?`<div class="card" style="padding:0">${list}</div>`
         :`<div class="empty"><div class="ic">${I.plan}</div><h2>No drawings yet</h2><p>Upload a PDF to measure.</p></div>`}
@@ -3215,7 +3219,8 @@ function viewEstMeasure(app){
       </div></div>
       <div class="viewer-overlay"><div class="vrow"><div class="vchip" id="evHint"></div>
         <button class="vchip evtot" id="evTot" hidden></button>
-        <button class="vchip evcalt" id="evCalT" hidden></button></div><div class="estleg" id="evLegend" hidden></div></div>
+        <button class="vchip evcalt" id="evCalT" hidden></button>
+        <button class="vchip evundo" id="evUndo" hidden>${I.undo}<span>Undo</span></button></div><div class="estleg" id="evLegend" hidden></div></div>
       <div class="zoomcol evzoom"><button id="ezin">+</button><button id="ezout">−</button>
         <button id="ezfit" style="font-size:13px;font-weight:700">FIT</button></div>
     </div>
@@ -3255,7 +3260,7 @@ function viewEstMeasure(app){
     let h='';
     estRunsOf(d.id).forEach(r=>{const col=estKindOf(r).color;
       if(r.widthMode==='fill'&&r.fillPoly&&r.fillPoly.length>=6){let dd='';for(let i=0;i<r.fillPoly.length;i+=2){const [x,y]=toPx(r.fillPoly[i],r.fillPoly[i+1]);dd+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}dd+='Z';
-        h+=`<path d="${dd}" fill="${col}" fill-opacity="0.32" stroke="${col}" stroke-width="2" stroke-opacity="0.8" vector-effect="non-scaling-stroke" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;}
+        h+=`<path d="${dd}" fill="${col}" fill-opacity="0.3" stroke="none" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;}
       else h+=bandSvg(r,col)+lineSvg(r.pts,col,r.id,false,r.tieStart);});
     if(d.cal&&showCal){const [ax,ay]=toPx(d.cal.a[0],d.cal.a[1]),[bx,by]=toPx(d.cal.b[0],d.cal.b[1]);
       h+=`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="var(--warn)" stroke-width="3" stroke-dasharray="8 5" vector-effect="non-scaling-stroke"/>`;
@@ -3281,6 +3286,7 @@ function viewEstMeasure(app){
     if(used.length){const legend=app.querySelector('#evLegend');legend.hidden=false;
       legend.innerHTML=used.map(k=>`<span><i style="background:${DUCT_KINDS[k].color}"></i>${DUCT_KINDS[k].label}</span>`).join('');}
     else app.querySelector('#evLegend').hidden=true;
+    const uu=app.querySelector('#evUndo');if(uu)uu.hidden=!estRunsOf(d.id).length;
     const ct=app.querySelector('#evCalT');if(d.cal){ct.hidden=false;ct.classList.toggle('on',showCal);
       ct.innerHTML=`${showCal?I.eye:I.eyeoff}<span>Scale ${esc(ftIn(d.cal.ft))}</span>`;}else ct.hidden=true;
     renderBar();
@@ -3413,7 +3419,7 @@ function viewEstMeasure(app){
   }
   function recalibrateNote(){ // when scale changes, auto widths (widthFrac) stay valid; nothing to recompute
   }
-  app.querySelector('#back').onclick=()=>{EVW=null;back();};
+  app.querySelector('#back').onclick=()=>{EVW=null;window.removeEventListener('keydown',onKey);back();};
   app.querySelector('#evMenu').onclick=()=>{
     const body=document.createElement('div');body.className='actionlist';
     const rc=mkAction(I.ruler,d.cal?'Reset scale':'Set scale');const rl=mkAction(I.list,'Runs ('+estRunsOf(d.id).length+')');
@@ -3441,6 +3447,15 @@ function viewEstMeasure(app){
   app.querySelector('#ezfit').onclick=fit;
   totBtn.onclick=runsListSheet;
   app.querySelector('#evCalT').onclick=()=>{showCal=!showCal;refresh();};
+  function undoLast(){
+    if(mode!=='view'&&temp.length){temp=temp.slice(0,-2);refresh();return;}
+    const rs=estRunsOf(d.id);if(!rs.length){toast('Nothing to undo');return;}
+    const last=rs[rs.length-1];S.estruns=S.estruns.filter(x=>x.id!==last.id);pDel('estruns',last.id).catch(()=>{});
+    refresh();toast('Removed last '+(last.widthMode==='fill'?'fill':'run'));}
+  app.querySelector('#evUndo').onclick=undoLast;
+  const onKey=e=>{if(S.route[S.route.length-1]!=='estmeasure'){window.removeEventListener('keydown',onKey);return;}
+    if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){e.preventDefault();undoLast();}};
+  window.addEventListener('keydown',onKey);
 
   // ---- pan / zoom / tap ----
   const ptrs=new Map();let panStart=null,pinch=null,moved=0,downXY=null;
