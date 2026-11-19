@@ -61,7 +61,10 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   surrounding lines; fills render with no border in the same translucent shade as measured bands, so
   everything blends together. Deleting a run segment offers **Delete this branch/fill** or **Delete
   the whole run** (the main with all its branches and fills). **Undo** (button in the measure bar, or
-  Ctrl/⌘-Z) removes the most recent run or fill. A **Standards** screen sets hours per linear foot, hours per square foot, and one
+  Ctrl/⌘-Z) removes the most recent run or fill. A **branch load** accounts for branches being slower
+  to clean than a straight run: Standards holds both a flat *hours per branch* and a *% per branch*,
+  and each estimate picks which to apply (Flat / % / Off). The chosen amount folds into the hrs-by-lf
+  and hrs-by-sf totals and also shows as its own "Branches (N)" figure on the estimate card. A **Standards** screen sets hours per linear foot, hours per square foot, and one
   access door every N feet; because crews price labor two ways, each estimate shows **hours by lf**
   and **hours by sf** side by side (not summed) plus access doors — pick whichever your crew prices
   by. Estimating is desktop/laptop oriented (mouse wheel zooms); the drawing renders at high
