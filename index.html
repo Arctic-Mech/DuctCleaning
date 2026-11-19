@@ -512,6 +512,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .cl-echip .cl-del{color:var(--danger)}
 .vchip svg{width:16px;height:16px}
 #hires{position:absolute;left:0;top:0;pointer-events:none;display:none}
+#ehires{position:absolute;left:0;top:0;pointer-events:none;display:none}
 .zoomcol{position:absolute;right:max(12px,env(safe-area-inset-right,0px));
   bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:5;display:flex;flex-direction:column;gap:1px;
   border-radius:12px;overflow:hidden;box-shadow:0 3px 12px rgba(0,0,0,.3)}
@@ -884,7 +885,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 10:53';
+const BUILD='Nov 19 15:23';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -1106,9 +1107,9 @@ function initBackButton(){
     if(S.route.length>1)back();             // otherwise step back one screen
   });
 }
-function persistNav(){try{localStorage.setItem('ductpro-nav',JSON.stringify({route:S.route,jobId:S.jobId,drawId:S.drawId}));}catch(e){}}
+function persistNav(){try{localStorage.setItem('ductpro-nav',JSON.stringify({route:S.route,jobId:S.jobId,drawId:S.drawId,estId:S.estId,estDrawId:S.estDrawId}));}catch(e){}}
 function restoreNav(){try{const n=JSON.parse(localStorage.getItem('ductpro-nav'));
-  if(n&&n.route){S.route=n.route;S.jobId=n.jobId;S.drawId=n.drawId;}}catch(e){}}
+  if(n&&n.route){S.route=(Array.isArray(n.route)&&n.route.length)?n.route.slice():['jobs'];if(S.route[0]!=='jobs')S.route.unshift('jobs');S.jobId=n.jobId;S.drawId=n.drawId;S.estId=n.estId;S.estDrawId=n.estDrawId;}}catch(e){}}
 
 /* ============================ render root ============================ */
 function render(){
@@ -1120,8 +1121,8 @@ function render(){
   // validate context still exists
   if(route==='drawing'&&!S.drawings.find(d=>d.id===S.drawId)){S.route=['jobs'];}
   if(route==='job'&&!S.jobs.find(j=>j.id===S.jobId)){S.route=['jobs'];}
-  if(route==='estmeasure'&&!S.estdraws.find(d=>d.id===S.estDrawId)){S.route=['estimates'];}
-  if(route==='estimate'&&!S.estimates.find(x=>x.id===S.estId)){S.route=['estimates'];}
+  if(route==='estmeasure'&&!S.estdraws.find(d=>d.id===S.estDrawId)){S.route=['jobs','estimates'];}
+  if(route==='estimate'&&!S.estimates.find(x=>x.id===S.estId)){S.route=['jobs','estimates'];}
   const r=S.route[S.route.length-1];
   if(r==='jobs')viewJobs(app);
   else if(r==='job')viewJob(app);
@@ -2909,8 +2910,8 @@ function estGroupLabel(rs,r){const m=estRunMain(rs,estGroupOf(r));return (m&&m.l
 function estAutoLabel(rs,kind){const n=rs.filter(x=>estIsMain(x)&&(x.kind||'mps')===kind).length+1;return (LABELCODE[kind]||String(kind).toUpperCase())+' '+n;}
 function estDefaultKind(){try{const k=localStorage.getItem('ductpro-est-kind');if(DUCT_KINDS[k])return k;}catch(e){}return 'mps';}
 // estimating standards (shared): hours per lf/sf and one access door every N feet of run
-function estSettings(){const d={hrPerLf:0,hrPerSf:0,lfPerDoor:0,hrPerBranch:0,pctPerBranch:0};const v=S.estsetArr&&S.estsetArr[0];if(v){['hrPerLf','hrPerSf','lfPerDoor','hrPerBranch','pctPerBranch'].forEach(k=>{if(typeof v[k]==='number')d[k]=v[k];});}return d;}
-function estBranchCount(estId){let n=0;estDrawsOf(estId).forEach(d=>{estRunsOf(d.id).forEach(r=>{if(r.widthMode==='fill')n+=(r.centerBranches||0);else if(r.role==='branch'||(!r.role&&r.tieStart))n++;});});return n;}
+function estSettings(){const d={hrPerLf:0,hrPerSf:0,lfPerDoor:0,hrPerBranch:0};const v=S.estsetArr&&S.estsetArr[0];if(v){['hrPerLf','hrPerSf','lfPerDoor','hrPerBranch'].forEach(k=>{if(typeof v[k]==='number')d[k]=v[k];});}return d;}
+function estBranchCount(estId){let n=0;estDrawsOf(estId).forEach(d=>{estRunsOf(d.id).forEach(r=>{if(r.role==='branch'||(!r.role&&r.tieStart&&r.widthMode!=='fill'))n++;});});return n;}
 function estStandardsSheet(){
   const cur=estSettings();const body=document.createElement('div');
   body.innerHTML=`<p class="cl-note">Rules of thumb used to turn measured duct into labor hours and access doors. They apply to every estimate.</p>
@@ -2918,24 +2919,21 @@ function estStandardsSheet(){
     <div class="field"><label>Hours per square foot</label><input class="inp" id="sHs" inputmode="decimal" value="${cur.hrPerSf||''}" placeholder="e.g. 0.02"></div>
     <div class="field"><label>Access door every ___ feet of run</label><input class="inp" id="sDd" inputmode="decimal" value="${cur.lfPerDoor||''}" placeholder="e.g. 20"></div>
     <div class="cl-subhead" style="margin-top:4px">Branch load — branches are slower to clean than a straight run</div>
-    <div class="field" style="margin-top:8px"><label>Extra hours per branch (flat)</label><input class="inp" id="sHb" inputmode="decimal" value="${cur.hrPerBranch||''}" placeholder="e.g. 0.4"></div>
-    <div class="field" style="margin-bottom:2px"><label>…or % added per branch</label><input class="inp" id="sPb" inputmode="decimal" value="${cur.pctPerBranch||''}" placeholder="e.g. 3"></div>`;
+    <div class="field" style="margin-top:8px;margin-bottom:2px"><label>Extra hours per branch</label><input class="inp" id="sHb" inputmode="decimal" value="${cur.hrPerBranch||''}" placeholder="e.g. 0.4"></div>`;
   const foot=document.createElement('button');foot.className='btn primary block';foot.textContent='Save standards';
   const ctl=sheetShell({title:'Estimating standards',bodyNode:body,footNode:foot});
   foot.onclick=async()=>{const num=id=>{const v=parseFloat(body.querySelector(id).value);return isNaN(v)||v<0?0:v;};
-    const doc={id:'default',hrPerLf:num('#sHl'),hrPerSf:num('#sHs'),lfPerDoor:num('#sDd'),hrPerBranch:num('#sHb'),pctPerBranch:num('#sPb'),createdAt:now()};
+    const doc={id:'default',hrPerLf:num('#sHl'),hrPerSf:num('#sHs'),lfPerDoor:num('#sDd'),hrPerBranch:num('#sHb'),createdAt:now()};
     S.estsetArr=[doc];await pPut('estsettings',doc).catch(()=>toast('Not saved — check connection'));
     ctl.close();render();toast('Standards saved');};
 }
 // labor + access-door estimate from totals and the standards
-function estDerived(totL,totA,branches,mode){const s=estSettings();branches=branches||0;mode=mode||'flat';
+function estDerived(totL,totA,branches,mode){const s=estSettings();branches=branches||0;mode=(mode==='none')?'none':'flat';
   const baseLf=totL*s.hrPerLf, baseSf=totA*s.hrPerSf;
-  let addLf=0,addSf=0,pct=0,flat=0;
-  if(mode==='flat'){flat=branches*s.hrPerBranch;addLf=flat;addSf=flat;}
-  else if(mode==='pct'){pct=branches*s.pctPerBranch;addLf=baseLf*pct/100;addSf=baseSf*pct/100;}
-  return {hrsLf:baseLf+addLf, hrsSf:baseSf+addSf, baseLf, baseSf, doors:s.lfPerDoor>0?Math.ceil(totL/s.lfPerDoor):0,
-    branches, branchMode:mode, branchFlat:flat, branchPct:pct, branchAddLf:addLf, branchAddSf:addSf,
-    hasBranchRate:(mode==='flat'&&s.hrPerBranch>0)||(mode==='pct'&&s.pctPerBranch>0),
+  const flat=(mode==='flat')?branches*s.hrPerBranch:0;
+  return {hrsLf:baseLf+flat, hrsSf:baseSf+flat, baseLf, baseSf, doors:s.lfPerDoor>0?Math.ceil(totL/s.lfPerDoor):0,
+    branches, branchMode:mode, branchFlat:flat,
+    hasBranchRate:(mode==='flat'&&s.hrPerBranch>0),
     hasLf:s.hrPerLf>0, hasSf:s.hrPerSf>0, hasDoor:s.lfPerDoor>0,
     any:s.hrPerLf>0||s.hrPerSf>0||s.lfPerDoor>0};}
 // feet per plan-pixel for a drawing (from its calibration)
@@ -2956,9 +2954,7 @@ function estWidthFt(r,d){ if(r.widthMode==='manual')return +r.manualWidthFt||0;
   return (r.widthFrac||0)*(d.w||1)*estFpp(d); }
 function estAreaFt(r,d){ if(r.widthMode==='fill')return (r.fillFrac||0)*(d.w||1)*(d.h||1)*estFpp(d)*estFpp(d); if(estHasEdges(r))return estPolyAreaFt(r,d); return estLenFt(r.pts,d)*estWidthFt(r,d); }
 // linear footage of a fill, from its detected centerline (medial axis), with the end-trim added back
-function estCenterLenFt(r,d){ if(!r.center||!r.center.length)return 0; let raw=0;r.center.forEach(p=>raw+=estLenFt(p.pts,d));
-  const area=(r.fillFrac||0)*(d.w||1)*(d.h||1)*estFpp(d)*estFpp(d);const w=raw>0?area/raw:0;const tips=(typeof r.centerTips==='number')?r.centerTips:((r.centerBranches||0)+2);
-  return raw+tips*(w/2); }
+function estCenterLenFt(r,d){ if(!r.center||!r.center.length)return 0; let raw=0;r.center.forEach(p=>raw+=estLenFt(p.pts,d)); return raw; }
 // a run's linear footage: drawn length for runs, detected centerline for fills
 function estRunLenFt(r,d){ return r.widthMode==='fill'?estCenterLenFt(r,d):estLenFt(r.pts,d); }
 // uniform band thickness (plan-width fraction) — used for manual width or legacy single-width runs
@@ -3147,8 +3143,7 @@ function estFillAt(img,nx,ny,maxPx){
   if(r.onLine)return {onLine:true};if(r.leak||!r.mask)return {leak:true};
   const c=estMaskContour(r);if(c.length<3)return {leak:true};
   const poly=[];c.forEach(pt=>poly.push(+(pt[0]/img.W).toFixed(5),+(pt[1]/img.H).toFixed(5)));
-  let cl={polys:[],branches:0,tips:0};try{cl=estCenterline(r,img);}catch(e){console.warn('centerline failed',e);}
-  return {fillFrac:r.count/(img.W*img.H),fillPoly:poly,center:cl.polys,centerBranches:cl.branches,centerTips:cl.tips};
+  return {fillFrac:r.count/(img.W*img.H),fillPoly:poly};
 }
 // total area of a drawing's runs as a UNION (rasterized), so tie-ins/overlaps are not double counted
 function estUnionAreaFt(d,runs){ if(!runs.length||!estFpp(d))return 0;
@@ -3209,7 +3204,7 @@ function estForm(existing){
 }
 /* ---------- one estimate: drawings + grand total ---------- */
 function viewEstimate(app){
-  const e=estFind(S.estId);if(!e){S.route=['estimates'];return render();}
+  const e=estFind(S.estId);if(!e){S.route=['jobs','estimates'];return render();}
   const draws=estDrawsOf(e.id);
   let totL=0,totA=0;draws.forEach(d=>{estRunsOf(d.id).forEach(r=>{totL+=estRunLenFt(r,d);});totA+=estUnionAreaFt(d,estRunsOf(d.id));});
   let list='';
@@ -3226,10 +3221,9 @@ function viewEstimate(app){
         <div class="stats"><div class="s"><b>${draws.length}</b><span>Drawings</span></div>
           <div class="s"><b>${ft1(totL)}</b><span>Linear ft</span></div>
           <div class="s"><b>${Math.round(totA)}</b><span>Sq ft</span></div></div></div>
-      ${(()=>{const branches=estBranchCount(e.id);const bmode=e.branchMode||'flat';const dv=estDerived(totL,totA,branches,bmode);const es=estSettings();
-        const bBig=(!dv.hasBranchRate||bmode==='none'||!branches)?'—':(bmode==='flat'?('+'+ft1(dv.branchFlat)+'h'):('+'+Math.round(dv.branchPct)+'%'));
-        const rate=bmode==='flat'?es.hrPerBranch:bmode==='pct'?es.pctPerBranch:0;
-        const noteAdd=bmode==='none'?'nothing':(rate>0?((bmode==='flat'?ft1(rate)+'h':ft1(rate)+'%')+' per branch'):'nothing yet (set it in Standards)');
+      ${(()=>{const branches=estBranchCount(e.id);const bmode=(e.branchMode==='none')?'none':'flat';const dv=estDerived(totL,totA,branches,bmode);const es=estSettings();
+        const bBig=(!dv.hasBranchRate||bmode==='none'||!branches)?'—':('+'+ft1(dv.branchFlat)+'h');
+        const noteAdd=bmode==='none'?'nothing':(es.hrPerBranch>0?ft1(es.hrPerBranch)+'h per branch':'nothing yet (set it in Standards)');
         return `<div class="card est-card" style="padding:14px 16px;margin-top:12px">
         <div class="eyebrow" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><span>Estimate</span><button type="button" class="linkbtn" id="estEditStd">Standards</button></div>
         <div class="stats"><div class="s"><b>${dv.hasLf?ft1(dv.hrsLf):'—'}</b><span>Hrs by lf</span></div>
@@ -3237,9 +3231,8 @@ function viewEstimate(app){
           <div class="s"><b>${bBig}</b><span>Branches (${branches})</span></div>
           <div class="s"><b>${dv.hasDoor?dv.doors:'—'}</b><span>Access doors</span></div></div>
         <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:12px;color:var(--muted)">Branch load</span>
-          <div class="seg" id="estBranchMode" style="flex:1;min-width:200px;max-width:280px">
-            <button type="button" data-bm="flat"${bmode==='flat'?' class="on"':''}>Flat / branch</button>
-            <button type="button" data-bm="pct"${bmode==='pct'?' class="on"':''}>% / branch</button>
+          <div class="seg" id="estBranchMode" style="flex:1;min-width:160px;max-width:220px">
+            <button type="button" data-bm="flat"${bmode!=='none'?' class="on"':''}>On</button>
             <button type="button" data-bm="none"${bmode==='none'?' class="on"':''}>Off</button></div></div>
         ${dv.any?`<p class="cl-note" style="margin:10px 0 0;font-size:12.5px">Hrs by lf and hrs by sf each already include branch time — pick whichever your crew prices by. Branch load adds ${noteAdd}.</p>`:'<p class="cl-note" style="margin:10px 0 0">Set your standards (hours per lf and/or sf, access door spacing, branch load) to estimate labor and doors.</p>'}</div>`;})()}
       <div class="section-head"><h2>Drawings</h2></div>
@@ -3271,7 +3264,7 @@ function estMenu(e){
     S.estruns=S.estruns.filter(r=>!estDrawsOf(e.id).some(d=>d.id===r.drawId));
     S.estdraws=S.estdraws.filter(d=>d.estId!==e.id);
     S.estimates=S.estimates.filter(x=>x.id!==e.id);await pDel('estimates',e.id).catch(()=>{});
-    S.route=['estimates'];render();toast('Estimate deleted');};
+    S.route=['jobs','estimates'];render();toast('Estimate deleted');};
 }
 async function addEstPlanFlow(est,file){
   const boot=document.getElementById('boot');boot.style.display='grid';
@@ -3312,7 +3305,7 @@ function parseFeet(s){ s=String(s||'').trim().toLowerCase().replace(/[’']/g,"'
 
 let EVW=null; // active estimate measure controller
 function viewEstMeasure(app){
-  const d=estDrawFind(S.estDrawId);if(!d){S.route=['estimate'];return render();}
+  const d=estDrawFind(S.estDrawId);if(!d){S.route=['jobs','estimates','estimate'];return render();}
   const e=estFind(d.estId)||{};
   const asp=(d.h||900)/(d.w||1200), VB=1000*asp;
   app.innerHTML=`
@@ -3321,7 +3314,7 @@ function viewEstMeasure(app){
       <button class="iconbtn" id="evMenu" aria-label="Options">${I.dots}</button></div>
     <div class="viewer-wrap" id="evWrap">
       <div class="viewer" id="evp"><div class="canvas-stage" id="estage">
-        <img class="plan" id="eplan" src="${esc(d.img)}" alt="${esc(d.name)}" draggable="false">
+        <img class="plan" id="eplan" src="${esc(d.img)}" alt="${esc(d.name)}" draggable="false"><canvas id="ehires"></canvas>
         <svg id="eink" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 ${VB}" preserveAspectRatio="none"></svg>
         <div id="elabels"></div>
       </div></div>
@@ -3334,19 +3327,43 @@ function viewEstMeasure(app){
     </div>
     <div class="bottombar" id="evbar"></div>`;
   const wrap=app.querySelector('#evWrap'),viewer=app.querySelector('#evp'),stage=app.querySelector('#estage');
-  const ink=app.querySelector('#eink'),labels=app.querySelector('#elabels'),hint=app.querySelector('#evHint');
+  const ink=app.querySelector('#eink'),labels=app.querySelector('#elabels'),hint=app.querySelector('#evHint'),ehires=app.querySelector('#ehires');
   const sub=app.querySelector('#evSub'),totBtn=app.querySelector('#evTot'),vbar=app.querySelector('#evbar');
   let baseW=viewer.clientWidth||360, baseH=baseW*asp;
-  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true, tempTie=false, tempTieRun=null, runGroup=null, fillTarget=null; // temp: flat normalized pts being placed
+  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true, tempTie=false, tempTieRun=null, runGroup=null, fillTarget=null, fillStep='pour', fillGroupId=null, fillLeadId=null, fillTemp=[]; // temp: flat normalized pts being placed
   EVW={get scale(){return scale;},nc:(nx,ny)=>{const r=viewer.getBoundingClientRect();return [r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];}};
   const dotR=()=>Math.max(0.6,4200/(scale*baseW));   // ~4px on screen at any zoom
   const apply=()=>{stage.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;drawLabels();
-    const r=dotR().toFixed(2);ink.querySelectorAll('.esc').forEach(c=>c.setAttribute('r',r));};
+    const r=dotR().toFixed(2);ink.querySelectorAll('.esc').forEach(c=>c.setAttribute('r',r));scheduleHiresE();};
   function setBase(){baseW=viewer.clientWidth||360;baseH=baseW*asp;stage.style.width=baseW+'px';stage.style.height=baseH+'px';
     const img=app.querySelector('#eplan');img.style.width=baseW+'px';img.style.height=baseH+'px';
     ink.style.width=baseW+'px';ink.style.height=baseH+'px';labels.style.width=baseW+'px';labels.style.height=baseH+'px';}
   function fit(){setBase();const vw=viewer.clientWidth,vh=viewer.clientHeight;scale=Math.min(vw/baseW,vh/baseH);
     tx=(vw-baseW*scale)/2;ty=(vh-baseH*scale)/2;apply();}
+  let PDFPAGE_E=null,pdfTriedE=false,ehiresTimer=null,ehiresTok=0,ecurRender=null;
+  async function loadPdfE(){if(PDFPAGE_E||pdfTriedE)return PDFPAGE_E;pdfTriedE=true;if(!d.pdfChunks&&!d.pdfKey)return null;
+    try{const bytes=await loadDrawingPdfBytes(d);if(!bytes)return null;const pdf=await pdfjsLib.getDocument({data:bytes}).promise;PDFPAGE_E=await pdf.getPage((d.pageIndex||0)+1);}catch(e){console.warn('est HD unavailable',e);}return PDFPAGE_E;}
+  async function renderHiresE(){
+    if(!PDFPAGE_E||!baseW)return;const rect=viewer.getBoundingClientRect();
+    const Sc=scale,dpr=Math.min(3,window.devicePixelRatio||1),m=0.1;
+    let bx0=(-tx)/Sc,by0=(-ty)/Sc,bx1=(rect.width-tx)/Sc,by1=(rect.height-ty)/Sc;
+    const mw=(bx1-bx0)*m,mh=(by1-by0)*m;bx0-=mw;by0-=mh;bx1+=mw;by1+=mh;
+    bx0=Math.max(0,bx0);by0=Math.max(0,by0);bx1=Math.min(baseW,bx1);by1=Math.min(baseH,by1);
+    const rw=bx1-bx0,rh=by1-by0;if(rw<=1||rh<=1)return;
+    const k=(d.pw||baseW)/baseW;let rsc=Sc*dpr/k;
+    let cw=Math.round(rw*k*rsc),ch=Math.round(rh*k*rsc);
+    const MAXD=4096,MAXA=16.0e6,cap=Math.min(1,MAXD/Math.max(cw,ch),Math.sqrt(MAXA/(cw*ch)));
+    if(cap<1){rsc*=cap;cw=Math.round(cw*cap);ch=Math.round(ch*cap);}
+    if(cw<2||ch<2)return;
+    const tok=++ehiresTok;if(ecurRender){try{ecurRender.cancel();}catch(e){}ecurRender=null;}
+    const c=document.createElement('canvas');c.width=cw;c.height=ch;
+    const vp=PDFPAGE_E.getViewport({scale:rsc});
+    const task=PDFPAGE_E.render({canvasContext:c.getContext('2d',{alpha:false}),viewport:vp,transform:[1,0,0,1,-bx0*k*rsc,-by0*k*rsc]});
+    ecurRender=task;try{await task.promise;}catch(e){return;}
+    if(tok!==ehiresTok||S.estDrawId!==d.id)return;
+    ehires.width=cw;ehires.height=ch;ehires.getContext('2d').drawImage(c,0,0);
+    ehires.style.left=bx0+'px';ehires.style.top=by0+'px';ehires.style.width=rw+'px';ehires.style.height=rh+'px';ehires.style.display='block';}
+  function scheduleHiresE(){if(!PDFPAGE_E)return;clearTimeout(ehiresTimer);ehiresTimer=setTimeout(renderHiresE,120);}
   const toNorm=(cx,cy)=>{const r=viewer.getBoundingClientRect();return {nx:((cx-r.left)-tx)/(scale*baseW),ny:((cy-r.top)-ty)/(scale*baseH)};};
   const toPx=(nx,ny)=>[nx*1000,ny*VB];
 
@@ -3365,11 +3382,16 @@ function viewEstMeasure(app){
       if(!tieStart)s+=dot(x0,y0,col,id); s+=dot(x1,y1,col,id);}
     return s;}
   function renderInk(){
-    let h='';
-    estRunsOf(d.id).forEach(r=>{const col=estKindOf(r).color;
-      if(r.widthMode==='fill'&&r.fillPoly&&r.fillPoly.length>=6){let dd='';for(let i=0;i<r.fillPoly.length;i+=2){const [x,y]=toPx(r.fillPoly[i],r.fillPoly[i+1]);dd+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}dd+='Z';
-        h+=`<path d="${dd}" fill="${col}" fill-opacity="0.3" stroke="none" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;
-        if(r.center&&r.center.length)r.center.forEach(cp=>{h+=`<path d="${ptsPath(cp.pts)}" fill="none" stroke="${col}" stroke-width="${cp.isMain?2.6:2}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${cp.isMain?'':' stroke-dasharray="7 4"'} data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;});}
+    let h='';const rs=estRunsOf(d.id);
+    // fills of one run share a single 0.3-opacity group, so overlapping pours read as ONE flat shade
+    const fillG={},fo=[];
+    rs.forEach(r=>{if(r.widthMode==='fill'&&r.fillPoly&&r.fillPoly.length>=6){const g=estGroupOf(r);if(!fillG[g]){fillG[g]=[];fo.push(g);}fillG[g].push(r);}});
+    fo.forEach(g=>{let a='';fillG[g].forEach(r=>{const col=estKindOf(r).color;let dd='';for(let i=0;i<r.fillPoly.length;i+=2){const [x,y]=toPx(r.fillPoly[i],r.fillPoly[i+1]);dd+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}dd+='Z';
+      a+=`<path d="${dd}" fill="${col}" stroke="none" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;});
+      h+=`<g opacity="0.3">${a}</g>`;});
+    // strokes (centerlines for fills, bands+lines for drawn runs) at full opacity on top
+    rs.forEach(r=>{const col=estKindOf(r).color;
+      if(r.widthMode==='fill'){if(r.center&&r.center.length)r.center.forEach(cp=>{h+=`<path d="${ptsPath(cp.pts)}" fill="none" stroke="${col}" stroke-width="${cp.isMain?2.6:2}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${cp.isMain?'':' stroke-dasharray="7 4"'} data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;});}
       else h+=bandSvg(r,col)+lineSvg(r.pts,col,r.id,false,r.tieStart);});
     if(d.cal&&showCal){const [ax,ay]=toPx(d.cal.a[0],d.cal.a[1]),[bx,by]=toPx(d.cal.b[0],d.cal.b[1]);
       h+=`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="var(--warn)" stroke-width="3" stroke-dasharray="8 5" vector-effect="non-scaling-stroke"/>`;
@@ -3377,6 +3399,9 @@ function viewEstMeasure(app){
     const tcol=mode==='cal'?'var(--warn)':DUCT_KINDS[estKind].color;
     if(temp.length>=2)h+=lineSvg(temp,tcol,'tmp',true);
     for(let i=0;i<temp.length;i+=2){const [x,y]=toPx(temp[i],temp[i+1]);h+=`<circle class="esc" cx="${x}" cy="${y}" r="${dotR().toFixed(2)}" fill="${tcol}" vector-effect="non-scaling-stroke"/>`;}
+    if(mode==='fill'&&fillStep==='trace'&&fillTemp.length){const fc=fillTarget&&fillTarget.mode==='new'?DUCT_KINDS[fillTarget.kind].color:estKindOf(estRunMain(estRunsOf(d.id),fillGroupId)||{}).color;
+      if(fillTemp.length>=2)h+=lineSvg(fillTemp,fc,'ftmp',true);
+      for(let i=0;i<fillTemp.length;i+=2){const [x,y]=toPx(fillTemp[i],fillTemp[i+1]);h+=`<circle class="esc" cx="${x}" cy="${y}" r="${dotR().toFixed(2)}" fill="${fc}" vector-effect="non-scaling-stroke"/>`;}}
     ink.innerHTML=h;ink.querySelectorAll('[data-run]').forEach(el=>el.addEventListener('click',ev=>{ev.stopPropagation();runSheet(el.getAttribute('data-run'));}));
   }
   function drawLabels(){
@@ -3422,11 +3447,24 @@ function viewEstMeasure(app){
       let flabel,fcol;
       if(fillTarget.mode==='new'){flabel='new '+DUCT_KINDS[fillTarget.kind].short+' run';fcol=DUCT_KINDS[fillTarget.kind].color;}
       else{const m=estRunMain(rsF,fillTarget.group);flabel=(m&&m.label)||'run';fcol=m?estKindOf(m).color:'var(--fg)';}
-      hint.innerHTML=`${I.fill}<span>Filling <b>${esc(flabel)}</b> · tap inside the duct</span>`;
-      vbar.innerHTML=`<div class="estrun"><button class="btn" id="eFillWhat" style="justify-content:flex-start"><i class="estdot" style="background:${fcol};margin-right:8px"></i>${esc(flabel)} · change</button>
-        <button class="btn primary block" id="eFillDone">${I.check} Finish</button></div>`;
-      vbar.querySelector('#eFillWhat').onclick=()=>fillChooser();
-      vbar.querySelector('#eFillDone').onclick=()=>{mode='view';fillTarget=null;refresh();};
+      if(fillStep==='trace'){
+        const np=fillTemp.length/2;
+        hint.innerHTML=`${I.pen}<span>Tap the <b>start</b>, any bends, then the <b>end</b> of ${esc(flabel)}${np?' · '+np+' pt'+(np!==1?'s':''):''}</span>`;
+        vbar.innerHTML=`<div class="estrun"><div class="drawbar"><button class="dt" id="eFillUndo"${fillTemp.length?'':' disabled style="opacity:.4"'}>${I.undo}</button>
+          <button class="btn block" id="eFillBack">${I.fill} More fill</button>
+          <button class="btn primary done" id="eFillLine"${fillTemp.length>=4?'':' disabled style="opacity:.5"'}>${I.check} Done line</button></div></div>`;
+        vbar.querySelector('#eFillUndo').onclick=()=>{fillTemp=fillTemp.slice(0,-2);refresh();};
+        vbar.querySelector('#eFillBack').onclick=()=>{fillStep='pour';refresh();};
+        vbar.querySelector('#eFillLine').onclick=()=>fillLineDone();
+      }else{
+        hint.innerHTML=`${I.fill}<span>Filling <b>${esc(flabel)}</b> · tap inside the duct, then <b>Measure line</b></span>`;
+        vbar.innerHTML=`<div class="estrun"><button class="btn" id="eFillWhat" style="justify-content:flex-start"><i class="estdot" style="background:${fcol};margin-right:8px"></i>${esc(flabel)} · change</button>
+          <div class="drawbar"><button class="btn block" id="eFillLineStart"${fillGroupId?'':' disabled style="opacity:.5"'}>${I.pen} Measure line</button>
+          <button class="btn primary done" id="eFillDone">${I.check} Finish</button></div></div>`;
+        vbar.querySelector('#eFillWhat').onclick=()=>fillChooser();
+        vbar.querySelector('#eFillLineStart').onclick=()=>{if(!fillGroupId){toast('Fill an area first');return;}fillStep='trace';refresh();};
+        vbar.querySelector('#eFillDone').onclick=()=>fillFinish();
+      }
     }else{
       const nv=temp.length/2;
       const curRun=runGroup?estRunMain(estRunsOf(d.id),runGroup):null;
@@ -3456,24 +3494,34 @@ function viewEstMeasure(app){
         <div class="stack" id="fcList" style="margin-top:4px">${mains.map(m=>`<button type="button" class="row" data-g="${estGroupOf(m)}"><span class="thumb" style="background:${estKindOf(m).color}22;color:${estKindOf(m).color}">${I.fill}</span><span class="grow"><h3>${esc(m.label||'Run')}</h3><span class="meta">${estKindOf(m).label}</span></span><span class="chev">${I.chev}</span></button>`).join('')}</div>`:''}`;
     const ctl=sheetShell({title:'Fill — what are you measuring?',bodyNode:body});
     body.querySelectorAll('#fcKind [data-k]').forEach(b=>b.onclick=()=>{fk=b.dataset.k;body.querySelectorAll('#fcKind [data-k]').forEach(x=>x.classList.toggle('on',x.dataset.k===fk));});
-    body.querySelector('#fcNew').onclick=()=>{estKind=fk;try{localStorage.setItem('ductpro-est-kind',fk);}catch(e){}fillTarget={mode:'new',kind:fk,group:null};ctl.close();mode='fill';refresh();estImage(d).catch(()=>{});};
-    body.querySelectorAll('#fcList [data-g]').forEach(b=>b.onclick=()=>{const g=b.dataset.g,m=estRunMain(rs,g);fillTarget={mode:'add',group:g,kind:m?m.kind:'mps'};ctl.close();mode='fill';refresh();estImage(d).catch(()=>{});});
+    body.querySelector('#fcNew').onclick=()=>{estKind=fk;try{localStorage.setItem('ductpro-est-kind',fk);}catch(e){}fillTarget={mode:'new',kind:fk,group:null};fillStep='pour';fillGroupId=null;fillLeadId=null;fillTemp=[];ctl.close();mode='fill';refresh();estImage(d).catch(()=>{});};
+    body.querySelectorAll('#fcList [data-g]').forEach(b=>b.onclick=()=>{const g=b.dataset.g,m=estRunMain(rs,g);fillTarget={mode:'add',group:g,kind:m?m.kind:'mps'};fillStep='pour';fillGroupId=null;fillLeadId=null;fillTemp=[];ctl.close();mode='fill';refresh();estImage(d).catch(()=>{});});
     ctl.scrim.addEventListener('click',e=>{if(e.target===ctl.scrim&&!fillTarget){mode='view';refresh();}});
   }
   async function doFill(cx,cy){
     if(!fillTarget){fillChooser();return;}
+    if(fillStep==='trace'){fillAddPoint(cx,cy);return;}
     const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap inside the drawing');return;}
     hint.innerHTML=`${I.info}<span>Filling…</span>`;
     try{const img=await estImage(d);const res=estFillAt(img,nx,ny,Math.round(img.W*img.H*0.06));
       if(res.onLine){toast('Tap in the open space inside the duct');renderBar();return;}
       if(res.leak||!res.fillPoly){toast('That space isn’t closed off — draw the run instead');renderBar();return;}
       const rs=estRunsOf(d.id);const id=uid();let groupId,role,kind,label='';
-      if(fillTarget.mode==='new'){kind=fillTarget.kind;groupId=id;role='main';label=estAutoLabel(rs,kind);fillTarget={mode:'add',group:id,kind};}
-      else{const m=estRunMain(rs,fillTarget.group);kind=m?m.kind:(fillTarget.kind||'mps');groupId=fillTarget.group;role='fill';}
-      const run={id,estId:d.estId,drawId:d.id,kind,widthMode:'fill',fillFrac:res.fillFrac,fillPoly:res.fillPoly,center:res.center||[],centerBranches:res.centerBranches||0,centerTips:res.centerTips||0,pts:[+nx.toFixed(5),+ny.toFixed(5)],groupId,role,label,createdAt:now()};
+      if(!fillGroupId){
+        if(fillTarget.mode==='new'){kind=fillTarget.kind;groupId=id;role='main';label=estAutoLabel(rs,kind);}
+        else{const m=estRunMain(rs,fillTarget.group);kind=m?m.kind:(fillTarget.kind||'mps');groupId=fillTarget.group;role='branch';}
+        fillGroupId=groupId;fillLeadId=id;
+      }else{const m=estRunMain(rs,fillGroupId);kind=m?m.kind:(fillTarget.kind||'mps');groupId=fillGroupId;role='fill';}
+      const run={id,estId:d.estId,drawId:d.id,kind,widthMode:'fill',fillFrac:res.fillFrac,fillPoly:res.fillPoly,center:[],pts:[+nx.toFixed(5),+ny.toFixed(5)],groupId,role,label,createdAt:now()};
       S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));refresh();
-      toast(ft1(estRunLenFt(run,d))+' lf · '+Math.round(estAreaFt(run,d))+' sq ft'+(role==='main'?(' · '+label):''));
+      toast(Math.round(estAreaFt(run,d))+' sq ft filled'+(role==='main'?(' · '+label):'')+' · now Measure line');
     }catch(e){console.warn(e);toast('Fill failed — try again');renderBar();}}
+  function fillAddPoint(cx,cy){const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap on the drawing');return;}fillTemp.push(+nx.toFixed(5),+ny.toFixed(5));refresh();}
+  function fillLineDone(){ if(fillTemp.length<4){toast('Tap a start and an end');return;}
+    const lead=S.estruns.find(x=>x.id===fillLeadId);
+    if(lead){lead.center=[{pts:fillTemp.slice(),isMain:true}];pPut('estruns',lead).catch(()=>{});}
+    const lf=lead?estRunLenFt(lead,d):0;fillFinish();toast('Line measured · '+ft1(lf)+' lf'); }
+  function fillFinish(){mode='view';fillTarget=null;fillStep='pour';fillGroupId=null;fillLeadId=null;fillTemp=[];refresh();}
   function snapPoint(cx,cy){const thr=16;let best=null,bd=thr,bestRun=null;const r=viewer.getBoundingClientRect();
     const sc=(nx,ny)=>[r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];
     estRunsOf(d.id).forEach(run=>{if(estIsFill(run))return;for(let i=0;i+3<run.pts.length;i+=2){const [ax,ay]=sc(run.pts[i],run.pts[i+1]),[bx,by]=sc(run.pts[i+2],run.pts[i+3]);
@@ -3583,7 +3631,7 @@ function viewEstMeasure(app){
       for(const r of estRunsOf(d.id))await pDel('estruns',r.id).catch(()=>{});S.estruns=S.estruns.filter(r=>r.drawId!==d.id);
       try{const ch=await pdfChunksByKey(d.pdfKey);for(const x of ch)await pDel('pdfchunks',x.id);}catch(x){}
       S.estdraws=S.estdraws.filter(x=>x.id!==d.id);await pDel('estdrawings',d.id).catch(()=>{});
-      EVW=null;S.route=['estimate'];render();toast('Drawing deleted');};
+      EVW=null;S.route=['jobs','estimates','estimate'];render();toast('Drawing deleted');};
   };
   function runsListSheet(){
     const body=document.createElement('div');const rs=estRunsOf(d.id);
@@ -3628,7 +3676,7 @@ function viewEstMeasure(app){
     else if(panStart&&ptrs.size===1){tx=panStart.tx+(ev.clientX-panStart.x);ty=panStart.ty+(ev.clientY-panStart.y);
       moved=Math.max(moved,Math.hypot(ev.clientX-downXY.x,ev.clientY-downXY.y));apply();}});
   function up(ev){if(!ptrs.has(ev.pointerId))return;const was1=ptrs.size===1;ptrs.delete(ev.pointerId);
-    if(ptrs.size<2)pinch=null;if(ptrs.size===0){if(was1&&moved<6){if(mode==='fill')doFill(ev.clientX,ev.clientY);else if(mode!=='view')addPoint(ev.clientX,ev.clientY);else{const id=runAt(ev.clientX,ev.clientY);if(id)runSheet(id);}}panStart=null;}}
+    if(ptrs.size<2)pinch=null;if(ptrs.size===0){if(was1&&moved<6){if(mode==='fill'){if(fillStep==='trace')fillAddPoint(ev.clientX,ev.clientY);else doFill(ev.clientX,ev.clientY);}else if(mode!=='view')addPoint(ev.clientX,ev.clientY);else{const id=runAt(ev.clientX,ev.clientY);if(id)runSheet(id);}}panStart=null;}}
   viewer.addEventListener('pointerup',up);viewer.addEventListener('pointercancel',up);
   // mouse-wheel / trackpad zoom around the cursor
   viewer.addEventListener('wheel',ev=>{ev.preventDefault();const r=viewer.getBoundingClientRect();
@@ -3637,7 +3685,8 @@ function viewEstMeasure(app){
     scale=ns;tx=cx-ax*scale;ty=cy-ay*scale;apply();},{passive:false});
 
   requestAnimationFrame(()=>{fit();refresh();
-    estImage(d).then(img=>{if(img&&img.url&&S.estDrawId===d.id){const pl=app.querySelector('#eplan');if(pl&&pl.isConnected)pl.src=img.url;}}).catch(()=>{});});
+    estImage(d).then(img=>{if(img&&img.url&&S.estDrawId===d.id){const pl=app.querySelector('#eplan');if(pl&&pl.isConnected)pl.src=img.url;}}).catch(()=>{});
+    loadPdfE().then(pg=>{if(pg)renderHiresE();}).catch(()=>{});});
 }
 
 /* ============================ export: interactive PDF ============================ */
