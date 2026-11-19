@@ -354,6 +354,13 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .lyr.hrow.off .eyeic{color:var(--faint)}
 .linkbtn{border:none;background:none;color:var(--accent);font:600 13.5px var(--font-body);padding:6px 2px}
 .zoomnote{background:color-mix(in srgb,var(--warn) 16%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:16px;font-size:14px;line-height:1.45;color:var(--fg)}
+.exp-plhead{display:flex;align-items:center;justify-content:space-between}
+.exp-plhead .linkbtn{letter-spacing:0;text-transform:none}
+.exp-plan .exp-ck{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
+  background:var(--accent);color:#fff;border:2px solid var(--accent)}
+.exp-plan .exp-ck svg{width:15px;height:15px}
+.exp-plan.off .exp-ck{background:transparent;color:transparent;border-color:color-mix(in srgb,var(--fg) 30%,transparent)}
+.exp-plan.off .thumb,.exp-plan.off .grow{opacity:.5}
 .buildinfo{margin-top:28px;text-align:center;font-size:11px;color:var(--faint);opacity:.75;line-height:1.4}
 /* truck checklist */
 .cl-eyebrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
@@ -821,7 +828,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 18 16:44';
+const BUILD='Nov 18 16:55';
 const buildInfoText=()=>`Build ${BUILD} · ${SAFE.app?'app':'browser'} · top ${SAFE.top}px (phone says ${SAFE.reported}) · zoom ${Math.round(SAFE.zoom*100)}% · ${innerWidth}/${screen.width}`;
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],user:null,route:['jobs'],jobId:null,drawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
@@ -1431,7 +1438,7 @@ function viewJob(app){
       </div>
     </div>
     <div class="bottombar">
-      ${nr?`<button class="btn ghost" id="exportBtn">${I.share}</button>`:''}
+      ${draws.length?`<button class="btn ghost" id="exportBtn">${I.share} Export</button>`:''}
       <button class="btn primary block" id="addPlan">${I.upload} Add plan (PDF)</button>
     </div>
     <input type="file" id="pdfInput" accept="application/pdf" class="sr">`;
@@ -2805,12 +2812,20 @@ function viewExport(app){
         <button type="button" data-m="both">Both</button>
       </div>
       <div class="pkgbanner" style="margin-top:12px" id="expBanner">${I.info}<div></div></div>
-      <div id="expStatus" class="hintline" style="text-align:center;min-height:18px"></div>
+      ${draws.length>1?`<div class="eyebrow exp-plhead" style="margin-top:18px"><span>Plans</span>
+        <button type="button" class="linkbtn" id="expAll"></button></div>
+        <div class="card" style="padding:0" id="expPlans">${draws.map(d=>`
+          <button type="button" class="row exp-plan" data-d="${d.id}" aria-pressed="true">
+            <span class="thumb">${d.img?`<img src="${esc(d.img)}" alt="">`:I.plan}</span>
+            <span class="grow"><h3>${esc(d.name)}</h3><span class="meta">${drawReports(d.id).length} report${drawReports(d.id).length!==1?'s':''} · ${drawMarkers(d.id).length} tag${drawMarkers(d.id).length!==1?'s':''}</span></span>
+            <span class="exp-ck">${I.check}</span></button>`).join('')}</div>`:''}
+      <div id="expStatus" class="hintline" style="text-align:center;min-height:18px;margin-top:10px"></div>
     </div>
     <div class="bottombar">
       <button class="btn primary block" id="pdfBtn">${I.download} Download PDF</button>
     </div>`;
   app.querySelector('#back').onclick=back;
+  app.querySelectorAll('.content .card').forEach(card=>{[...card.children].forEach((c,i)=>{if(i)c.style.borderTop='1px solid var(--line)';});});
   const btn=app.querySelector('#pdfBtn'), status=app.querySelector('#expStatus');
   const seg=app.querySelector('#expSeg'), banner=app.querySelector('#expBanner').querySelector('div');
   let mode=expMode();
@@ -2818,7 +2833,19 @@ function viewExport(app){
     banner.innerHTML=EXP_BANNER[mode];};
   seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{mode=b.dataset.m;try{localStorage.setItem('ductpro-exp-mode',mode);}catch(e){}paint();});
   paint();
-  btn.onclick=()=>exportInteractivePdf(j,btn,status,mode);
+  // which plans (pages) to include — all by default
+  const sel=new Set(draws.map(d=>d.id));
+  const planRows=[...app.querySelectorAll('.exp-plan')], allBtn=app.querySelector('#expAll');
+  const paintPlans=()=>{
+    planRows.forEach(r=>{const on=sel.has(r.dataset.d);r.classList.toggle('off',!on);r.setAttribute('aria-pressed',on?'true':'false');});
+    if(allBtn)allBtn.textContent=sel.size===draws.length?'Clear all':'Select all';
+    const n=sel.size;btn.disabled=n===0;
+    btn.innerHTML=I.download+' Download PDF'+(draws.length>1?` · ${n} plan${n!==1?'s':''}`:'');
+  };
+  planRows.forEach(r=>r.onclick=()=>{const id=r.dataset.d;if(sel.has(id))sel.delete(id);else sel.add(id);paintPlans();});
+  if(allBtn)allBtn.onclick=()=>{if(sel.size===draws.length)sel.clear();else draws.forEach(d=>sel.add(d.id));paintPlans();};
+  paintPlans();
+  btn.onclick=()=>{if(!sel.size){toast('Pick at least one plan');return;}exportInteractivePdf(j,btn,status,mode,[...sel]);};
 }
 function expMode(){try{const m=localStorage.getItem('ductpro-exp-mode');if(m==='reports'||m==='markups'||m==='both')return m;}catch(e){}return 'reports';}
 const EXP_BANNER={
@@ -2827,15 +2854,17 @@ const EXP_BANNER={
   both:'Each plan is a full-resolution page with <b>numbered report pins</b> (tap to jump to the report) <b>and your markups</b> drawn on top. Report pages follow.',
 };
 
-async function exportInteractivePdf(j,btn,status,mode){
+async function exportInteractivePdf(j,btn,status,mode,planIds){
   if(!window.PDFLib){toast('PDF engine still loading — try again');return;}
   const content=mode==='markups'?{reports:false,markups:true}
     :mode==='both'?{reports:true,markups:true}:{reports:true,markups:false};
-  btn.disabled=true;const reset=()=>{btn.disabled=false;btn.innerHTML=I.download+' Download PDF';};
+  const dlLabel=I.download+' Download PDF';
+  btn.disabled=true;const reset=()=>{btn.disabled=false;btn.innerHTML=dlLabel;};
   const set=t=>{btn.textContent=t;if(status)status.textContent=t;};
   set('Loading plans…');
   try{
-    const draws=jobDrawings(j.id);
+    let draws=jobDrawings(j.id);
+    if(planIds&&planIds.length)draws=draws.filter(d=>planIds.includes(d.id));
     if(!draws.length){toast('Add a plan first');reset();return;}
     // photos only needed for report pages
     let photoBytes={};
