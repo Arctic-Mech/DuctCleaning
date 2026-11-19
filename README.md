@@ -47,8 +47,12 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   (number + job name), upload drawings, then **set a scale** (tap two points and type the real
   length). **Measure run**: tap along a duct run following its bends — the length is exact because
   you draw it, and the app reads sideways out to the bold lines to get the width, giving linear feet
-  and area. The detected width shows as a shaded band and can be overridden by hand. Per-run and
-  per-estimate totals (linear ft / sq ft).
+  and area. The line you drew shows as a crisp centerline with end dots (your linear measurement)
+  and the detected width as a translucent band out to the bold lines (the area); width can be
+  overridden by hand. Runs are colored by duct type — medium-pressure supply orange, low-pressure
+  supply yellow, return green, exhaust purple — chosen while measuring or in the run sheet, with a
+  legend on the plan. Pinch, the zoom buttons, or the mouse wheel / trackpad zoom around the cursor.
+  Per-run and per-estimate totals (linear ft / sq ft).
 - **Export**: choose what the PDF includes — **Reports**, **Markups**, or **Both**.
   - *Reports*: each plan is a full-resolution vector page with numbered pins; tapping a pin jumps to
     that report's page.
