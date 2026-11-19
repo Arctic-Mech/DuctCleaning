@@ -821,7 +821,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 18 16:00';
+const BUILD='Nov 18 16:44';
 const buildInfoText=()=>`Build ${BUILD} · ${SAFE.app?'app':'browser'} · top ${SAFE.top}px (phone says ${SAFE.reported}) · zoom ${Math.round(SAFE.zoom*100)}% · ${innerWidth}/${screen.width}`;
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],user:null,route:['jobs'],jobId:null,drawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
@@ -2798,62 +2798,130 @@ function viewExport(app){
           <div class="s"><b style="color:var(--good)">${done}</b><span>Completed</span></div>
         </div>
       </div>
-      <div class="pkgbanner" style="margin-top:14px">${I.info}<div>Creates one <b>interactive PDF</b>: each plan is a full-resolution page with numbered pins, and <b>tapping a pin jumps to that report</b> — just like Fieldwire. Then save it to Files or send it.</div></div>
+      <div class="eyebrow" style="margin-top:16px">Include in the PDF</div>
+      <div class="seg" id="expSeg">
+        <button type="button" data-m="reports">Reports</button>
+        <button type="button" data-m="markups">Markups</button>
+        <button type="button" data-m="both">Both</button>
+      </div>
+      <div class="pkgbanner" style="margin-top:12px" id="expBanner">${I.info}<div></div></div>
       <div id="expStatus" class="hintline" style="text-align:center;min-height:18px"></div>
     </div>
     <div class="bottombar">
-      <button class="btn primary block" id="pdfBtn">${I.download} Download interactive PDF</button>
+      <button class="btn primary block" id="pdfBtn">${I.download} Download PDF</button>
     </div>`;
   app.querySelector('#back').onclick=back;
   const btn=app.querySelector('#pdfBtn'), status=app.querySelector('#expStatus');
-  btn.onclick=()=>exportInteractivePdf(j,btn,status);
+  const seg=app.querySelector('#expSeg'), banner=app.querySelector('#expBanner').querySelector('div');
+  let mode=expMode();
+  const paint=()=>{seg.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.m===mode));
+    banner.innerHTML=EXP_BANNER[mode];};
+  seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{mode=b.dataset.m;try{localStorage.setItem('ductpro-exp-mode',mode);}catch(e){}paint();});
+  paint();
+  btn.onclick=()=>exportInteractivePdf(j,btn,status,mode);
 }
+function expMode(){try{const m=localStorage.getItem('ductpro-exp-mode');if(m==='reports'||m==='markups'||m==='both')return m;}catch(e){}return 'reports';}
+const EXP_BANNER={
+  reports:'Creates one <b>interactive PDF</b>: each plan is a full-resolution page with numbered pins, and <b>tapping a pin jumps to that report</b> — just like Fieldwire. Then save it to Files or send it.',
+  markups:'Each plan is a full-resolution page showing your <b>exhaust, cleaning-access and note tags and freehand drawings</b>. No report pins or report pages.',
+  both:'Each plan is a full-resolution page with <b>numbered report pins</b> (tap to jump to the report) <b>and your markups</b> drawn on top. Report pages follow.',
+};
 
-async function exportInteractivePdf(j,btn,status){
+async function exportInteractivePdf(j,btn,status,mode){
   if(!window.PDFLib){toast('PDF engine still loading — try again');return;}
-  btn.disabled=true;const set=t=>{btn.textContent=t;if(status)status.textContent=t;};
+  const content=mode==='markups'?{reports:false,markups:true}
+    :mode==='both'?{reports:true,markups:true}:{reports:true,markups:false};
+  btn.disabled=true;const reset=()=>{btn.disabled=false;btn.innerHTML=I.download+' Download PDF';};
+  const set=t=>{btn.textContent=t;if(status)status.textContent=t;};
   set('Loading plans…');
   try{
     const draws=jobDrawings(j.id);
-    if(!draws.length){toast('Add a plan first');btn.disabled=false;btn.innerHTML=I.download+' Download interactive PDF';return;}
-    // photos for the whole job (id -> jpeg bytes)
+    if(!draws.length){toast('Add a plan first');reset();return;}
+    // photos only needed for report pages
     let photoBytes={};
-    try{(await photosByJob(j.id)).forEach(p=>{try{photoBytes[p.id]=dataUrlToBytes(p.data);}catch(e){}});}catch(e){console.warn(e);}
+    if(content.reports){try{(await photosByJob(j.id)).forEach(p=>{try{photoBytes[p.id]=dataUrlToBytes(p.data);}catch(e){}});}catch(e){console.warn(e);}}
+    // markups: freehand strokes (loaded on demand) + tags (already in state), grouped by plan
+    let strokesByDrawId={};
+    if(content.markups){try{(await strokesByJob(j.id)).forEach(st=>{(strokesByDrawId[st.drawId]=strokesByDrawId[st.drawId]||[]).push(st);});
+      Object.values(strokesByDrawId).forEach(a=>a.sort((x,y)=>x.createdAt-y.createdAt));}catch(e){console.warn(e);}}
     let logoPng=null;try{logoPng=await fetchBytes('logo.png');}catch(e){}
     const plans=[];
     for(let di=0;di<draws.length;di++){
       const d=draws[di];set(`Loading plan ${di+1}/${draws.length}…`);
       let pdfBytes=null;
       if(d.pdfChunks||d.pdfKey){try{pdfBytes=await loadDrawingPdfBytes(d);}catch(e){console.warn(e);}}
-      const reports=drawReports(d.id).map(r=>({
+      const reports=content.reports?drawReports(d.id).map(r=>({
         num:r.num,type:r.type,typeOther:r.typeOther,status:r.status,revisit:r.revisit,
         equipment:r.equipment,area:r.area,nx:r.nx,ny:r.ny,
         before:(r.before||[]).map(id=>photoBytes[id]).filter(Boolean),
         after:(r.after||[]).map(id=>photoBytes[id]).filter(Boolean),
-      }));
-      plans.push({name:d.name,pdfBytes,pageIndex:d.pageIndex||0,imgBytes:pdfBytes?null:dataUrlToBytes(d.img),pw:d.w,ph:d.h,reports});
+      })):[];
+      const markers=content.markups?drawMarkers(d.id).slice().sort(byNumThenAge):[];
+      const strokes=content.markups?(strokesByDrawId[d.id]||[]):[];
+      plans.push({name:d.name,pdfBytes,pageIndex:d.pageIndex||0,imgBytes:pdfBytes?null:dataUrlToBytes(d.img),pw:d.w,ph:d.h,reports,markers,strokes});
     }
     set('Building PDF…');
-    const bytes=await makeExportPdf(PDFLib,{job:j,company:COMPANY,plans,logoPng});
-    const fname=(j.name+' '+j.number).replace(/[^\w .\-]+/g,'').trim()+' — Arctic.pdf';
-    set('');btn.disabled=false;btn.innerHTML=I.download+' Download interactive PDF';
+    const bytes=await makeExportPdf(PDFLib,{job:j,company:COMPANY,plans,logoPng,content});
+    const tag=mode==='markups'?' markups':mode==='both'?' full':'';
+    const fname=(j.name+' '+j.number).replace(/[^\w .\-]+/g,'').trim()+tag+' — Arctic.pdf';
+    set('');reset();
     const url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
     const a=document.createElement('a');a.href=url;a.download=fname;document.body.appendChild(a);a.click();a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),15000);
     toast('PDF downloaded');
   }catch(e){
-    console.error(e);set('');btn.disabled=false;btn.innerHTML=I.download+' Download interactive PDF';toast('Export failed — try again');
+    console.error(e);set('');reset();toast('Export failed — try again');
   }
 }
 
+// ---- markup rendering helpers for export (standalone copies of the viewer's path math) ----
+const _ef1=n=>Math.round(n*10)/10;
+function _expLinePath(P){
+  if(P.length===1)return `M${_ef1(P[0][0])},${_ef1(P[0][1])}l0.01,0`;
+  let s=`M${_ef1(P[0][0])},${_ef1(P[0][1])}`;
+  for(let i=1;i<P.length-1;i++){const mx=(P[i][0]+P[i+1][0])/2,my=(P[i][1]+P[i+1][1])/2;s+=`Q${_ef1(P[i][0])},${_ef1(P[i][1])} ${_ef1(mx)},${_ef1(my)}`;}
+  const L=P[P.length-1];return s+`L${_ef1(L[0])},${_ef1(L[1])}`;
+}
+function _expOutlinePath(P,w){
+  const n=P.length,W=P.map(p=>w*(0.45+1.1*(p[2]==null?0.5:p[2])));
+  for(let k=0;k<2;k++)for(let i=1;i<n-1;i++)W[i]=(W[i-1]+W[i]*2+W[i+1])/4;
+  if(n===1){const r=W[0]/2,x=P[0][0],y=P[0][1];
+    return `M${_ef1(x-r)},${_ef1(y)}a${_ef1(r)},${_ef1(r)} 0 1,0 ${_ef1(2*r)},0a${_ef1(r)},${_ef1(r)} 0 1,0 ${_ef1(-2*r)},0Z`;}
+  const Lp=[],Rp=[];
+  for(let i=0;i<n;i++){const a=P[Math.max(0,i-1)],b=P[Math.min(n-1,i+1)];
+    let dx=b[0]-a[0],dy=b[1]-a[1];const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
+    const r=W[i]/2;Lp.push([P[i][0]-dy*r,P[i][1]+dx*r]);Rp.push([P[i][0]+dy*r,P[i][1]-dx*r]);}
+  const sm=Q=>{let s='';for(let i=1;i<Q.length-1;i++){const mx=(Q[i][0]+Q[i+1][0])/2,my=(Q[i][1]+Q[i+1][1])/2;
+    s+=`Q${_ef1(Q[i][0])},${_ef1(Q[i][1])} ${_ef1(mx)},${_ef1(my)}`;}const Z=Q[Q.length-1];return s+`L${_ef1(Z[0])},${_ef1(Z[1])}`;};
+  const Rr=Rp.slice().reverse(),re=W[n-1]/2,rs=W[0]/2;
+  return `M${_ef1(Lp[0][0])},${_ef1(Lp[0][1])}`+sm(Lp)+`A${_ef1(re)},${_ef1(re)} 0 0,0 ${_ef1(Rr[0][0])},${_ef1(Rr[0][1])}`
+    +sm(Rr)+`A${_ef1(rs)},${_ef1(rs)} 0 0,0 ${_ef1(Lp[0][0])},${_ef1(Lp[0][1])}Z`;
+}
+// stroke -> {path, w(in svg units), hl} for a page pw x ph (scale pw/1000 maps it onto the page)
+function strokeExportPath(st,pw,ph){
+  const a=ph/pw,P=[];
+  for(let i=0;i<(st.pts||[]).length;i+=3)P.push([st.pts[i]*1000,st.pts[i+1]*1000*a,st.pts[i+2]]);
+  if(!P.length)return null;
+  const w=(st.w||0.004)*1000;
+  return st.tool==='hl'?{path:_expLinePath(P),w,hl:true}:{path:_expOutlinePath(P,w),w,hl:false};
+}
+const MK_LETTER={exhaust:'E',access:'A',note:'N'};
+function mkExportLabel(m){
+  if(m.kind==='note'){const t=String(m.note||'').replace(/\s+/g,' ').trim();return t.length>44?t.slice(0,43)+'…':t;}
+  const sz=normDoor(m.doorSize),q=Math.max(1,+m.doorQty||1);return sz?sz+(q>1?' \u00d7'+q:''):'';
+}
 // ---- interactive-PDF builder (validated against real E-size sheets) ----
-async function makeExportPdf(PDFLib,{job,company,plans,logoPng}){
-  const {PDFDocument, rgb, StandardFonts, PDFName}=PDFLib;
+async function makeExportPdf(PDFLib,{job,company,plans,logoPng,content}){
+  content=content||{reports:true,markups:false};
+  const {PDFDocument, rgb, StandardFonts, PDFName, LineCapStyle, BlendMode}=PDFLib;
   const out=await PDFDocument.create();
   const helv=await out.embedFont(StandardFonts.Helvetica);
   const helvB=await out.embedFont(StandardFonts.HelveticaBold);
   let logo=null; try{ if(logoPng) logo=await out.embedPng(logoPng); }catch(e){}
-  const GREEN=rgb(0.08,0.60,0.42), AMBER=rgb(0.77,0.49,0.08), INK=rgb(0.1,0.12,0.14), MUT=rgb(0.45,0.5,0.55);
+  const GREEN=rgb(0.08,0.60,0.42), AMBER=rgb(0.77,0.49,0.08), INK=rgb(0.1,0.12,0.14), MUT=rgb(0.45,0.5,0.55), WHITE=rgb(1,1,1);
+  const MK_COL={exhaust:rgb(0.486,0.227,0.914),access:rgb(0.031,0.569,0.698),note:rgb(0.859,0.153,0.467)};
+  const hexRgb=h=>{h=String(h||'').replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');
+    const n=parseInt(h,16);return isNaN(n)?rgb(0.1,0.1,0.1):rgb(((n>>16)&255)/255,((n>>8)&255)/255,(n&255)/255);};
   const wrap=(txt,font,size,maxw)=>{const words=String(txt||'').split(/\s+/);const lines=[];let ln='';
     for(const w of words){const t=ln?ln+' '+w:w;if(font.widthOfTextAtSize(t,size)>maxw&&ln){lines.push(ln);ln=w;}else ln=t;}
     if(ln)lines.push(ln);return lines;};
@@ -2864,18 +2932,18 @@ async function makeExportPdf(PDFLib,{job,company,plans,logoPng}){
     pg.drawText('Duct Post Inspection',{x:W-M-helv.widthOfTextAtSize('Duct Post Inspection',11),y:y-2,size:11,font:helv,color:MUT});
     const idn='#'+r.num; pg.drawText(idn,{x:W-M-helvB.widthOfTextAtSize(idn,22),y:y-26,size:22,font:helvB,color:INK});
     y-=44;
-    const sub=(job.name||'')+'  ·  '+(job.number||'')+(job.address?('  ·  '+job.address.replace(/\n/g,', ')):'');
+    const sub=(job.name||'')+'  \u00b7  '+(job.number||'')+(job.address?('  \u00b7  '+job.address.replace(/\n/g,', ')):'');
     pg.drawText(sub,{x:M,y,size:9.5,font:helv,color:MUT}); y-=16;
     pg.drawLine({start:{x:M,y},end:{x:W-M,y},thickness:2,color:rgb(0.12,0.5,0.85)}); y-=24;
     const row=(k,v,vcol)=>{const lines=wrap(v,helvB,11,W-M-150);pg.drawText(k,{x:M,y,size:10,font:helv,color:MUT});
       lines.forEach((ln,i)=>pg.drawText(ln,{x:M+100,y:y-i*14,size:11,font:helvB,color:vcol||INK}));y-=Math.max(20,14*lines.length+6);};
-    row('Type', r.type==='Other'?(r.typeOther||'Other'):(r.type||'—'));
+    row('Type', r.type==='Other'?(r.typeOther||'Other'):(r.type||'\u2014'));
     row('Status', r.status, r.status==='Completed'?GREEN:AMBER);
     row('Plan', plan.name);
     if(r.revisit) row('Re-visit', r.revisit);
     const eq=(r.equipment||[]).filter(e=>e.item||e.notes);
     if(eq.length){y-=6;pg.drawText('SERVICED EQUIPMENT',{x:M,y,size:10,font:helvB,color:INK});y-=16;
-      eq.forEach(e=>{pg.drawText(e.item||'—',{x:M,y,size:10.5,font:helvB,color:INK});
+      eq.forEach(e=>{pg.drawText(e.item||'\u2014',{x:M,y,size:10.5,font:helvB,color:INK});
         const nl=wrap(e.notes||'',helv,10,W-M*2-12);nl.forEach((ln,i)=>pg.drawText(ln,{x:M+12,y:y-14-i*13,size:10,font:helv,color:MUT}));
         y-=16+nl.length*13+6;});}
     if(r.area){y-=4;pg.drawText('INSPECTED AREA',{x:M,y,size:10,font:helvB,color:INK});y-=15;
@@ -2887,30 +2955,60 @@ async function makeExportPdf(PDFLib,{job,company,plans,logoPng}){
       y-=chh+gap;};
     strip('BEFORE', r.beforeImg); strip('AFTER', r.afterImg);
   }
+  // draw the markup layer (freehand strokes + tags) onto a plan page
+  function drawMarkups(pg,plan){
+    const pw=pg.getWidth(), ph=pg.getHeight(), S=pw/1000;
+    for(const st of (plan.strokes||[])){
+      let g;try{g=strokeExportPath(st,pw,ph);}catch(e){continue;}
+      if(!g)continue;
+      try{
+        if(g.hl)pg.drawSvgPath(g.path,{x:0,y:ph,scale:S,borderColor:hexRgb(st.color),borderWidth:g.w,
+          borderOpacity:0.4,borderLineCap:LineCapStyle.Round,blendMode:BlendMode.Multiply});
+        else pg.drawSvgPath(g.path,{x:0,y:ph,scale:S,color:hexRgb(st.color)});
+      }catch(e){}
+    }
+    for(const m of (plan.markers||[])){
+      const x=m.nx*pw, y=(1-m.ny)*ph, R=Math.max(9,pw*0.0082);
+      const col=MK_COL[m.kind]||MK_COL.note;
+      pg.drawCircle({x,y,size:R,color:col,opacity:0.45,borderColor:col,borderWidth:Math.max(1.3,R*0.2),borderOpacity:1});
+      const letter=MK_LETTER[m.kind]||'?', fs=R*1.02, tw=helvB.widthOfTextAtSize(letter,fs);
+      pg.drawText(letter,{x:x-tw/2,y:y-fs*0.35,size:fs,font:helvB,color:WHITE});
+      const label=mkExportLabel(m);
+      if(label){const ls=Math.max(8,R*0.9),lw=helvB.widthOfTextAtSize(label,ls),padx=4,lx=x+R+5;
+        pg.drawRectangle({x:lx-padx,y:y-ls*0.75,width:lw+padx*2,height:ls*1.65,color:WHITE,opacity:0.82,
+          borderColor:col,borderWidth:0.7,borderOpacity:0.55});
+        pg.drawText(label,{x:lx,y:y-ls*0.32,size:ls,font:helvB,color:col});}
+    }
+  }
   async function embedJpgs(list){const a=[];for(const bz of (list||[])){try{a.push(await out.embedJpg(bz));}catch(e){}}return a;}
   for(const plan of plans){
     let pg;
     if(plan.pdfBytes){const src=await PDFDocument.load(plan.pdfBytes);const pi=Math.min(plan.pageIndex||0,src.getPageCount()-1);[pg]=await out.copyPages(src,[pi]);out.addPage(pg);}
     else{let img=null;try{img=await out.embedJpg(plan.imgBytes);}catch(e){}const w=(img?img.width:plan.pw)||1200,h=(img?img.height:plan.ph)||1600;pg=out.addPage([w,h]);if(img)pg.drawImage(img,{x:0,y:0,width:w,height:h});}
     const pw=pg.getWidth(), ph=pg.getHeight();
-    const repPages=[];
-    for(const r of plan.reports){r.beforeImg=await embedJpgs(r.before);r.afterImg=await embedJpgs(r.after);
-      const rp=out.addPage([612,792]);drawReportPage(rp,r,plan);repPages.push(rp);}
-    const annots=[];
-    plan.reports.forEach((r,i)=>{
-      const x=r.nx*pw, y=(1-r.ny)*ph, R=Math.max(10,pw*0.0085);
-      const col=r.status==='Completed'?GREEN:AMBER;
-      // small, see-through marker: translucent fill + solid ring + number, so the ductwork underneath stays visible
-      pg.drawCircle({x,y,size:R,color:col,opacity:0.42,borderColor:col,borderWidth:Math.max(1.4,R*0.2),borderOpacity:1});
-      const fs=R*1.0, tw=helvB.widthOfTextAtSize(String(r.num),fs);
-      pg.drawText(String(r.num),{x:x-tw/2,y:y-fs*0.35,size:fs,font:helvB,color:rgb(1,1,1)});
-      const LR=R*2; // larger invisible tap target than the drawn pin
-      const ctx=out.context, dest=ctx.obj([repPages[i].ref, PDFName.of('Fit')]);
-      const annot=ctx.obj({Type:PDFName.of('Annot'),Subtype:PDFName.of('Link'),Rect:[x-LR,y-LR,x+LR,y+LR],
-        Border:[0,0,0],A:{Type:PDFName.of('Action'),S:PDFName.of('GoTo'),D:dest}});
-      annots.push(ctx.register(annot));
-    });
-    pg.node.set(PDFName.of('Annots'), out.context.obj(annots));
+    // strip the source plan's own annotations (e.g. old Bluebeam markups) for a clean export
+    pg.node.set(PDFName.of('Annots'), out.context.obj([]));
+    // markups sit under the numbered report pins
+    if(content.markups)drawMarkups(pg,plan);
+    if(content.reports){
+      const repPages=[];
+      for(const r of plan.reports){r.beforeImg=await embedJpgs(r.before);r.afterImg=await embedJpgs(r.after);
+        const rp=out.addPage([612,792]);drawReportPage(rp,r,plan);repPages.push(rp);}
+      const annots=[];
+      plan.reports.forEach((r,i)=>{
+        const x=r.nx*pw, y=(1-r.ny)*ph, R=Math.max(10,pw*0.0085);
+        const col=r.status==='Completed'?GREEN:AMBER;
+        pg.drawCircle({x,y,size:R,color:col,opacity:0.42,borderColor:col,borderWidth:Math.max(1.4,R*0.2),borderOpacity:1});
+        const fs=R*1.0, tw=helvB.widthOfTextAtSize(String(r.num),fs);
+        pg.drawText(String(r.num),{x:x-tw/2,y:y-fs*0.35,size:fs,font:helvB,color:rgb(1,1,1)});
+        const LR=R*2;
+        const ctx=out.context, dest=ctx.obj([repPages[i].ref, PDFName.of('Fit')]);
+        const annot=ctx.obj({Type:PDFName.of('Annot'),Subtype:PDFName.of('Link'),Rect:[x-LR,y-LR,x+LR,y+LR],
+          Border:[0,0,0],A:{Type:PDFName.of('Action'),S:PDFName.of('GoTo'),D:dest}});
+        annots.push(ctx.register(annot));
+      });
+      pg.node.set(PDFName.of('Annots'), out.context.obj(annots));
+    }
   }
   return await out.save();
 }

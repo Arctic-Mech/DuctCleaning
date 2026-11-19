@@ -37,8 +37,12 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   - Tag numbers close up after a delete (delete 24 and 25 becomes 24).
 - **Job lists**: reports, cleaning access tags, exhaust tags, notes, and access doors needed
   (filterable by group, copyable).
-- **Export**: one interactive PDF. Each plan is a full-resolution vector page with numbered
-  pins, and tapping a pin jumps to that report's page.
+- **Export**: choose what the PDF includes — **Reports**, **Markups**, or **Both**.
+  - *Reports*: each plan is a full-resolution vector page with numbered pins; tapping a pin jumps to
+    that report's page.
+  - *Markups*: each plan page shows the exhaust / cleaning-access / note tags and freehand drawings.
+  - *Both*: report pins and markups on the same plan pages, with report pages following.
+  The source plan's own embedded annotations (e.g. old Bluebeam markups) are stripped for a clean export.
 
 ## Data: Firebase Firestore only (no auth, no billing)
 Everything saves to the `duct-cleaning-cb58f` Firestore database and syncs across devices.
