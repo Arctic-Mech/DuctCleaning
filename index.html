@@ -438,6 +438,11 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .estdot{width:12px;height:12px;border-radius:50%;flex:none;margin-top:3px}
 .evcalt{color:var(--fg);font:600 12.5px var(--font-body);white-space:nowrap}
 .evcalt.on{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 55%,var(--line))}
+.evzoom{bottom:calc(136px + env(safe-area-inset-bottom,0px))}
+.est-card .stats{display:flex;gap:28px}
+.est-card .stats .s b{font-family:var(--font-mono);font-size:20px;display:block}
+.est-card .stats .s span{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.est-card .linkbtn{letter-spacing:0;text-transform:none}
 .evcalt svg{color:var(--warn)}
 .elabel-cal{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 55%,var(--line));font-weight:700}
 .elabel-cal svg{width:12px;height:12px;vertical-align:-2px;margin-right:3px}
@@ -718,6 +723,7 @@ const I = {
   clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   move:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>',
   ruler:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l12-12 6 6-12 12z"/><path d="M7.5 10.5l1.5 1.5M10.5 7.5l2 2M13.5 4.5l1.5 1.5"/></svg>',
+  fill:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 11L9 1 3 7a2.8 2.8 0 000 4l5 5a2.8 2.8 0 004 0z"/><path d="M5 9h14"/><path d="M20 15s2 2.3 2 3.6A2 2 0 0120 21a2 2 0 01-2-2.4C18 17.3 20 15 20 15z"/></svg>',
   wrench:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 00-5.4 5.2L3 18v3h3l6.5-6.3a4 4 0 005.2-5.4l-2.6 2.6-2.3-.6-.6-2.3z"/></svg>',
   dots:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   logo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L4 20h16L12 3z" fill="currentColor" stroke="none"/><path d="M12 9l-3 7h6l-3-7z" fill="#fff" stroke="none"/></svg>',
@@ -874,8 +880,8 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 08:18';
-const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
+const BUILD='Nov 19 09:11';
+const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -2891,6 +2897,25 @@ const DUCT_KINDS={mps:{label:'Med. supply',short:'MPS',color:'#ea580c'},
   exh:{label:'Exhaust',short:'Exhaust',color:'#7c3aed'}};
 const estKindOf=r=>(DUCT_KINDS[r&&r.kind]||DUCT_KINDS.mps);
 function estDefaultKind(){try{const k=localStorage.getItem('ductpro-est-kind');if(DUCT_KINDS[k])return k;}catch(e){}return 'mps';}
+// estimating standards (shared): hours per lf/sf and one access door every N feet of run
+function estSettings(){const d={hrPerLf:0,hrPerSf:0,lfPerDoor:0};const v=S.estsetArr&&S.estsetArr[0];if(v){['hrPerLf','hrPerSf','lfPerDoor'].forEach(k=>{if(typeof v[k]==='number')d[k]=v[k];});}return d;}
+function estStandardsSheet(){
+  const cur=estSettings();const body=document.createElement('div');
+  body.innerHTML=`<p class="cl-note">Rules of thumb used to turn measured duct into labor hours and access doors. They apply to every estimate.</p>
+    <div class="field" style="margin-top:14px"><label>Hours per linear foot</label><input class="inp" id="sHl" inputmode="decimal" value="${cur.hrPerLf||''}" placeholder="e.g. 0.05"></div>
+    <div class="field"><label>Hours per square foot</label><input class="inp" id="sHs" inputmode="decimal" value="${cur.hrPerSf||''}" placeholder="e.g. 0.02"></div>
+    <div class="field" style="margin-bottom:2px"><label>Access door every ___ feet of run</label><input class="inp" id="sDd" inputmode="decimal" value="${cur.lfPerDoor||''}" placeholder="e.g. 20"></div>`;
+  const foot=document.createElement('button');foot.className='btn primary block';foot.textContent='Save standards';
+  const ctl=sheetShell({title:'Estimating standards',bodyNode:body,footNode:foot});
+  foot.onclick=async()=>{const num=id=>{const v=parseFloat(body.querySelector(id).value);return isNaN(v)||v<0?0:v;};
+    const doc={id:'default',hrPerLf:num('#sHl'),hrPerSf:num('#sHs'),lfPerDoor:num('#sDd'),createdAt:now()};
+    S.estsetArr=[doc];await pPut('estsettings',doc).catch(()=>toast('Not saved — check connection'));
+    ctl.close();render();toast('Standards saved');};
+}
+// labor + access-door estimate from totals and the standards
+function estDerived(totL,totA){const s=estSettings();
+  return {hrs:totL*s.hrPerLf+totA*s.hrPerSf, doors:s.lfPerDoor>0?Math.ceil(totL/s.lfPerDoor):0,
+    any:s.hrPerLf>0||s.hrPerSf>0||s.lfPerDoor>0};}
 // feet per plan-pixel for a drawing (from its calibration)
 function estFpp(d){ if(!d||!d.cal)return 0; const W=d.w||1,H=d.h||1,c=d.cal;
   const px=Math.hypot((c.b[0]-c.a[0])*W,(c.b[1]-c.a[1])*H)||1; return c.ft/px; }
@@ -2907,7 +2932,7 @@ function estPolyAreaFt(r,d){ const fpp=estFpp(d); if(!fpp)return 0; const W=d.w|
 function estWidthFt(r,d){ if(r.widthMode==='manual')return +r.manualWidthFt||0;
   if(estHasEdges(r)){const L=estLenFt(r.pts,d);return L>0?estPolyAreaFt(r,d)/L:0;}
   return (r.widthFrac||0)*(d.w||1)*estFpp(d); }
-function estAreaFt(r,d){ if(estHasEdges(r))return estPolyAreaFt(r,d); return estLenFt(r.pts,d)*estWidthFt(r,d); }
+function estAreaFt(r,d){ if(r.widthMode==='fill')return (r.fillFrac||0)*(d.w||1)*(d.h||1)*estFpp(d)*estFpp(d); if(estHasEdges(r))return estPolyAreaFt(r,d); return estLenFt(r.pts,d)*estWidthFt(r,d); }
 // uniform band thickness (plan-width fraction) — used for manual width or legacy single-width runs
 function estEffFrac(r,d){ const fpp=estFpp(d); if(!fpp||!d.w)return 0; return estWidthFt(r,d)/(d.w*fpp); }
 const ft1=n=>Math.round(n*10)/10;
@@ -2921,7 +2946,7 @@ async function estImage(d){
   try{
     const bytes=await loadDrawingPdfBytes(d);
     if(bytes){const pdf=await pdfjsLib.getDocument({data:bytes}).promise;const pg=await pdf.getPage((d.pageIndex||0)+1);
-      const v1=pg.getViewport({scale:1});const sc=Math.min(4,3000/v1.width);const vp=pg.getViewport({scale:sc});
+      const v1=pg.getViewport({scale:1});const sc=Math.min(5,3800/v1.width);const vp=pg.getViewport({scale:sc});
       canvas=document.createElement('canvas');canvas.width=Math.round(vp.width);canvas.height=Math.round(vp.height);
       await pg.render({canvasContext:canvas.getContext('2d',{alpha:false,willReadFrequently:true}),viewport:vp}).promise;}
   }catch(e){console.warn('est render pdf failed',e);}
@@ -2931,7 +2956,8 @@ async function estImage(d){
     canvas.getContext('2d',{willReadFrequently:true}).drawImage(img,0,0,canvas.width,canvas.height);
   }
   const W=canvas.width,H=canvas.height,data=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data;
-  ESTIMG={drawId:d.id,W,H,data};return ESTIMG;
+  let url=null;try{url=canvas.toDataURL('image/jpeg',0.92);}catch(e){}
+  ESTIMG={drawId:d.id,W,H,data,url};return ESTIMG;
 }
 // read the duct width (plan-width fraction) along a normalized polyline by casting
 // perpendicular rays out to the nearest bold (dark) edge on each side
@@ -2987,6 +3013,57 @@ function estDetectEdges(pts,img,maxPx){
 function estMaxPx(d,img){ if(!d||!d.cal)return Math.round(img.W*0.04); const c=d.cal,W=img.W,H=img.H;
   const px=Math.hypot((c.b[0]-c.a[0])*W,(c.b[1]-c.a[1])*H)||1,fpc=c.ft/px;
   return Math.max(Math.round(W*0.02), Math.min(Math.round(W*0.09), Math.round(6/fpc))); }
+// ---- paint-bucket: flood a light region bounded by dark lines (with a leak guard), trace its outline ----
+function estFloodFill(img,sx,sy,maxPx){
+  const {W,H,data}=img;const lum=i=>data[i]*0.3+data[i+1]*0.59+data[i+2]*0.11;
+  sx|=0;sy|=0;if(sx<1||sy<1||sx>=W-1||sy>=H-1)return {leak:true};
+  if(lum((sy*W+sx)*4)<150)return {onLine:true};
+  const mask=new Uint8Array(W*H),stack=[sy*W+sx];mask[sy*W+sx]=1;let count=1,minx=sx,maxx=sx,miny=sy,maxy=sy;
+  while(stack.length){const pp=stack.pop(),x=pp%W,y=(pp/W)|0;
+    if(x<=0||y<=0||x>=W-1||y>=H-1)return {leak:true};
+    const nb=[pp-1,pp+1,pp-W,pp+W];
+    for(const np of nb){if(mask[np]||lum(np*4)<150)continue;mask[np]=1;count++;if(count>maxPx)return {leak:true};
+      const nx=np%W,ny=(np/W)|0;if(nx<minx)minx=nx;if(nx>maxx)maxx=nx;if(ny<miny)miny=ny;if(ny>maxy)maxy=ny;stack.push(np);}}
+  return {mask,count,W,H,minx,miny,maxx,maxy};
+}
+function estMaskContour(res){
+  const {mask,W,H,minx,miny,maxx,maxy}=res;const at=(x,y)=>x<0||y<0||x>=W||y>=H?0:mask[y*W+x];
+  let sx=-1,sy=-1;outer:for(let y=miny;y<=maxy;y++)for(let x=minx;x<=maxx;x++)if(mask[y*W+x]){sx=x;sy=y;break outer;}
+  if(sx<0)return [];
+  const dirs=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+  const pts=[];let cx=sx,cy=sy,bd=6,guard=0,mx=(W+H)*8;
+  do{pts.push([cx,cy]);let f=false;
+    for(let k=0;k<8;k++){const dd=(bd+k)%8,nx=cx+dirs[dd][0],ny=cy+dirs[dd][1];if(at(nx,ny)){cx=nx;cy=ny;bd=(dd+5)&7;f=true;break;}}
+    if(!f)break;if(++guard>mx)break;}while(!(cx===sx&&cy===sy));
+  return estSimplify(pts,Math.max(1.5,(maxx-minx+maxy-miny)*0.004));
+}
+function estSimplify(pts,eps){if(pts.length<4)return pts;const keep=new Array(pts.length).fill(false);keep[0]=keep[pts.length-1]=true;const st=[[0,pts.length-1]];
+  while(st.length){const [a,b]=st.pop();let dm=0,idx=-1;const [ax,ay]=pts[a],[bx,by]=pts[b],dx=bx-ax,dy=by-ay,L=Math.hypot(dx,dy)||1;
+    for(let i=a+1;i<b;i++){const [px,py]=pts[i];const d=Math.abs((px-ax)*dy-(py-ay)*dx)/L;if(d>dm){dm=d;idx=i;}}
+    if(dm>eps&&idx>0){keep[idx]=true;st.push([a,idx],[idx,b]);}}
+  const out=[];for(let i=0;i<pts.length;i++)if(keep[i])out.push(pts[i]);return out;}
+// flood from a normalized point -> {fillFrac, fillPoly(normalized flat)} or {leak}/{onLine}
+function estFillAt(img,nx,ny,maxPx){
+  const r=estFloodFill(img,Math.round(nx*img.W),Math.round(ny*img.H),maxPx);
+  if(r.onLine)return {onLine:true};if(r.leak||!r.mask)return {leak:true};
+  const c=estMaskContour(r);if(c.length<3)return {leak:true};
+  const poly=[];c.forEach(pt=>poly.push(+(pt[0]/img.W).toFixed(5),+(pt[1]/img.H).toFixed(5)));
+  return {fillFrac:r.count/(img.W*img.H),fillPoly:poly};
+}
+// total area of a drawing's runs as a UNION (rasterized), so tie-ins/overlaps are not double counted
+function estUnionAreaFt(d,runs){ if(!runs.length||!estFpp(d))return 0;
+  const cw=1600,ch=Math.max(1,Math.round(1600*((d.h||1)/(d.w||1))));
+  const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;const g=cv.getContext('2d');g.fillStyle='#000';g.strokeStyle='#000';g.lineCap='butt';g.lineJoin='round';
+  runs.forEach(r=>{
+    if(r.widthMode==='fill'&&r.fillPoly&&r.fillPoly.length>=6){g.beginPath();for(let i=0;i<r.fillPoly.length;i+=2){const x=r.fillPoly[i]*cw,y=r.fillPoly[i+1]*ch;i?g.lineTo(x,y):g.moveTo(x,y);}g.closePath();g.fill();return;}
+    if(estHasEdges(r)){g.beginPath();const L=r.edgeL,R=r.edgeR;for(let i=0;i<L.length;i+=2){const x=L[i]*cw,y=L[i+1]*ch;i?g.lineTo(x,y):g.moveTo(x,y);}for(let i=R.length-2;i>=0;i-=2)g.lineTo(R[i]*cw,R[i+1]*ch);g.closePath();g.fill();return;}
+    const sw=estEffFrac(r,d)*cw;if(sw<=0||r.pts.length<4)return;g.lineWidth=sw;
+    g.beginPath();for(let i=0;i<r.pts.length;i+=2){const x=r.pts[i]*cw,y=r.pts[i+1]*ch;i?g.lineTo(x,y):g.moveTo(x,y);}g.stroke();});
+  const dta=g.getImageData(0,0,cw,ch).data;let n=0;for(let i=3;i<dta.length;i+=4)if(dta[i]>=128)n++;
+  const raster=(n/(cw*ch))*(d.w*d.h)*estFpp(d)*estFpp(d);
+  let sum=0;runs.forEach(r=>sum+=estAreaFt(r,d));        // the union can never exceed the plain sum
+  return Math.min(raster,sum);
+}
 
 
 /* ---------- estimates list ---------- */
@@ -2999,7 +3076,8 @@ function viewEstimates(app){
       <span class="chev">${I.chev}</span></button>`;});
   app.innerHTML=`
     <div class="topbar"><button class="iconbtn" id="back">${I.back}</button>
-      <div class="ttl"><h1>Estimates</h1><div class="sub">Measure takeoffs</div></div></div>
+      <div class="ttl"><h1>Estimates</h1><div class="sub">Measure takeoffs</div></div>
+      <button class="estlink" id="estStd">Standards</button></div>
     <div class="content">
       <div class="eyebrow">Estimates</div>
       ${ests.length?`<div class="card stack" style="padding:0;gap:0">${rows}</div>`
@@ -3010,6 +3088,7 @@ function viewEstimates(app){
   const card=app.querySelector('.card.stack');if(card)[...card.children].forEach((c,i)=>{if(i)c.style.borderTop='1px solid var(--line)';});
   app.querySelector('#back').onclick=back;
   app.querySelector('#newEst').onclick=()=>estForm();
+  app.querySelector('#estStd').onclick=estStandardsSheet;
   app.querySelectorAll('[data-est]').forEach(b=>b.onclick=()=>go('estimate',{estId:b.dataset.est,estDrawId:null}));
 }
 function estForm(existing){
@@ -3032,7 +3111,7 @@ function estForm(existing){
 function viewEstimate(app){
   const e=estFind(S.estId);if(!e){S.route=['estimates'];return render();}
   const draws=estDrawsOf(e.id);
-  let totL=0,totA=0;draws.forEach(d=>estRunsOf(d.id).forEach(r=>{totL+=estLenFt(r.pts,d);totA+=estAreaFt(r,d);}));
+  let totL=0,totA=0;draws.forEach(d=>{estRunsOf(d.id).forEach(r=>{totL+=estLenFt(r.pts,d);});totA+=estUnionAreaFt(d,estRunsOf(d.id));});
   let list='';
   draws.forEach(d=>{const rs=estRunsOf(d.id);let l=0;rs.forEach(r=>l+=estLenFt(r.pts,d));
     list+=`<button class="row" data-d="${d.id}"><span class="thumb">${d.img?`<img src="${esc(d.img)}" alt="">`:I.plan}</span>
@@ -3047,6 +3126,11 @@ function viewEstimate(app){
         <div class="stats"><div class="s"><b>${draws.length}</b><span>Drawings</span></div>
           <div class="s"><b>${ft1(totL)}</b><span>Linear ft</span></div>
           <div class="s"><b>${Math.round(totA)}</b><span>Sq ft</span></div></div></div>
+      ${(()=>{const dv=estDerived(totL,totA);return `<div class="card est-card" style="padding:14px 16px;margin-top:12px">
+        <div class="eyebrow" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><span>Estimate</span><button type="button" class="linkbtn" id="estEditStd">Standards</button></div>
+        <div class="stats"><div class="s"><b>${dv.any&&dv.hrs?ft1(dv.hrs):'—'}</b><span>Labor hrs</span></div>
+          <div class="s"><b>${dv.any&&dv.doors?dv.doors:'—'}</b><span>Access doors</span></div></div>
+        ${dv.any?'':'<p class="cl-note" style="margin:10px 0 0">Set your standards (hours per lf/sf, access door spacing) to estimate labor and doors.</p>'}</div>`;})()}
       <div class="section-head"><h2>Drawings</h2></div>
       ${draws.length?`<div class="card" style="padding:0">${list}</div>`
         :`<div class="empty"><div class="ic">${I.plan}</div><h2>No drawings yet</h2><p>Upload a PDF to measure.</p></div>`}
@@ -3056,6 +3140,7 @@ function viewEstimate(app){
   app.querySelectorAll('.content .card').forEach(card=>{[...card.children].forEach((c,i)=>{if(i)c.style.borderTop='1px solid var(--line)';});});
   app.querySelector('#back').onclick=back;
   app.querySelector('#estMenu').onclick=()=>estMenu(e);
+  {const es=app.querySelector('#estEditStd');if(es)es.onclick=estStandardsSheet;}
   app.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>go('estmeasure',{estDrawId:b.dataset.d}));
   const input=app.querySelector('#estInput');
   app.querySelector('#addEst').onclick=()=>input.click();
@@ -3131,7 +3216,7 @@ function viewEstMeasure(app){
       <div class="viewer-overlay"><div class="vrow"><div class="vchip" id="evHint"></div>
         <button class="vchip evtot" id="evTot" hidden></button>
         <button class="vchip evcalt" id="evCalT" hidden></button></div><div class="estleg" id="evLegend" hidden></div></div>
-      <div class="zoomcol"><button id="ezin">+</button><button id="ezout">−</button>
+      <div class="zoomcol evzoom"><button id="ezin">+</button><button id="ezout">−</button>
         <button id="ezfit" style="font-size:13px;font-weight:700">FIT</button></div>
     </div>
     <div class="bottombar" id="evbar"></div>`;
@@ -3139,9 +3224,11 @@ function viewEstMeasure(app){
   const ink=app.querySelector('#eink'),labels=app.querySelector('#elabels'),hint=app.querySelector('#evHint');
   const sub=app.querySelector('#evSub'),totBtn=app.querySelector('#evTot'),vbar=app.querySelector('#evbar');
   let baseW=viewer.clientWidth||360, baseH=baseW*asp;
-  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true; // temp: flat normalized pts being placed
+  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true, tempTie=false; // temp: flat normalized pts being placed
   EVW={get scale(){return scale;},nc:(nx,ny)=>{const r=viewer.getBoundingClientRect();return [r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];}};
-  const apply=()=>{stage.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;drawLabels();};
+  const dotR=()=>Math.max(0.6,4200/(scale*baseW));   // ~4px on screen at any zoom
+  const apply=()=>{stage.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;drawLabels();
+    const r=dotR().toFixed(2);ink.querySelectorAll('.esc').forEach(c=>c.setAttribute('r',r));};
   function setBase(){baseW=viewer.clientWidth||360;baseH=baseW*asp;stage.style.width=baseW+'px';stage.style.height=baseH+'px';
     const img=app.querySelector('#eplan');img.style.width=baseW+'px';img.style.height=baseH+'px';
     ink.style.width=baseW+'px';ink.style.height=baseH+'px';labels.style.width=baseW+'px';labels.style.height=baseH+'px';}
@@ -3158,27 +3245,28 @@ function viewEstMeasure(app){
       dd+='Z';return `<path d="${dd}" fill="${col}" fill-opacity="0.3" stroke="none" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;}
     const sw=estEffFrac(r,d)*1000;if(sw<=0)return '';
     return `<path d="${ptsPath(r.pts)}" fill="none" stroke="${col}" stroke-opacity="0.3" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;}
-  function lineSvg(arr,col,id,temp){
+  function dot(x,y,col,id){return `<circle class="esc" cx="${x}" cy="${y}" r="${dotR().toFixed(2)}" fill="#fff" stroke="${col}" stroke-width="2.2" vector-effect="non-scaling-stroke" data-run="${id}" style="cursor:pointer;pointer-events:auto"/>`;}
+  function lineSvg(arr,col,id,temp,tieStart){
     let s=`<path d="${ptsPath(arr)}" fill="none" stroke="${col}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${temp?' stroke-dasharray="6 4"':` data-run="${id}" style="cursor:pointer;pointer-events:auto"`}/>`;
     if(!temp&&id){const [x0,y0]=toPx(arr[0],arr[1]),[x1,y1]=toPx(arr[arr.length-2],arr[arr.length-1]);
-      s+=`<circle cx="${x0}" cy="${y0}" r="4.5" fill="#fff" stroke="${col}" stroke-width="2.2" vector-effect="non-scaling-stroke" data-run="${id}" style="cursor:pointer;pointer-events:auto"/>`;
-      s+=`<circle cx="${x1}" cy="${y1}" r="4.5" fill="#fff" stroke="${col}" stroke-width="2.2" vector-effect="non-scaling-stroke" data-run="${id}" style="cursor:pointer;pointer-events:auto"/>`;}
+      if(!tieStart)s+=dot(x0,y0,col,id); s+=dot(x1,y1,col,id);}
     return s;}
   function renderInk(){
     let h='';
-    estRunsOf(d.id).forEach(r=>{const col=estKindOf(r).color;h+=bandSvg(r,col)+lineSvg(r.pts,col,r.id);});
+    estRunsOf(d.id).forEach(r=>{const col=estKindOf(r).color;
+      if(r.widthMode==='fill'&&r.fillPoly&&r.fillPoly.length>=6){let dd='';for(let i=0;i<r.fillPoly.length;i+=2){const [x,y]=toPx(r.fillPoly[i],r.fillPoly[i+1]);dd+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}dd+='Z';
+        h+=`<path d="${dd}" fill="${col}" fill-opacity="0.32" stroke="${col}" stroke-width="2" stroke-opacity="0.8" vector-effect="non-scaling-stroke" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;}
+      else h+=bandSvg(r,col)+lineSvg(r.pts,col,r.id,false,r.tieStart);});
     if(d.cal&&showCal){const [ax,ay]=toPx(d.cal.a[0],d.cal.a[1]),[bx,by]=toPx(d.cal.b[0],d.cal.b[1]);
       h+=`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="var(--warn)" stroke-width="3" stroke-dasharray="8 5" vector-effect="non-scaling-stroke"/>`;
-      h+=`<circle cx="${ax}" cy="${ay}" r="5" fill="#fff" stroke="var(--warn)" stroke-width="2.4" vector-effect="non-scaling-stroke"/><circle cx="${bx}" cy="${by}" r="5" fill="#fff" stroke="var(--warn)" stroke-width="2.4" vector-effect="non-scaling-stroke"/>`;}
+      h+=`<circle class="esc" cx="${ax}" cy="${ay}" r="${dotR().toFixed(2)}" fill="#fff" stroke="var(--warn)" stroke-width="2.4" vector-effect="non-scaling-stroke"/><circle class="esc" cx="${bx}" cy="${by}" r="${dotR().toFixed(2)}" fill="#fff" stroke="var(--warn)" stroke-width="2.4" vector-effect="non-scaling-stroke"/>`;}
     const tcol=mode==='cal'?'var(--warn)':DUCT_KINDS[estKind].color;
     if(temp.length>=2)h+=lineSvg(temp,tcol,'tmp',true);
-    for(let i=0;i<temp.length;i+=2){const [x,y]=toPx(temp[i],temp[i+1]);h+=`<circle cx="${x}" cy="${y}" r="5" fill="${tcol}" vector-effect="non-scaling-stroke"/>`;}
+    for(let i=0;i<temp.length;i+=2){const [x,y]=toPx(temp[i],temp[i+1]);h+=`<circle class="esc" cx="${x}" cy="${y}" r="${dotR().toFixed(2)}" fill="${tcol}" vector-effect="non-scaling-stroke"/>`;}
     ink.innerHTML=h;ink.querySelectorAll('[data-run]').forEach(el=>el.addEventListener('click',ev=>{ev.stopPropagation();runSheet(el.getAttribute('data-run'));}));
   }
   function drawLabels(){
-    let h='';estRunsOf(d.id).forEach(r=>{if(r.pts.length<4)return;const mid=Math.floor(r.pts.length/4)*2;
-      const nx=(r.pts[mid]+r.pts[mid+2>=r.pts.length?mid:mid+2])/2,ny=(r.pts[mid+1]+r.pts[mid+3>=r.pts.length?mid+1:mid+3])/2;
-      h+=`<div class="elabel" style="left:${nx*baseW}px;top:${ny*baseH}px;transform:translate(-50%,-50%) scale(${1/scale})"><i style="background:${estKindOf(r).color}"></i>${ft1(estLenFt(r.pts,d))} lf · ${Math.round(estAreaFt(r,d))} sf</div>`;});
+    let h='';
     if(d.cal&&showCal){const nx=(d.cal.a[0]+d.cal.b[0])/2,ny=(d.cal.a[1]+d.cal.b[1])/2;
       h+=`<div class="elabel elabel-cal" style="left:${nx*baseW}px;top:${ny*baseH}px;transform:translate(-50%,-50%) scale(${1/scale})">${I.ruler} Scale ${esc(ftIn(d.cal.ft))}</div>`;}
     labels.innerHTML=h;}
@@ -3186,7 +3274,7 @@ function viewEstMeasure(app){
   function refresh(){renderInk();drawLabels();updateChrome();}
   function updateChrome(){
     sub.textContent=d.cal?('Scale set · '+estRunsOf(d.id).length+' run'+(estRunsOf(d.id).length!==1?'s':'')):'No scale yet — set one first';
-    let L=0,A=0;estRunsOf(d.id).forEach(r=>{L+=estLenFt(r.pts,d);A+=estAreaFt(r,d);});
+    let L=0;estRunsOf(d.id).forEach(r=>{L+=estLenFt(r.pts,d);});const A=estUnionAreaFt(d,estRunsOf(d.id));
     if(estRunsOf(d.id).length){totBtn.hidden=false;totBtn.innerHTML=`${I.ruler}<b>${ft1(L)}</b> lf · <b>${Math.round(A)}</b> sq ft`;}
     else totBtn.hidden=true;
     const used=[...new Set(estRunsOf(d.id).map(r=>r.kind||'mps'))];
@@ -3202,15 +3290,23 @@ function viewEstMeasure(app){
     if(mode==='view'){
       hint.innerHTML=d.cal?`${I.move}<span>Pinch to zoom · drag&nbsp;to&nbsp;pan</span>`:`${I.info}<span>Set the scale to start measuring</span>`;
       vbar.innerHTML=`<button class="btn" id="eCal">${I.ruler} ${d.cal?'Scale':'Set scale'}</button>
-        <button class="btn primary block" id="eRun"${d.cal?'':' disabled style="opacity:.5"'}>${I.pen} Measure run</button>`;
+        <button class="btn primary block" id="eRun"${d.cal?'':' disabled style="opacity:.5"'}>${I.pen} Measure run</button>
+        <button class="btn" id="eFill"${d.cal?'':' disabled style="opacity:.5"'}>${I.fill} Fill</button>`;
       vbar.querySelector('#eCal').onclick=startCal;
       vbar.querySelector('#eRun').onclick=()=>{if(!d.cal){toast('Set the scale first');return;}startRun();};
+      vbar.querySelector('#eFill').onclick=()=>{if(!d.cal){toast('Set the scale first');return;}startFill();};
     }else if(mode==='cal'){
       hint.innerHTML=`${I.ruler}<span>Tap the two ends of a known length (${2-Math.floor(temp.length/2)} left)</span>`;
       vbar.innerHTML=`<button class="btn block" id="eUndo"${temp.length?'':' disabled style="opacity:.5"'}>${I.undo} Undo</button>
         <button class="btn primary block" id="eCancel">${I.x} Cancel</button>`;
       vbar.querySelector('#eUndo').onclick=()=>{temp=temp.slice(0,-2);refresh();};
       vbar.querySelector('#eCancel').onclick=()=>{mode='view';temp=[];refresh();};
+    }else if(mode==='fill'){
+      hint.innerHTML=`${I.fill}<span>Tap inside a duct to fill it</span>`;
+      vbar.innerHTML=`<div class="estrun"><div class="estkinds">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${k===estKind?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
+        <button class="btn primary block" id="eFillDone">${I.check} Finish</button></div>`;
+      vbar.querySelectorAll('.estkinds [data-k]').forEach(b=>b.onclick=()=>{estKind=b.dataset.k;try{localStorage.setItem('ductpro-est-kind',estKind);}catch(e){}renderBar();});
+      vbar.querySelector('#eFillDone').onclick=()=>{mode='view';refresh();};
     }else{
       const nv=temp.length/2;
       hint.innerHTML=`${I.pen}<span>Tap along the duct · <b>Add run</b> for each branch${nv?' · '+nv+' point'+(nv!==1?'s':''):''}</span>`;
@@ -3225,7 +3321,16 @@ function viewEstMeasure(app){
     }
   }
   function startCal(){mode='cal';temp=[];refresh();}
-  function startRun(){mode='run';temp=[];refresh();}
+  function startRun(){mode='run';temp=[];tempTie=false;refresh();}
+  function startFill(){mode='fill';temp=[];refresh();estImage(d).catch(()=>{});}
+  async function doFill(cx,cy){const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap inside the drawing');return;}
+    hint.innerHTML=`${I.info}<span>Filling…</span>`;
+    try{const img=await estImage(d);const res=estFillAt(img,nx,ny,Math.round(img.W*img.H*0.06));
+      if(res.onLine){toast('Tap in the open space inside the duct');renderBar();return;}
+      if(res.leak||!res.fillPoly){toast('That space isn’t closed off — draw the run instead');renderBar();return;}
+      const run={id:uid(),estId:d.estId,drawId:d.id,kind:estKind,widthMode:'fill',fillFrac:res.fillFrac,fillPoly:res.fillPoly,pts:[+nx.toFixed(5),+ny.toFixed(5)],label:'',createdAt:now()};
+      S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));refresh();toast(Math.round(estAreaFt(run,d))+' sq ft filled');
+    }catch(e){console.warn(e);toast('Fill failed — try again');renderBar();}}
   function snapPoint(cx,cy){const thr=16;let best=null,bd=thr;const r=viewer.getBoundingClientRect();
     const sc=(nx,ny)=>[r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];
     estRunsOf(d.id).forEach(run=>{for(let i=0;i+3<run.pts.length;i+=2){const [ax,ay]=sc(run.pts[i],run.pts[i+1]),[bx,by]=sc(run.pts[i+2],run.pts[i+3]);
@@ -3234,12 +3339,17 @@ function viewEstMeasure(app){
     return best;}
   function runAt(cx,cy){const r=viewer.getBoundingClientRect();const sc=(nx,ny)=>[r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];
     let best=null,bd=18;
-    estRunsOf(d.id).forEach(run=>{for(let i=0;i+3<run.pts.length;i+=2){const [ax,ay]=sc(run.pts[i],run.pts[i+1]),[bx,by]=sc(run.pts[i+2],run.pts[i+3]);
+    estRunsOf(d.id).forEach(run=>{
+      if(run.widthMode==='fill'&&run.fillPoly&&run.fillPoly.length>=6){const poly=run.fillPoly;let inside=false;
+        for(let i=0,j=poly.length-2;i<poly.length;j=i,i+=2){const [xi,yi]=sc(poly[i],poly[i+1]),[xj,yj]=sc(poly[j],poly[j+1]);
+          if(((yi>cy)!==(yj>cy))&&(cx<(xj-xi)*(cy-yi)/((yj-yi)||1)+xi))inside=!inside;}
+        if(inside){bd=0;best=run.id;}return;}
+      for(let i=0;i+3<run.pts.length;i+=2){const [ax,ay]=sc(run.pts[i],run.pts[i+1]),[bx,by]=sc(run.pts[i+2],run.pts[i+3]);
       const L2=((bx-ax)**2+(by-ay)**2)||1,t=Math.max(0,Math.min(1,((cx-ax)*(bx-ax)+(cy-ay)*(by-ay))/L2));
       const px=ax+(bx-ax)*t,py=ay+(by-ay)*t,dd=Math.hypot(cx-px,cy-py);if(dd<bd){bd=dd;best=run.id;}}});
     return best;}
   function addPoint(cx,cy){
-    if(mode==='run'&&temp.length===0){const sp=snapPoint(cx,cy);if(sp){cx=sp[0];cy=sp[1];}}
+    if(mode==='run'&&temp.length===0){const sp=snapPoint(cx,cy);if(sp){cx=sp[0];cy=sp[1];tempTie=true;}}
     const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap on the drawing');return;}
     temp.push(+nx.toFixed(5),+ny.toFixed(5));
     if(mode==='cal'&&temp.length===4)askLength();
@@ -3261,8 +3371,8 @@ function viewEstMeasure(app){
   }
   async function addRun(exit){
     if(temp.length<4){if(exit){mode='view';temp=[];refresh();}else toast('Tap at least two points');return;}
-    const pts=temp.slice();const run={id:uid(),estId:d.estId,drawId:d.id,pts,kind:estKind,widthMode:'auto',edgeL:null,edgeR:null,widthFrac:0,manualWidthFt:0,label:'',createdAt:now()};
-    temp=[];if(exit)mode='view';   // otherwise stay in run mode for the next branch
+    const pts=temp.slice();const run={id:uid(),estId:d.estId,drawId:d.id,pts,kind:estKind,widthMode:'auto',edgeL:null,edgeR:null,widthFrac:0,manualWidthFt:0,tieStart:tempTie,label:'',createdAt:now()};
+    temp=[];tempTie=false;if(exit)mode='view';   // otherwise stay in run mode for the next branch
     hint.innerHTML=`${I.info}<span>Reading width…</span>`;renderInk();
     try{const img=await estImage(d);const e=estDetectEdges(pts,img,estMaxPx(d,img));
       if(e){run.edgeL=e.edgeL;run.edgeR=e.edgeR;}
@@ -3275,24 +3385,27 @@ function viewEstMeasure(app){
     const r=S.estruns.find(x=>x.id===id);if(!r)return;
     const body=document.createElement('div');
     const draw=()=>{const cur=S.estruns.find(x=>x.id===id);if(!cur){ctl.close();return;}
-      body.innerHTML=`<div class="cl-stat"><div class="cl-statrow"><i class="estdot" style="background:${estKindOf(cur).color}"></i><span><b>${estKindOf(cur).label}</b> · linear <b>${ft1(estLenFt(cur.pts,d))} ft</b> · width <b>${ftIn(estWidthFt(cur,d))}</b> · area <b>${Math.round(estAreaFt(cur,d))} sq ft</b></span></div>
-        <div class="cl-statrow"><span>Width read ${cur.widthMode==='auto'?'automatically from the drawing':'by hand'}.</span></div></div>
+      const isFill=cur.widthMode==='fill';
+      body.innerHTML=`<div class="cl-stat"><div class="cl-statrow"><i class="estdot" style="background:${estKindOf(cur).color}"></i><span>${isFill
+          ?`<b>${estKindOf(cur).label}</b> · poured area · <b>${Math.round(estAreaFt(cur,d))} sq ft</b>`
+          :`<b>${estKindOf(cur).label}</b> · linear <b>${ft1(estLenFt(cur.pts,d))} ft</b> · width <b>${ftIn(estWidthFt(cur,d))}</b> · area <b>${Math.round(estAreaFt(cur,d))} sq ft</b>`}</span></div>
+        <div class="cl-statrow"><span>${isFill?'Area poured inside the duct outline.':('Width read '+(cur.widthMode==='auto'?'automatically from the drawing':'by hand')+'.')}</span></div></div>
         <div class="cl-subhead">Duct type</div>
         <div class="estkinds" id="rKind">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${(cur.kind||'mps')===k?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
         <div class="field" style="margin-top:12px"><label>Label (optional)</label><input class="inp" id="rLabel" value="${esc(cur.label||'')}" placeholder="e.g. Main supply"></div>
-        <div class="cl-subhead">Width</div>
+        ${isFill?'':`<div class="cl-subhead">Width</div>
         <div class="seg" id="rWmode" style="margin-top:6px"><button type="button" data-w="auto"${cur.widthMode==='auto'?' class="on"':''}>Auto width</button><button type="button" data-w="manual"${cur.widthMode==='manual'?' class="on"':''}>Set width</button></div>
         ${cur.widthMode==='manual'?`<div class="field" style="margin-top:10px"><label>Duct width</label><input class="inp" id="rWidth" inputmode="decimal" value="${ftIn(estWidthFt(cur,d))}" placeholder="e.g. 12&quot;"></div>`:''}
-        <button type="button" class="btn" id="rBranch" style="width:100%;margin-top:16px">${I.plus} Add a branch</button>
-        <button type="button" class="btn danger" id="rDel" style="width:100%;margin-top:10px">Delete run</button>`;
+        <button type="button" class="btn" id="rBranch" style="width:100%;margin-top:16px">${I.plus} Add a branch</button>`}
+        <button type="button" class="btn danger" id="rDel" style="width:100%;margin-top:10px">Delete ${isFill?'fill':'run'}</button>`;
       body.querySelectorAll('#rKind [data-k]').forEach(b=>b.onclick=()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.kind=b.dataset.k;pPut('estruns',c).catch(()=>{});draw();refresh();});
       body.querySelector('#rLabel').onchange=ev=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.label=ev.target.value.trim();pPut('estruns',c).catch(()=>{});};
-      body.querySelectorAll('[data-w]').forEach(b=>b.onclick=async()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;
+      body.querySelectorAll('[data-w]').forEach(b=>b.onclick=async()=>{const c=S.estruns.find(x=>x.id===id);if(!c||c.widthMode==='fill')return;
         if(b.dataset.w==='manual'){c.widthMode='manual';if(!c.manualWidthFt)c.manualWidthFt=estWidthFt(c,d)||1;}
         else{c.widthMode='auto';try{const img=await estImage(d);const e=estDetectEdges(c.pts,img,estMaxPx(d,img));if(e){c.edgeL=e.edgeL;c.edgeR=e.edgeR;}else{const w=estDetectWidthFrac(c.pts,img);if(w)c.widthFrac=w.frac;}}catch(e){}}
         pPut("estruns",c).catch(()=>{});draw();refresh();});
       const wi=body.querySelector('#rWidth');if(wi)wi.onchange=ev=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;const ft=parseFeet(ev.target.value);if(ft&&ft>0){c.manualWidthFt=ft;pPut('estruns',c).catch(()=>{});draw();refresh();}else{toast('Enter a width');}};
-      body.querySelector('#rBranch').onclick=()=>{const c=S.estruns.find(x=>x.id===id);ctl.close();if(c&&c.kind)estKind=c.kind;startRun();toast('Tap on a run to start the branch');};
+      {const bb=body.querySelector('#rBranch');if(bb)bb.onclick=()=>{const c=S.estruns.find(x=>x.id===id);ctl.close();if(c&&c.kind)estKind=c.kind;startRun();toast('Tap on a run to start the branch');};}
       body.querySelector('#rDel').onclick=async()=>{if(!await confirmDialog({title:'Delete run?',message:'This measured run will be removed.',confirmText:'Delete'}))return;
         S.estruns=S.estruns.filter(x=>x.id!==id);pDel('estruns',id).catch(()=>{});ctl.close();refresh();toast('Run deleted');};
     };
@@ -3316,9 +3429,9 @@ function viewEstMeasure(app){
   };
   function runsListSheet(){
     const body=document.createElement('div');const rs=estRunsOf(d.id);
-    let L=0,A=0;rs.forEach(r=>{L+=estLenFt(r.pts,d);A+=estAreaFt(r,d);});
+    let L=0;rs.forEach(r=>{L+=estLenFt(r.pts,d);});const A=estUnionAreaFt(d,rs);
     body.innerHTML=(rs.length?rs.map((r,i)=>`<button type="button" class="row" data-r="${r.id}"><span class="grow"><h3 style="font-size:15px">${esc(r.label||('Run '+(i+1)))}</h3>
-        <span class="meta">${ft1(estLenFt(r.pts,d))} lf · ${ftIn(estWidthFt(r,d))} · ${Math.round(estAreaFt(r,d))} sq ft</span></span><span class="chev">${I.chev}</span></button>`).join('')
+        <span class="meta">${r.widthMode==='fill'?('Area fill · '+Math.round(estAreaFt(r,d))+' sq ft'):(ft1(estLenFt(r.pts,d))+' lf · '+ftIn(estWidthFt(r,d))+' · '+Math.round(estAreaFt(r,d))+' sq ft')}</span></span><span class="chev">${I.chev}</span></button>`).join('')
       :`<p class="cl-note">No runs yet.</p>`)+`<div class="cl-stat" style="margin-top:12px"><div class="cl-statrow">${I.ruler}<span>Total <b>${ft1(L)} lf</b> · <b>${Math.round(A)} sq ft</b></span></div></div>`;
     const ctl=sheetShell({title:'Runs',bodyNode:body,full:true});
     body.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{ctl.close();runSheet(b.dataset.r);});
@@ -3342,7 +3455,7 @@ function viewEstMeasure(app){
     else if(panStart&&ptrs.size===1){tx=panStart.tx+(ev.clientX-panStart.x);ty=panStart.ty+(ev.clientY-panStart.y);
       moved=Math.max(moved,Math.hypot(ev.clientX-downXY.x,ev.clientY-downXY.y));apply();}});
   function up(ev){if(!ptrs.has(ev.pointerId))return;const was1=ptrs.size===1;ptrs.delete(ev.pointerId);
-    if(ptrs.size<2)pinch=null;if(ptrs.size===0){if(was1&&moved<6){if(mode!=='view')addPoint(ev.clientX,ev.clientY);else{const id=runAt(ev.clientX,ev.clientY);if(id)runSheet(id);}}panStart=null;}}
+    if(ptrs.size<2)pinch=null;if(ptrs.size===0){if(was1&&moved<6){if(mode==='fill')doFill(ev.clientX,ev.clientY);else if(mode!=='view')addPoint(ev.clientX,ev.clientY);else{const id=runAt(ev.clientX,ev.clientY);if(id)runSheet(id);}}panStart=null;}}
   viewer.addEventListener('pointerup',up);viewer.addEventListener('pointercancel',up);
   // mouse-wheel / trackpad zoom around the cursor
   viewer.addEventListener('wheel',ev=>{ev.preventDefault();const r=viewer.getBoundingClientRect();
@@ -3350,7 +3463,8 @@ function viewEstMeasure(app){
     const ns=Math.max(0.2,Math.min(16,scale*f));const ax=(cx-tx)/scale,ay=(cy-ty)/scale;
     scale=ns;tx=cx-ax*scale;ty=cy-ay*scale;apply();},{passive:false});
 
-  requestAnimationFrame(()=>{fit();refresh();});
+  requestAnimationFrame(()=>{fit();refresh();
+    estImage(d).then(img=>{if(img&&img.url&&S.estDrawId===d.id){const pl=app.querySelector('#eplan');if(pl&&pl.isConnected)pl.src=img.url;}}).catch(()=>{});});
 }
 
 /* ============================ export: interactive PDF ============================ */
@@ -3654,7 +3768,7 @@ function bootError(msg){
 // what the app loads at startup: [state key, Firestore collection]
 const BOOT_STORES=[['jobs','jobs'],['drawings','drawings'],['reports','reports'],['markers','markers'],
   ['users','users'],['groups','mkgroups'],['checklist','checklist'],
-  ['estimates','estimates'],['estdraws','estdrawings'],['estruns','estruns']];
+  ['estimates','estimates'],['estdraws','estdrawings'],['estruns','estruns'],['estsetArr','estsettings']];
 // all collections at once. source 'cache' = what this phone already saved (instant, works with no signal)
 async function loadStores(source){
   const out={};

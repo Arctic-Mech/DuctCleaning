@@ -52,7 +52,12 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   overridden by hand. Runs are colored by duct type — medium-pressure supply orange, low-pressure
   supply yellow, return green, exhaust purple — chosen while measuring or in the run sheet, with a
   legend on the plan. Pinch, the zoom buttons, or the mouse wheel / trackpad zoom around the cursor.
-  Per-run and per-estimate totals (linear ft / sq ft).
+  Per-run and per-estimate totals (linear ft / sq ft), counted as a union so overlapping tie-ins
+  aren't double-counted. **Fill** is a paint-bucket: tap inside an enclosed duct and it floods the
+  area to the surrounding lines. Branches snap to the main (no tie-in dot). A **Standards** screen
+  sets hours per linear foot, hours per square foot, and one access door every N feet; each estimate
+  then shows estimated labor hours and access doors. Estimating is desktop/laptop oriented (mouse
+  wheel zooms); the drawing renders at high resolution for sharp zooming.
 - **Export**: choose what the PDF includes — **Reports**, **Markups**, or **Both**.
   - *Reports*: each plan is a full-resolution vector page with numbered pins; tapping a pin jumps to
     that report's page.
