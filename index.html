@@ -436,6 +436,11 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
   border-radius:999px;padding:8px 4px;font:700 12px var(--font-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .estkinds button.on{border-color:var(--kc);color:#fff;background:var(--kc)}
 .estdot{width:12px;height:12px;border-radius:50%;flex:none;margin-top:3px}
+.evcalt{color:var(--fg);font:600 12.5px var(--font-body);white-space:nowrap}
+.evcalt.on{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 55%,var(--line))}
+.evcalt svg{color:var(--warn)}
+.elabel-cal{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 55%,var(--line));font-weight:700}
+.elabel-cal svg{width:12px;height:12px;vertical-align:-2px;margin-right:3px}
 .cl-empty{display:flex;align-items:center;gap:12px;padding:15px}
 .cl-empty .grow{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;font-size:15px}
 .cl-empty .grow span{font-size:13px;color:var(--muted)}
@@ -869,7 +874,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 08:00';
+const BUILD='Nov 19 08:18';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2947,11 +2952,11 @@ function estDetectWidthFrac(pts,img){
   return {frac:med/W, hit:ws.length};
 }
 // sample along the run and read the duct wall on each side at every sample, so the filled band
-// follows the real width the whole way (not one average). Returns normalized left/right edges.
-function estDetectEdges(pts,img){
+// follows the real width the whole way. maxPx = how far to look for a wall (from the scale).
+function estDetectEdges(pts,img,maxPx){
   const {W,H,data}=img;
   const dark=(x,y)=>{x|=0;y|=0;if(x<0||y<0||x>=W||y>=H)return true;const i=(y*W+x)*4;return (data[i]*0.3+data[i+1]*0.59+data[i+2]*0.11)<140;};
-  const MAX=Math.max(16,Math.round(W*0.025)), step=Math.max(4,W*0.0016);
+  const MAX=Math.max(16,Math.round(maxPx||W*0.04)), step=Math.max(4,W*0.0016);
   const samp=[];
   for(let i=0;i+3<pts.length;i+=2){const x1=pts[i]*W,y1=pts[i+1]*H,x2=pts[i+2]*W,y2=pts[i+3]*H;
     const dx=x2-x1,dy=y2-y1,seg=Math.hypot(dx,dy)||1,ux=-dy/seg,uy=dx/seg,n=Math.max(1,Math.round(seg/step));
@@ -2959,19 +2964,30 @@ function estDetectEdges(pts,img){
   {const k=pts.length;const x1=pts[k-4]*W,y1=pts[k-3]*H,x2=pts[k-2]*W,y2=pts[k-1]*H;
    const dx=x2-x1,dy=y2-y1,seg=Math.hypot(dx,dy)||1;samp.push({x:x2,y:y2,ux:-dy/seg,uy:dx/seg});}
   if(samp.length<2)return null;
-  const cast=(x,y,ux,uy,sgn)=>{if(dark(x,y))return -1;for(let t=1;t<=MAX;t++)if(dark(x+ux*sgn*t,y+uy*sgn*t))return t;return -1;};
-  const wl=samp.map(p=>cast(p.x,p.y,p.ux,p.uy,1)), wr=samp.map(p=>cast(p.x,p.y,p.ux,p.uy,-1));
-  const med=arr=>{const v=arr.filter(w=>w>=0).sort((a,b)=>a-b);return v.length?v[v.length>>1]:0;};
-  const mL=med(wl)||6,mR=med(wr)||6;
+  // if a sample lands on a drawn line, slide it into the nearby open space before measuring
+  const recenter=(x,y,ux,uy)=>{if(!dark(x,y))return [x,y];
+    for(let t=1;t<=10;t++){if(!dark(x+ux*t,y+uy*t))return [x+ux*t,y+uy*t];if(!dark(x-ux*t,y-uy*t))return [x-ux*t,y-uy*t];}return null;};
+  const cast=(x,y,ux,uy,sgn)=>{for(let t=1;t<=MAX;t++)if(dark(x+ux*sgn*t,y+uy*sgn*t))return t;return -1;};
+  const wl=[],wr=[];
+  samp.forEach(p=>{const c=recenter(p.x,p.y,p.ux,p.uy);if(!c){wl.push(-1);wr.push(-1);return;}
+    wl.push(cast(c[0],c[1],p.ux,p.uy,1));wr.push(cast(c[0],c[1],p.ux,p.uy,-1));});
+  const pct=(arr,q)=>{const v=arr.filter(w=>w>=0).sort((a,b)=>a-b);return v.length?v[Math.min(v.length-1,Math.floor(v.length*q))]:0;};
+  const mL=pct(wl,0.6)||8,mR=pct(wr,0.6)||8;
   if(wl.filter(w=>w>=0).length<2&&wr.filter(w=>w>=0).length<2)return null;
-  const fix=(arr,m)=>arr.map(w=>w<0?m:Math.min(w,m*2.4));
+  // fill misses with the representative width, and floor thin reads so the band stays full
+  const fix=(arr,m)=>arr.map(w=>w<0?m:Math.max(m*0.6,Math.min(w,m*2.2)));
   const smooth=a=>a.map((v,i)=>((a[Math.max(0,i-1)]+2*v+a[Math.min(a.length-1,i+1)])/4));
-  let L=smooth(fix(wl,mL)),R=smooth(fix(wr,mR));
+  let L=smooth(smooth(fix(wl,mL))),R=smooth(smooth(fix(wr,mR)));
   const edgeL=[],edgeR=[];
   samp.forEach((p,i)=>{edgeL.push(+((p.x+p.ux*L[i])/W).toFixed(5),+((p.y+p.uy*L[i])/H).toFixed(5));
     edgeR.push(+((p.x-p.ux*R[i])/W).toFixed(5),+((p.y-p.uy*R[i])/H).toFixed(5));});
   return {edgeL,edgeR};
 }
+// how far to search for a wall, in canvas px: up to ~6 ft at the drawing's scale
+function estMaxPx(d,img){ if(!d||!d.cal)return Math.round(img.W*0.04); const c=d.cal,W=img.W,H=img.H;
+  const px=Math.hypot((c.b[0]-c.a[0])*W,(c.b[1]-c.a[1])*H)||1,fpc=c.ft/px;
+  return Math.max(Math.round(W*0.02), Math.min(Math.round(W*0.09), Math.round(6/fpc))); }
+
 
 /* ---------- estimates list ---------- */
 function viewEstimates(app){
@@ -3113,7 +3129,8 @@ function viewEstMeasure(app){
         <div id="elabels"></div>
       </div></div>
       <div class="viewer-overlay"><div class="vrow"><div class="vchip" id="evHint"></div>
-        <button class="vchip evtot" id="evTot" hidden></button></div><div class="estleg" id="evLegend" hidden></div></div>
+        <button class="vchip evtot" id="evTot" hidden></button>
+        <button class="vchip evcalt" id="evCalT" hidden></button></div><div class="estleg" id="evLegend" hidden></div></div>
       <div class="zoomcol"><button id="ezin">+</button><button id="ezout">−</button>
         <button id="ezfit" style="font-size:13px;font-weight:700">FIT</button></div>
     </div>
@@ -3122,7 +3139,7 @@ function viewEstMeasure(app){
   const ink=app.querySelector('#eink'),labels=app.querySelector('#elabels'),hint=app.querySelector('#evHint');
   const sub=app.querySelector('#evSub'),totBtn=app.querySelector('#evTot'),vbar=app.querySelector('#evbar');
   let baseW=viewer.clientWidth||360, baseH=baseW*asp;
-  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(); // temp: flat normalized pts being placed
+  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true; // temp: flat normalized pts being placed
   EVW={get scale(){return scale;},nc:(nx,ny)=>{const r=viewer.getBoundingClientRect();return [r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];}};
   const apply=()=>{stage.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;drawLabels();};
   function setBase(){baseW=viewer.clientWidth||360;baseH=baseW*asp;stage.style.width=baseW+'px';stage.style.height=baseH+'px';
@@ -3150,8 +3167,9 @@ function viewEstMeasure(app){
   function renderInk(){
     let h='';
     estRunsOf(d.id).forEach(r=>{const col=estKindOf(r).color;h+=bandSvg(r,col)+lineSvg(r.pts,col,r.id);});
-    if(d.cal){const [ax,ay]=toPx(d.cal.a[0],d.cal.a[1]),[bx,by]=toPx(d.cal.b[0],d.cal.b[1]);
-      h+=`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="var(--warn)" stroke-width="2.5" stroke-dasharray="7 5" vector-effect="non-scaling-stroke"/>`;}
+    if(d.cal&&showCal){const [ax,ay]=toPx(d.cal.a[0],d.cal.a[1]),[bx,by]=toPx(d.cal.b[0],d.cal.b[1]);
+      h+=`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="var(--warn)" stroke-width="3" stroke-dasharray="8 5" vector-effect="non-scaling-stroke"/>`;
+      h+=`<circle cx="${ax}" cy="${ay}" r="5" fill="#fff" stroke="var(--warn)" stroke-width="2.4" vector-effect="non-scaling-stroke"/><circle cx="${bx}" cy="${by}" r="5" fill="#fff" stroke="var(--warn)" stroke-width="2.4" vector-effect="non-scaling-stroke"/>`;}
     const tcol=mode==='cal'?'var(--warn)':DUCT_KINDS[estKind].color;
     if(temp.length>=2)h+=lineSvg(temp,tcol,'tmp',true);
     for(let i=0;i<temp.length;i+=2){const [x,y]=toPx(temp[i],temp[i+1]);h+=`<circle cx="${x}" cy="${y}" r="5" fill="${tcol}" vector-effect="non-scaling-stroke"/>`;}
@@ -3161,6 +3179,8 @@ function viewEstMeasure(app){
     let h='';estRunsOf(d.id).forEach(r=>{if(r.pts.length<4)return;const mid=Math.floor(r.pts.length/4)*2;
       const nx=(r.pts[mid]+r.pts[mid+2>=r.pts.length?mid:mid+2])/2,ny=(r.pts[mid+1]+r.pts[mid+3>=r.pts.length?mid+1:mid+3])/2;
       h+=`<div class="elabel" style="left:${nx*baseW}px;top:${ny*baseH}px;transform:translate(-50%,-50%) scale(${1/scale})"><i style="background:${estKindOf(r).color}"></i>${ft1(estLenFt(r.pts,d))} lf · ${Math.round(estAreaFt(r,d))} sf</div>`;});
+    if(d.cal&&showCal){const nx=(d.cal.a[0]+d.cal.b[0])/2,ny=(d.cal.a[1]+d.cal.b[1])/2;
+      h+=`<div class="elabel elabel-cal" style="left:${nx*baseW}px;top:${ny*baseH}px;transform:translate(-50%,-50%) scale(${1/scale})">${I.ruler} Scale ${esc(ftIn(d.cal.ft))}</div>`;}
     labels.innerHTML=h;}
 
   function refresh(){renderInk();drawLabels();updateChrome();}
@@ -3173,6 +3193,8 @@ function viewEstMeasure(app){
     if(used.length){const legend=app.querySelector('#evLegend');legend.hidden=false;
       legend.innerHTML=used.map(k=>`<span><i style="background:${DUCT_KINDS[k].color}"></i>${DUCT_KINDS[k].label}</span>`).join('');}
     else app.querySelector('#evLegend').hidden=true;
+    const ct=app.querySelector('#evCalT');if(d.cal){ct.hidden=false;ct.classList.toggle('on',showCal);
+      ct.innerHTML=`${showCal?I.eye:I.eyeoff}<span>Scale ${esc(ftIn(d.cal.ft))}</span>`;}else ct.hidden=true;
     renderBar();
   }
   function renderBar(){
@@ -3242,7 +3264,7 @@ function viewEstMeasure(app){
     const pts=temp.slice();const run={id:uid(),estId:d.estId,drawId:d.id,pts,kind:estKind,widthMode:'auto',edgeL:null,edgeR:null,widthFrac:0,manualWidthFt:0,label:'',createdAt:now()};
     temp=[];if(exit)mode='view';   // otherwise stay in run mode for the next branch
     hint.innerHTML=`${I.info}<span>Reading width…</span>`;renderInk();
-    try{const img=await estImage(d);const e=estDetectEdges(pts,img);
+    try{const img=await estImage(d);const e=estDetectEdges(pts,img,estMaxPx(d,img));
       if(e){run.edgeL=e.edgeL;run.edgeR=e.edgeR;}
       else{const w=estDetectWidthFrac(pts,img);if(w&&w.frac>0)run.widthFrac=w.frac;else{run.widthMode='manual';run.manualWidthFt=1;toast('Couldn’t read the width — set it by hand');}}
     }catch(e){console.warn(e);run.widthMode='manual';run.manualWidthFt=1;}
@@ -3261,14 +3283,16 @@ function viewEstMeasure(app){
         <div class="cl-subhead">Width</div>
         <div class="seg" id="rWmode" style="margin-top:6px"><button type="button" data-w="auto"${cur.widthMode==='auto'?' class="on"':''}>Auto width</button><button type="button" data-w="manual"${cur.widthMode==='manual'?' class="on"':''}>Set width</button></div>
         ${cur.widthMode==='manual'?`<div class="field" style="margin-top:10px"><label>Duct width</label><input class="inp" id="rWidth" inputmode="decimal" value="${ftIn(estWidthFt(cur,d))}" placeholder="e.g. 12&quot;"></div>`:''}
-        <button type="button" class="btn danger" id="rDel" style="width:100%;margin-top:18px">Delete run</button>`;
+        <button type="button" class="btn" id="rBranch" style="width:100%;margin-top:16px">${I.plus} Add a branch</button>
+        <button type="button" class="btn danger" id="rDel" style="width:100%;margin-top:10px">Delete run</button>`;
       body.querySelectorAll('#rKind [data-k]').forEach(b=>b.onclick=()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.kind=b.dataset.k;pPut('estruns',c).catch(()=>{});draw();refresh();});
       body.querySelector('#rLabel').onchange=ev=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.label=ev.target.value.trim();pPut('estruns',c).catch(()=>{});};
       body.querySelectorAll('[data-w]').forEach(b=>b.onclick=async()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;
         if(b.dataset.w==='manual'){c.widthMode='manual';if(!c.manualWidthFt)c.manualWidthFt=estWidthFt(c,d)||1;}
-        else{c.widthMode='auto';try{const img=await estImage(d);const e=estDetectEdges(c.pts,img);if(e){c.edgeL=e.edgeL;c.edgeR=e.edgeR;}else{const w=estDetectWidthFrac(c.pts,img);if(w)c.widthFrac=w.frac;}}catch(e){}}
+        else{c.widthMode='auto';try{const img=await estImage(d);const e=estDetectEdges(c.pts,img,estMaxPx(d,img));if(e){c.edgeL=e.edgeL;c.edgeR=e.edgeR;}else{const w=estDetectWidthFrac(c.pts,img);if(w)c.widthFrac=w.frac;}}catch(e){}}
         pPut("estruns",c).catch(()=>{});draw();refresh();});
       const wi=body.querySelector('#rWidth');if(wi)wi.onchange=ev=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;const ft=parseFeet(ev.target.value);if(ft&&ft>0){c.manualWidthFt=ft;pPut('estruns',c).catch(()=>{});draw();refresh();}else{toast('Enter a width');}};
+      body.querySelector('#rBranch').onclick=()=>{const c=S.estruns.find(x=>x.id===id);ctl.close();if(c&&c.kind)estKind=c.kind;startRun();toast('Tap on a run to start the branch');};
       body.querySelector('#rDel').onclick=async()=>{if(!await confirmDialog({title:'Delete run?',message:'This measured run will be removed.',confirmText:'Delete'}))return;
         S.estruns=S.estruns.filter(x=>x.id!==id);pDel('estruns',id).catch(()=>{});ctl.close();refresh();toast('Run deleted');};
     };
@@ -3303,6 +3327,7 @@ function viewEstMeasure(app){
   app.querySelector('#ezout').onclick=()=>{scale=Math.max(0.2,scale/1.4);apply();};
   app.querySelector('#ezfit').onclick=fit;
   totBtn.onclick=runsListSheet;
+  app.querySelector('#evCalT').onclick=()=>{showCal=!showCal;refresh();};
 
   // ---- pan / zoom / tap ----
   const ptrs=new Map();let panStart=null,pinch=null,moved=0,downXY=null;
