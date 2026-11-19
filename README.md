@@ -44,7 +44,12 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   - *Both*: report pins and markups on the same plan pages, with report pages following.
   The source plan's own embedded annotations (e.g. old Bluebeam markups) are stripped for a clean export.
   When a job has more than one plan, a per-plan picker chooses which pages to include.
-  The **Export** button is on the job screen whenever the job has at least one plan.
+  When markups are included, a **Markups to show** selector picks the tag types (exhaust / access /
+  notes) and freehand drawings to draw. The **Export** button is on the job screen whenever the job
+  has at least one plan.
+
+Browser/OS **Back** and the edge-swipe-back gesture (Safari, desktop, and when saved to the Home
+Screen) step back one screen in the app — closing an open sheet first — instead of leaving the app.
 
 ## Data: Firebase Firestore only (no auth, no billing)
 Everything saves to the `duct-cleaning-cb58f` Firestore database and syncs across devices.

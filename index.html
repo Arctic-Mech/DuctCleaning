@@ -354,6 +354,16 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .lyr.hrow.off .eyeic{color:var(--faint)}
 .linkbtn{border:none;background:none;color:var(--accent);font:600 13.5px var(--font-body);padding:6px 2px}
 .zoomnote{background:color-mix(in srgb,var(--warn) 16%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:16px;font-size:14px;line-height:1.45;color:var(--fg)}
+.mktypes{display:flex;gap:8px}
+.mktypes button{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;
+  border:1px solid var(--line);background:var(--surface-2);color:var(--muted);border-radius:var(--radius-sm);
+  padding:10px 4px;font:600 12px var(--font-body)}
+.mktypes button svg{width:20px;height:20px}
+.mktypes button.on{background:color-mix(in srgb,var(--accent) 16%,var(--surface));border-color:var(--accent);color:var(--fg)}
+.mktypes button.on[data-k="exhaust"] svg{color:var(--mk-exhaust)}
+.mktypes button.on[data-k="access"] svg{color:var(--mk-access)}
+.mktypes button.on[data-k="note"] svg{color:var(--mk-note)}
+.mktypes button:not(.on) svg{opacity:.6}
 .exp-plhead{display:flex;align-items:center;justify-content:space-between}
 .exp-plhead .linkbtn{letter-spacing:0;text-transform:none}
 .exp-plan .exp-ck{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
@@ -361,7 +371,6 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .exp-plan .exp-ck svg{width:15px;height:15px}
 .exp-plan.off .exp-ck{background:transparent;color:transparent;border-color:color-mix(in srgb,var(--fg) 30%,transparent)}
 .exp-plan.off .thumb,.exp-plan.off .grow{opacity:.5}
-.buildinfo{margin-top:28px;text-align:center;font-size:11px;color:var(--faint);opacity:.75;line-height:1.4}
 /* truck checklist */
 .cl-eyebrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
 .cl-eyebrow .linkbtn{letter-spacing:0;text-transform:none}
@@ -821,15 +830,13 @@ const SAFE=(function(){
     // 62 screen points of room, converted to this page's px (124px when the page is zoomed to 50%)
     S0.top=S0.app&&portrait?Math.max(S0.reported,Math.round(62/S0.zoom)):S0.reported;
     root.style.setProperty('--safe-top',S0.top+'px');
-    const b=document.getElementById('buildInfo');if(b)b.textContent=buildInfoText();
     const zn=document.getElementById('zoomNote');if(zn)zn.hidden=S0.zoom===1;
   }
   S0.apply=apply;apply();
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 18 16:55';
-const buildInfoText=()=>`Build ${BUILD} · ${SAFE.app?'app':'browser'} · top ${SAFE.top}px (phone says ${SAFE.reported}) · zoom ${Math.round(SAFE.zoom*100)}% · ${innerWidth}/${screen.width}`;
+const BUILD='Nov 18 17:21';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],user:null,route:['jobs'],jobId:null,drawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -985,6 +992,7 @@ function openSheet(node,{full=false}={}){
   requestAnimationFrame(()=>scrim.classList.add('open'));
   // stop catching taps the moment it starts closing, so a quick tap on the plan isn't swallowed by the fade-out
   const close=()=>{scrim.style.pointerEvents='none';scrim.classList.remove('open');setTimeout(()=>scrim.remove(),280);};
+  scrim.__close=close;
   scrim.addEventListener('click',e=>{if(e.target===scrim)close();});
   return {close,scrim,sheet};
 }
@@ -1029,6 +1037,24 @@ function go(route,opts={}){
 function back(){
   if(S.route.length>1)S.route.pop();
   S.placing=false;persistNav();render();
+}
+// Browser/OS Back and the edge-swipe-back gesture (Safari, desktop, and when saved to the Home
+// Screen) all fire popstate. We keep one "trap" history entry armed so Back always reaches us:
+// it first closes an open sheet, otherwise steps back one screen, and never drops out of the app.
+function navArm(){try{history.pushState({ductpro:1},'');}catch(e){}}
+function closeTopScrim(){
+  const open=document.querySelectorAll('#sheets .scrim.open');
+  const top=open[open.length-1];
+  if(top&&typeof top.__close==='function'){top.__close();return true;}
+  return false;
+}
+function initBackButton(){
+  navArm();
+  window.addEventListener('popstate',()=>{
+    navArm();                               // re-arm for the next Back
+    if(closeTopScrim())return;              // a dialog/sheet is open -> close it first
+    if(S.route.length>1)back();             // otherwise step back one screen
+  });
 }
 function persistNav(){try{localStorage.setItem('ductpro-nav',JSON.stringify({route:S.route,jobId:S.jobId,drawId:S.drawId}));}catch(e){}}
 function restoreNav(){try{const n=JSON.parse(localStorage.getItem('ductpro-nav'));
@@ -1082,7 +1108,6 @@ function viewJobs(app){
       ${jobs.length? `<div class="card stack" style="padding:0;gap:0">${rows.split('</button>').join('</button>')}</div>`
         : `<div class="empty"><div class="ic">${I.job}</div><h2>No jobs yet</h2>
              <p>Start a job to add floor plans and log duct cleaning reports in the field.</p></div>`}
-      <div class="buildinfo" id="buildInfo">${esc(buildInfoText())}</div>
     </div>
     <div class="bottombar"><button class="btn primary block" id="newJob">${I.plus} Start a job</button></div>`;
   // card rows: need per-row borders
@@ -2812,6 +2837,15 @@ function viewExport(app){
         <button type="button" data-m="both">Both</button>
       </div>
       <div class="pkgbanner" style="margin-top:12px" id="expBanner">${I.info}<div></div></div>
+      <div id="expMkWrap" hidden>
+        <div class="eyebrow" style="margin-top:18px">Markups to show</div>
+        <div class="mktypes" id="expMk">
+          <button type="button" data-k="exhaust">${I.fan}<span>Exhaust</span></button>
+          <button type="button" data-k="access">${I.door}<span>Access</span></button>
+          <button type="button" data-k="note">${I.note}<span>Notes</span></button>
+          <button type="button" data-k="draw">${I.pen}<span>Drawings</span></button>
+        </div>
+      </div>
       ${draws.length>1?`<div class="eyebrow exp-plhead" style="margin-top:18px"><span>Plans</span>
         <button type="button" class="linkbtn" id="expAll"></button></div>
         <div class="card" style="padding:0" id="expPlans">${draws.map(d=>`
@@ -2829,9 +2863,16 @@ function viewExport(app){
   const btn=app.querySelector('#pdfBtn'), status=app.querySelector('#expStatus');
   const seg=app.querySelector('#expSeg'), banner=app.querySelector('#expBanner').querySelector('div');
   let mode=expMode();
+  // which markup types to include (only matters when markups are in the PDF)
+  const mkSel=expMkSel();
+  const mkWrap=app.querySelector('#expMkWrap'), mkBtns=[...app.querySelectorAll('#expMk button')];
+  const paintMk=()=>mkBtns.forEach(b=>b.classList.toggle('on',!!mkSel[b.dataset.k]));
   const paint=()=>{seg.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.m===mode));
-    banner.innerHTML=EXP_BANNER[mode];};
+    banner.innerHTML=EXP_BANNER[mode];mkWrap.hidden=mode==='reports';paintMk();};
   seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{mode=b.dataset.m;try{localStorage.setItem('ductpro-exp-mode',mode);}catch(e){}paint();});
+  mkBtns.forEach(b=>b.onclick=()=>{const k=b.dataset.k;
+    if(mkSel[k]&&Object.values(mkSel).filter(Boolean).length===1){toast('Keep at least one type');return;}
+    mkSel[k]=!mkSel[k];try{localStorage.setItem('ductpro-exp-mk',JSON.stringify(mkSel));}catch(e){}paintMk();});
   paint();
   // which plans (pages) to include — all by default
   const sel=new Set(draws.map(d=>d.id));
@@ -2845,16 +2886,22 @@ function viewExport(app){
   planRows.forEach(r=>r.onclick=()=>{const id=r.dataset.d;if(sel.has(id))sel.delete(id);else sel.add(id);paintPlans();});
   if(allBtn)allBtn.onclick=()=>{if(sel.size===draws.length)sel.clear();else draws.forEach(d=>sel.add(d.id));paintPlans();};
   paintPlans();
-  btn.onclick=()=>{if(!sel.size){toast('Pick at least one plan');return;}exportInteractivePdf(j,btn,status,mode,[...sel]);};
+  btn.onclick=()=>{if(!sel.size){toast('Pick at least one plan');return;}exportInteractivePdf(j,btn,status,mode,[...sel],mkSel);};
 }
 function expMode(){try{const m=localStorage.getItem('ductpro-exp-mode');if(m==='reports'||m==='markups'||m==='both')return m;}catch(e){}return 'reports';}
+function expMkSel(){const d={exhaust:true,access:true,note:true,draw:true};
+  try{const v=JSON.parse(localStorage.getItem('ductpro-exp-mk')||'null');
+    if(v&&typeof v==='object'){['exhaust','access','note','draw'].forEach(k=>{if(typeof v[k]==='boolean')d[k]=v[k];});
+      if(!Object.values(d).some(Boolean))return {exhaust:true,access:true,note:true,draw:true};}}catch(e){}
+  return d;}
 const EXP_BANNER={
   reports:'Creates one <b>interactive PDF</b>: each plan is a full-resolution page with numbered pins, and <b>tapping a pin jumps to that report</b> — just like Fieldwire. Then save it to Files or send it.',
   markups:'Each plan is a full-resolution page showing your <b>exhaust, cleaning-access and note tags and freehand drawings</b>. No report pins or report pages.',
   both:'Each plan is a full-resolution page with <b>numbered report pins</b> (tap to jump to the report) <b>and your markups</b> drawn on top. Report pages follow.',
 };
 
-async function exportInteractivePdf(j,btn,status,mode,planIds){
+async function exportInteractivePdf(j,btn,status,mode,planIds,mkTypes){
+  mkTypes=mkTypes||{exhaust:true,access:true,note:true,draw:true};
   if(!window.PDFLib){toast('PDF engine still loading — try again');return;}
   const content=mode==='markups'?{reports:false,markups:true}
     :mode==='both'?{reports:true,markups:true}:{reports:true,markups:false};
@@ -2871,7 +2918,7 @@ async function exportInteractivePdf(j,btn,status,mode,planIds){
     if(content.reports){try{(await photosByJob(j.id)).forEach(p=>{try{photoBytes[p.id]=dataUrlToBytes(p.data);}catch(e){}});}catch(e){console.warn(e);}}
     // markups: freehand strokes (loaded on demand) + tags (already in state), grouped by plan
     let strokesByDrawId={};
-    if(content.markups){try{(await strokesByJob(j.id)).forEach(st=>{(strokesByDrawId[st.drawId]=strokesByDrawId[st.drawId]||[]).push(st);});
+    if(content.markups&&mkTypes.draw){try{(await strokesByJob(j.id)).forEach(st=>{(strokesByDrawId[st.drawId]=strokesByDrawId[st.drawId]||[]).push(st);});
       Object.values(strokesByDrawId).forEach(a=>a.sort((x,y)=>x.createdAt-y.createdAt));}catch(e){console.warn(e);}}
     let logoPng=null;try{logoPng=await fetchBytes('logo.png');}catch(e){}
     const plans=[];
@@ -2885,8 +2932,8 @@ async function exportInteractivePdf(j,btn,status,mode,planIds){
         before:(r.before||[]).map(id=>photoBytes[id]).filter(Boolean),
         after:(r.after||[]).map(id=>photoBytes[id]).filter(Boolean),
       })):[];
-      const markers=content.markups?drawMarkers(d.id).slice().sort(byNumThenAge):[];
-      const strokes=content.markups?(strokesByDrawId[d.id]||[]):[];
+      const markers=content.markups?drawMarkers(d.id).filter(m=>mkTypes[m.kind]).sort(byNumThenAge):[];
+      const strokes=(content.markups&&mkTypes.draw)?(strokesByDrawId[d.id]||[]):[];
       plans.push({name:d.name,pdfBytes,pageIndex:d.pageIndex||0,imgBytes:pdfBytes?null:dataUrlToBytes(d.img),pw:d.w,ph:d.h,reports,markers,strokes});
     }
     set('Building PDF…');
@@ -3109,7 +3156,7 @@ function checkForUpdate(){
   try{ await initStore(); }
   catch(e){ console.error(e); bootError('Could not reach Firebase. Check your internet connection and reload.'); return; }
   let shown=false;
-  const show=()=>{restoreUser();restoreNav();render();watchChecklist();document.getElementById('boot').style.display='none';shown=true;};
+  const show=()=>{restoreUser();restoreNav();render();watchChecklist();initBackButton();document.getElementById('boot').style.display='none';shown=true;};
   // 1) open with what this phone already has: no waiting on a weak signal
   try{const c=await loadStores('cache');
     if(c.jobs&&(c.jobs.length||(c.checklist&&c.checklist.length))){applyStores(c);show();}}catch(e){}
