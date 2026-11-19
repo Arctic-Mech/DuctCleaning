@@ -413,6 +413,12 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .cl-sub.due.soon,.cl-duehint.soon{color:var(--warn);font-weight:600}
 .cl-sub.due.over,.cl-duehint.over{color:var(--danger);font-weight:700}
 .cl-over{color:var(--danger);font-weight:700}
+.estlink{background:none;border:none;color:var(--faint);font:600 12.5px var(--font-body);padding:8px 8px;flex:none}
+.estlink:active{color:var(--accent)}
+.elabel{position:absolute;background:color-mix(in srgb,var(--surface) 92%,transparent);border:1px solid var(--line);
+  border-radius:7px;padding:2px 6px;font:700 11px var(--font-mono);color:var(--fg);white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.evtot{font:600 13px var(--font-body);color:var(--fg);white-space:nowrap}
+.evtot b{font-family:var(--font-mono)}
 .cl-empty{display:flex;align-items:center;gap:12px;padding:15px}
 .cl-empty .grow{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;font-size:15px}
 .cl-empty .grow span{font-size:13px;color:var(--muted)}
@@ -683,6 +689,7 @@ const I = {
   info:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>',
   clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   move:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>',
+  ruler:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15l12-12 6 6-12 12z"/><path d="M7.5 10.5l1.5 1.5M10.5 7.5l2 2M13.5 4.5l1.5 1.5"/></svg>',
   wrench:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 00-5.4 5.2L3 18v3h3l6.5-6.3a4 4 0 005.2-5.4l-2.6 2.6-2.3-.6-.6-2.3z"/></svg>',
   dots:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   logo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L4 20h16L12 3z" fill="currentColor" stroke="none"/><path d="M12 9l-3 7h6l-3-7z" fill="#fff" stroke="none"/></svg>',
@@ -839,8 +846,8 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 06:51';
-const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],user:null,route:['jobs'],jobId:null,drawId:null,placing:false,focus:null};
+const BUILD='Nov 19 07:06';
+const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -1033,6 +1040,8 @@ function confirmDialog({title,message,confirmText='Delete',danger=true}){
 function go(route,opts={}){
   if(opts.jobId!==undefined)S.jobId=opts.jobId;
   if(opts.drawId!==undefined)S.drawId=opts.drawId;
+  if(opts.estId!==undefined)S.estId=opts.estId;
+  if(opts.estDrawId!==undefined)S.estDrawId=opts.estDrawId;
   S.placing=false;
   S.route.push(route);
   persistNav();render();
@@ -1073,11 +1082,16 @@ function render(){
   // validate context still exists
   if(route==='drawing'&&!S.drawings.find(d=>d.id===S.drawId)){S.route=['jobs'];}
   if(route==='job'&&!S.jobs.find(j=>j.id===S.jobId)){S.route=['jobs'];}
+  if(route==='estmeasure'&&!S.estdraws.find(d=>d.id===S.estDrawId)){S.route=['estimates'];}
+  if(route==='estimate'&&!S.estimates.find(x=>x.id===S.estId)){S.route=['estimates'];}
   const r=S.route[S.route.length-1];
   if(r==='jobs')viewJobs(app);
   else if(r==='job')viewJob(app);
   else if(r==='drawing')viewDrawing(app);
   else if(r==='export')viewExport(app);
+  else if(r==='estimates')viewEstimates(app);
+  else if(r==='estimate')viewEstimate(app);
+  else if(r==='estmeasure')viewEstMeasure(app);
   else viewJobs(app);
 }
 
@@ -1099,6 +1113,7 @@ function viewJobs(app){
       <img class="brandlogo light-only" src="logo.png" alt="Arctic">
       <img class="brandlogo dark-only" src="logo-dark.png" alt="Arctic">
       <div class="ttl"><h1 class="brandsub">Duct Cleaning</h1></div>
+      <button class="estlink" id="estBtn">Estimate</button>
       <button class="iconbtn" id="themeBtn" aria-label="Toggle theme">${I.dots}</button>
     </div>
     <div class="content">
@@ -1119,6 +1134,7 @@ function viewJobs(app){
   app.querySelectorAll('[data-job]').forEach(b=>b.onclick=()=>go('job',{jobId:b.dataset.job,drawId:null}));
   app.querySelector('#newJob').onclick=()=>jobForm();
   app.querySelector('#themeBtn').onclick=cycleTheme;
+  app.querySelector('#estBtn').onclick=()=>go('estimates',{estId:null,estDrawId:null});
   app.querySelector('#clEdit').onclick=checklistEditSheet;
   renderChecklistCard(app.querySelector('#clCard'));
 }
@@ -2819,6 +2835,385 @@ function reportEditor(r,isNew){
   };
 }
 
+/* ============================ estimates (takeoff) ============================
+   A low-key estimating tool. Upload drawings, set a scale (tap two points + a length),
+   then draw a duct run down its middle: the length is exact (you draw it) and the app
+   reads out to the bold lines for the width, so it can give linear feet and area.
+   The detected width shows as a shaded band you can confirm or override. */
+const estDrawsOf=id=>S.estdraws.filter(d=>d.estId===id).sort((a,b)=>a.createdAt-b.createdAt);
+const estRunsOf=drawId=>S.estruns.filter(r=>r.drawId===drawId).sort((a,b)=>a.createdAt-b.createdAt);
+const estFind=id=>S.estimates.find(e=>e.id===id);
+const estDrawFind=id=>S.estdraws.find(d=>d.id===id);
+// feet per plan-pixel for a drawing (from its calibration)
+function estFpp(d){ if(!d||!d.cal)return 0; const W=d.w||1,H=d.h||1,c=d.cal;
+  const px=Math.hypot((c.b[0]-c.a[0])*W,(c.b[1]-c.a[1])*H)||1; return c.ft/px; }
+function estLenFt(pts,d){ const W=d.w||1,H=d.h||1,fpp=estFpp(d); let L=0;
+  for(let i=0;i+3<pts.length;i+=2)L+=Math.hypot((pts[i+2]-pts[i])*W,(pts[i+3]-pts[i+1])*H); return L*fpp; }
+// a run's width in feet: manual value, or the auto widthFrac converted with the current scale
+function estWidthFt(r,d){ if(r.widthMode==='manual')return +r.manualWidthFt||0; return (r.widthFrac||0)*(d.w||1)*estFpp(d); }
+function estAreaFt(r,d){ return estLenFt(r.pts,d)*estWidthFt(r,d); }
+// width band thickness as a fraction of plan width, for drawing the overlay
+function estEffFrac(r,d){ const fpp=estFpp(d); if(!fpp||!d.w)return 0; return estWidthFt(r,d)/(d.w*fpp); }
+const ft1=n=>Math.round(n*10)/10;
+const ftIn=n=>{const t=Math.round(n*12); return Math.floor(t/12)+"' "+(t%12)+'"';};
+
+// ---- render a drawing to an offscreen canvas once, for reading widths ----
+let ESTIMG=null; // {drawId, W, H, data}
+async function estImage(d){
+  if(ESTIMG&&ESTIMG.drawId===d.id)return ESTIMG;
+  let canvas;
+  try{
+    const bytes=await loadDrawingPdfBytes(d);
+    if(bytes){const pdf=await pdfjsLib.getDocument({data:bytes}).promise;const pg=await pdf.getPage((d.pageIndex||0)+1);
+      const v1=pg.getViewport({scale:1});const sc=Math.min(4,3000/v1.width);const vp=pg.getViewport({scale:sc});
+      canvas=document.createElement('canvas');canvas.width=Math.round(vp.width);canvas.height=Math.round(vp.height);
+      await pg.render({canvasContext:canvas.getContext('2d',{alpha:false,willReadFrequently:true}),viewport:vp}).promise;}
+  }catch(e){console.warn('est render pdf failed',e);}
+  if(!canvas){ // fall back to the preview image
+    const img=new Image();img.src=d.img;try{await img.decode();}catch(e){}
+    canvas=document.createElement('canvas');canvas.width=img.naturalWidth||d.w||1200;canvas.height=img.naturalHeight||d.h||900;
+    canvas.getContext('2d',{willReadFrequently:true}).drawImage(img,0,0,canvas.width,canvas.height);
+  }
+  const W=canvas.width,H=canvas.height,data=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data;
+  ESTIMG={drawId:d.id,W,H,data};return ESTIMG;
+}
+// read the duct width (plan-width fraction) along a normalized polyline by casting
+// perpendicular rays out to the nearest bold (dark) edge on each side
+function estDetectWidthFrac(pts,img){
+  const {W,H,data}=img;
+  const dark=(x,y)=>{x|=0;y|=0;if(x<0||y<0||x>=W||y>=H)return true;const i=(y*W+x)*4;return (data[i]*0.3+data[i+1]*0.59+data[i+2]*0.11)<140;};
+  const MAX=Math.max(14,Math.round(W*0.02)); // how far to look for a wall
+  function at(px,py,dx,dy){const L=Math.hypot(dx,dy)||1;const nx=-dy/L,ny=dx/L;
+    if(dark(px,py))return null;
+    const cast=s=>{for(let t=1;t<=MAX;t++)if(dark(px+nx*s*t,py+ny*s*t))return t;return -1;};
+    const a=cast(1),b=cast(-1);if(a<0||b<0)return null;return a+b;}
+  const ws=[];
+  for(let i=0;i+3<pts.length;i+=2){const x1=pts[i]*W,y1=pts[i+1]*H,x2=pts[i+2]*W,y2=pts[i+3]*H;
+    const dx=x2-x1,dy=y2-y1,seg=Math.hypot(dx,dy),n=Math.max(2,Math.floor(seg/6));
+    for(let j=0;j<=n;j++){const t=j/n,w=at(x1+dx*t,y1+dy*t,dx,dy);if(w)ws.push(w);}}
+  if(ws.length<3)return null;
+  ws.sort((a,b)=>a-b);const med=ws[Math.floor(ws.length/2)];
+  return {frac:med/W, hit:ws.length};
+}
+
+/* ---------- estimates list ---------- */
+function viewEstimates(app){
+  const ests=[...S.estimates].sort((a,b)=>b.createdAt-a.createdAt);
+  let rows='';
+  ests.forEach(e=>{const nd=estDrawsOf(e.id).length;
+    rows+=`<button class="row" data-est="${e.id}"><span class="thumb">${I.ruler}</span>
+      <span class="grow"><h3>${esc(e.name)}</h3><span class="meta"><span class="mono">${esc(e.number||'—')}</span> · ${nd} drawing${nd!==1?'s':''}</span></span>
+      <span class="chev">${I.chev}</span></button>`;});
+  app.innerHTML=`
+    <div class="topbar"><button class="iconbtn" id="back">${I.back}</button>
+      <div class="ttl"><h1>Estimates</h1><div class="sub">Measure takeoffs</div></div></div>
+    <div class="content">
+      <div class="eyebrow">Estimates</div>
+      ${ests.length?`<div class="card stack" style="padding:0;gap:0">${rows}</div>`
+        :`<div class="empty"><div class="ic">${I.ruler}</div><h2>No estimates yet</h2>
+            <p>Start an estimate to upload drawings, set a scale, and measure duct runs.</p></div>`}
+    </div>
+    <div class="bottombar"><button class="btn primary block" id="newEst">${I.plus} New estimate</button></div>`;
+  const card=app.querySelector('.card.stack');if(card)[...card.children].forEach((c,i)=>{if(i)c.style.borderTop='1px solid var(--line)';});
+  app.querySelector('#back').onclick=back;
+  app.querySelector('#newEst').onclick=()=>estForm();
+  app.querySelectorAll('[data-est]').forEach(b=>b.onclick=()=>go('estimate',{estId:b.dataset.est,estDrawId:null}));
+}
+function estForm(existing){
+  const e=existing||{};const body=document.createElement('div');
+  body.innerHTML=`<div class="field"><label>Estimate number <span class="req">*</span></label>
+      <input class="inp mono" id="e_num" placeholder="e.g. EST-104" value="${esc(e.number||'')}"></div>
+    <div class="field"><label>Job name <span class="req">*</span></label>
+      <input class="inp" id="e_name" placeholder="e.g. Lincoln HS Gym" value="${esc(e.name||'')}"></div>`;
+  const foot=document.createElement('button');foot.className='btn primary block';foot.textContent=existing?'Save':'Create estimate';
+  const ctl=sheetShell({title:existing?'Edit estimate':'New estimate',bodyNode:body,footNode:foot,full:true});
+  const num=body.querySelector('#e_num');setTimeout(()=>num.focus(),250);
+  foot.onclick=async()=>{const n=num.value.trim(),nm=body.querySelector('#e_name').value.trim();
+    if(!n){toast('Enter an estimate number');num.focus();return;}
+    if(!nm){toast('Enter a job name');return;}
+    if(existing){Object.assign(e,{number:n,name:nm});await pPut('estimates',e);ctl.close();render();toast('Saved');}
+    else{const est={id:uid(),number:n,name:nm,createdAt:now()};S.estimates.push(est);await pPut('estimates',est);
+      ctl.close();go('estimate',{estId:est.id,estDrawId:null});toast('Estimate created');}};
+}
+/* ---------- one estimate: drawings + grand total ---------- */
+function viewEstimate(app){
+  const e=estFind(S.estId);if(!e){S.route=['estimates'];return render();}
+  const draws=estDrawsOf(e.id);
+  let totL=0,totA=0;draws.forEach(d=>estRunsOf(d.id).forEach(r=>{totL+=estLenFt(r.pts,d);totA+=estAreaFt(r,d);}));
+  let list='';
+  draws.forEach(d=>{const rs=estRunsOf(d.id);let l=0;rs.forEach(r=>l+=estLenFt(r.pts,d));
+    list+=`<button class="row" data-d="${d.id}"><span class="thumb">${d.img?`<img src="${esc(d.img)}" alt="">`:I.plan}</span>
+      <span class="grow"><h3>${esc(d.name)}</h3><span class="meta">${d.cal?'':'No scale yet · '}${rs.length} run${rs.length!==1?'s':''}${rs.length?' · '+ft1(l)+' lf':''}</span></span>
+      <span class="chev">${I.chev}</span></button>`;});
+  app.innerHTML=`
+    <div class="topbar"><button class="iconbtn" id="back">${I.back}</button>
+      <div class="ttl"><h1>${esc(e.name)}</h1><div class="sub mono">${esc(e.number)}</div></div>
+      <button class="iconbtn" id="estMenu" aria-label="Estimate options">${I.dots}</button></div>
+    <div class="content">
+      <div class="jobhead"><div class="num mono">${esc(e.number)}</div><h2>${esc(e.name)}</h2>
+        <div class="stats"><div class="s"><b>${draws.length}</b><span>Drawings</span></div>
+          <div class="s"><b>${ft1(totL)}</b><span>Linear ft</span></div>
+          <div class="s"><b>${Math.round(totA)}</b><span>Sq ft</span></div></div></div>
+      <div class="section-head"><h2>Drawings</h2></div>
+      ${draws.length?`<div class="card" style="padding:0">${list}</div>`
+        :`<div class="empty"><div class="ic">${I.plan}</div><h2>No drawings yet</h2><p>Upload a PDF to measure.</p></div>`}
+    </div>
+    <div class="bottombar"><button class="btn primary block" id="addEst">${I.upload} Add drawing (PDF)</button></div>
+    <input type="file" id="estInput" accept="application/pdf" class="sr">`;
+  app.querySelectorAll('.content .card').forEach(card=>{[...card.children].forEach((c,i)=>{if(i)c.style.borderTop='1px solid var(--line)';});});
+  app.querySelector('#back').onclick=back;
+  app.querySelector('#estMenu').onclick=()=>estMenu(e);
+  app.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>go('estmeasure',{estDrawId:b.dataset.d}));
+  const input=app.querySelector('#estInput');
+  app.querySelector('#addEst').onclick=()=>input.click();
+  input.onchange=async()=>{const f=input.files[0];input.value='';if(f)await addEstPlanFlow(e,f);};
+}
+function estMenu(e){
+  const body=document.createElement('div');body.className='actionlist';
+  const ren=mkAction(I.edit,'Rename estimate');const del=mkAction(I.trash,'Delete estimate','danger');
+  body.append(ren,mkDiv(),del);const ctl=sheetShell({title:esc(e.name),bodyNode:body});
+  ren.onclick=()=>{ctl.close();estForm(e);};
+  del.onclick=async()=>{ctl.close();
+    if(!await confirmDialog({title:'Delete estimate?',message:`“${e.name}” and its drawings, scale and measured runs will be removed.`,confirmText:'Delete'}))return;
+    for(const d of estDrawsOf(e.id)){for(const r of estRunsOf(d.id)){await pDel('estruns',r.id).catch(()=>{});}
+      try{const ch=await pdfChunksByKey(d.pdfKey);for(const c of ch)await pDel('pdfchunks',c.id);}catch(x){}
+      await pDel('estdrawings',d.id).catch(()=>{});}
+    S.estruns=S.estruns.filter(r=>!estDrawsOf(e.id).some(d=>d.id===r.drawId));
+    S.estdraws=S.estdraws.filter(d=>d.estId!==e.id);
+    S.estimates=S.estimates.filter(x=>x.id!==e.id);await pDel('estimates',e.id).catch(()=>{});
+    S.route=['estimates'];render();toast('Estimate deleted');};
+}
+async function addEstPlanFlow(est,file){
+  const boot=document.getElementById('boot');boot.style.display='grid';
+  let pdf,preview,numPages;
+  try{const buf=await file.arrayBuffer();pdf=await pdfjsLib.getDocument({data:buf}).promise;numPages=pdf.numPages;
+    preview=await renderPagePreview(await pdf.getPage(1));}
+  catch(e){boot.style.display='none';console.error(e);toast('Could not read that PDF');return;}
+  boot.style.display='none';
+  const body=document.createElement('div');const guess=file.name.replace(/\.pdf$/i,'').replace(/[_-]+/g,' ').trim();
+  body.innerHTML=`<div style="border-radius:12px;overflow:hidden;border:1px solid var(--line);margin-bottom:16px;background:var(--surface-2)">
+      <img src="${preview.url}" alt="Preview" style="width:100%;display:block;max-height:240px;object-fit:contain"></div>
+    ${numPages>1?`<div class="pkgbanner" style="margin:0 0 16px">${I.info}<div>This PDF has <b>${numPages} pages</b> — each becomes its own drawing.</div></div>`:''}
+    <div class="field"><label>Drawing name <span class="req">*</span></label>
+      <input class="inp" id="eName" value="${esc(guess)}"></div>`;
+  const foot=document.createElement('button');foot.className='btn primary block';foot.textContent='Save drawing'+(numPages>1?'s':'');
+  const ctl=sheetShell({title:'Name this drawing',bodyNode:body,footNode:foot});
+  const nm=body.querySelector('#eName');setTimeout(()=>{nm.focus();nm.select();},250);
+  foot.onclick=async()=>{const base=nm.value.trim();if(!base){toast('Name the drawing first');nm.focus();return;}
+    foot.disabled=true;const pdfKey=uid();let chunks,added=[];
+    try{chunks=await fileToPdfChunks(file);}catch(e){foot.disabled=false;foot.textContent='Save drawing';toast('Could not read that PDF');return;}
+    try{for(let i=0;i<chunks.length;i++){foot.textContent='Saving PDF… '+(i+1)+'/'+chunks.length;
+        await pPut('pdfchunks',{id:pdfKey+'_'+i,pdfKey,estId:est.id,idx:i,data:chunks[i]});}
+      for(let p=0;p<numPages;p++){const page=await pdf.getPage(p+1);const v1=page.getViewport({scale:1});
+        const prev=p===0?preview:await renderPagePreview(page);
+        const d={id:uid(),estId:est.id,name:numPages>1?(base+' — p'+(p+1)):base,img:prev.url,w:prev.w,h:prev.h,
+          pw:v1.width,ph:v1.height,pdfKey,pageIndex:p,pdfChunks:chunks.length,cal:null,createdAt:now()+p};
+        await pPut('estdrawings',d);S.estdraws.push(d);added.push(d);}
+    }catch(e){console.error(e);foot.disabled=false;foot.textContent='Save drawing';toast('Save failed — check connection');return;}
+    ctl.close();go('estmeasure',{estDrawId:added[0].id});toast(numPages>1?numPages+' drawings added':'Drawing added');};
+}
+
+// parse a length like 20, 20.5, 20', 20' 6", 18in, 6" into feet
+function parseFeet(s){ s=String(s||'').trim().toLowerCase().replace(/[’']/g,"'").replace(/[”"]/g,'"');
+  let m=s.match(/^(\d+(?:\.\d+)?)\s*'\s*(\d+(?:\.\d+)?)?\s*"?$/); if(m)return (+m[1])+(m[2]?(+m[2])/12:0);
+  m=s.match(/^(\d+(?:\.\d+)?)\s*(?:ft|feet|f)?$/); if(m&&/ft|feet|f|^\d/.test(s))return +m[1];
+  m=s.match(/^(\d+(?:\.\d+)?)\s*(?:in|inch|inches|")$/); if(m)return (+m[1])/12;
+  const n=parseFloat(s); return isNaN(n)?null:n; }
+
+let EVW=null; // active estimate measure controller
+function viewEstMeasure(app){
+  const d=estDrawFind(S.estDrawId);if(!d){S.route=['estimate'];return render();}
+  const e=estFind(d.estId)||{};
+  const asp=(d.h||900)/(d.w||1200), VB=1000*asp;
+  app.innerHTML=`
+    <div class="topbar"><button class="iconbtn" id="back">${I.back}</button>
+      <div class="ttl"><h1>${esc(d.name)}</h1><div class="sub" id="evSub"></div></div>
+      <button class="iconbtn" id="evMenu" aria-label="Options">${I.dots}</button></div>
+    <div class="viewer-wrap" id="evWrap">
+      <div class="viewer" id="evp"><div class="canvas-stage" id="estage">
+        <img class="plan" id="eplan" src="${esc(d.img)}" alt="${esc(d.name)}" draggable="false">
+        <svg id="eink" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 ${VB}" preserveAspectRatio="none"></svg>
+        <div id="elabels"></div>
+      </div></div>
+      <div class="viewer-overlay"><div class="vchip" id="evHint"></div>
+        <button class="vchip evtot" id="evTot" hidden></button></div>
+      <div class="zoomcol"><button id="ezin">+</button><button id="ezout">−</button>
+        <button id="ezfit" style="font-size:13px;font-weight:700">FIT</button></div>
+    </div>
+    <div class="bottombar" id="evbar"></div>`;
+  const wrap=app.querySelector('#evWrap'),viewer=app.querySelector('#evp'),stage=app.querySelector('#estage');
+  const ink=app.querySelector('#eink'),labels=app.querySelector('#elabels'),hint=app.querySelector('#evHint');
+  const sub=app.querySelector('#evSub'),totBtn=app.querySelector('#evTot'),vbar=app.querySelector('#evbar');
+  let baseW=viewer.clientWidth||360, baseH=baseW*asp;
+  let scale=1,tx=0,ty=0, mode='view', temp=[]; // temp: flat normalized pts being placed
+  EVW={get scale(){return scale;},nc:(nx,ny)=>{const r=viewer.getBoundingClientRect();return [r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];}};
+  const apply=()=>{stage.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;drawLabels();};
+  function setBase(){baseW=viewer.clientWidth||360;baseH=baseW*asp;stage.style.width=baseW+'px';stage.style.height=baseH+'px';
+    const img=app.querySelector('#eplan');img.style.width=baseW+'px';img.style.height=baseH+'px';
+    ink.style.width=baseW+'px';ink.style.height=baseH+'px';labels.style.width=baseW+'px';labels.style.height=baseH+'px';}
+  function fit(){setBase();const vw=viewer.clientWidth,vh=viewer.clientHeight;scale=Math.min(vw/baseW,vh/baseH);
+    tx=(vw-baseW*scale)/2;ty=(vh-baseH*scale)/2;apply();}
+  const toNorm=(cx,cy)=>{const r=viewer.getBoundingClientRect();return {nx:((cx-r.left)-tx)/(scale*baseW),ny:((cy-r.top)-ty)/(scale*baseH)};};
+  const toPx=(nx,ny)=>[nx*1000,ny*VB];
+
+  function renderInk(){
+    let h='';
+    // saved runs
+    estRunsOf(d.id).forEach(r=>{const sw=estEffFrac(r,d)*1000; h+=runPath(r.pts,sw,'var(--accent)',r.id);});
+    // calibration line
+    if(d.cal){const [ax,ay]=toPx(d.cal.a[0],d.cal.a[1]),[bx,by]=toPx(d.cal.b[0],d.cal.b[1]);
+      h+=`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="var(--warn)" stroke-width="2.5" stroke-dasharray="7 5" vector-effect="non-scaling-stroke"/>`;}
+    // temp placing
+    if(temp.length>=2){h+=runPath(temp,0,mode==='cal'?'var(--warn)':'var(--mk-exhaust)','tmp',true);}
+    for(let i=0;i<temp.length;i+=2){const [x,y]=toPx(temp[i],temp[i+1]);h+=`<circle cx="${x}" cy="${y}" r="5" fill="${mode==='cal'?'var(--warn)':'var(--mk-exhaust)'}" vector-effect="non-scaling-stroke"/>`;}
+    ink.innerHTML=h;ink.querySelectorAll('[data-run]').forEach(el=>el.addEventListener('click',ev=>{ev.stopPropagation();runSheet(el.getAttribute('data-run'));}));
+  }
+  function runPath(pts,sw,col,id,temp){let dstr='';for(let i=0;i<pts.length;i+=2){const [x,y]=toPx(pts[i],pts[i+1]);dstr+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}
+    let s='';
+    if(sw>0)s+=`<path d="${dstr}" fill="none" stroke="color-mix(in srgb,${col} 32%,transparent)" stroke-width="${sw}" stroke-linecap="butt" stroke-linejoin="round"/>`;
+    s+=`<path d="${dstr}" fill="none" stroke="${col}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${temp?' stroke-dasharray="6 4"':` data-run="${id}" style="cursor:pointer"`}/>`;
+    return s;}
+  function drawLabels(){
+    let h='';estRunsOf(d.id).forEach(r=>{if(r.pts.length<4)return;const mid=Math.floor(r.pts.length/4)*2;
+      const nx=(r.pts[mid]+r.pts[mid+2>=r.pts.length?mid:mid+2])/2,ny=(r.pts[mid+1]+r.pts[mid+3>=r.pts.length?mid+1:mid+3])/2;
+      h+=`<div class="elabel" style="left:${nx*baseW}px;top:${ny*baseH}px;transform:translate(-50%,-50%) scale(${1/scale})">${ft1(estLenFt(r.pts,d))} lf · ${ftIn(estWidthFt(r,d))}</div>`;});
+    labels.innerHTML=h;}
+
+  function refresh(){renderInk();drawLabels();updateChrome();}
+  function updateChrome(){
+    sub.textContent=d.cal?('Scale set · '+estRunsOf(d.id).length+' run'+(estRunsOf(d.id).length!==1?'s':'')):'No scale yet — set one first';
+    let L=0,A=0;estRunsOf(d.id).forEach(r=>{L+=estLenFt(r.pts,d);A+=estAreaFt(r,d);});
+    if(estRunsOf(d.id).length){totBtn.hidden=false;totBtn.innerHTML=`${I.ruler}<b>${ft1(L)}</b> lf · <b>${Math.round(A)}</b> sq ft`;}
+    else totBtn.hidden=true;
+    renderBar();
+  }
+  function renderBar(){
+    document.documentElement.classList.toggle('placing',mode!=='view');
+    if(mode==='view'){
+      hint.innerHTML=d.cal?`${I.move}<span>Pinch to zoom · drag&nbsp;to&nbsp;pan</span>`:`${I.info}<span>Set the scale to start measuring</span>`;
+      vbar.innerHTML=`<button class="btn" id="eCal">${I.ruler} ${d.cal?'Scale':'Set scale'}</button>
+        <button class="btn primary block" id="eRun"${d.cal?'':' disabled style="opacity:.5"'}>${I.pen} Measure run</button>`;
+      vbar.querySelector('#eCal').onclick=startCal;
+      vbar.querySelector('#eRun').onclick=()=>{if(!d.cal){toast('Set the scale first');return;}startRun();};
+    }else if(mode==='cal'){
+      hint.innerHTML=`${I.ruler}<span>Tap the two ends of a known length (${2-Math.floor(temp.length/2)} left)</span>`;
+      vbar.innerHTML=`<button class="btn block" id="eUndo"${temp.length?'':' disabled style="opacity:.5"'}>${I.undo} Undo</button>
+        <button class="btn primary block" id="eCancel">${I.x} Cancel</button>`;
+      vbar.querySelector('#eUndo').onclick=()=>{temp=temp.slice(0,-2);refresh();};
+      vbar.querySelector('#eCancel').onclick=()=>{mode='view';temp=[];refresh();};
+    }else{
+      const nv=temp.length/2;
+      hint.innerHTML=`${I.pen}<span>Tap along the duct${nv?' · '+nv+' point'+(nv!==1?'s':''):''}</span>`;
+      vbar.innerHTML=`<div class="drawbar"><button class="dt" id="eUndo"${temp.length?'':' disabled style="opacity:.4"'}>${I.undo}</button>
+        <button class="btn block" id="eCancel">Cancel</button>
+        <button class="btn primary done" id="eDone"${temp.length>=4?'':' disabled style="opacity:.5"'}>Done</button></div>`;
+      vbar.querySelector('#eUndo').onclick=()=>{temp=temp.slice(0,-2);refresh();};
+      vbar.querySelector('#eCancel').onclick=()=>{mode='view';temp=[];refresh();};
+      vbar.querySelector('#eDone').onclick=finishRun;
+    }
+  }
+  function startCal(){mode='cal';temp=[];refresh();}
+  function startRun(){mode='run';temp=[];refresh();}
+  function addPoint(cx,cy){const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap on the drawing');return;}
+    temp.push(+nx.toFixed(5),+ny.toFixed(5));
+    if(mode==='cal'&&temp.length===4)askLength();
+    else refresh();}
+  function askLength(){
+    const body=document.createElement('div');
+    body.innerHTML=`<p class="cl-note">How long is the line you just drew?</p>
+      <div class="field" style="margin-top:12px"><label>Length</label>
+      <input class="inp" id="calLen" inputmode="decimal" placeholder="e.g. 20 or 20' 6&quot;"></div>`;
+    const foot=document.createElement('button');foot.className='btn primary block';foot.textContent='Set scale';
+    const ctl=sheetShell({title:'Set scale',bodyNode:body,footNode:foot});
+    const inp=body.querySelector('#calLen');setTimeout(()=>inp.focus(),250);
+    inp.onkeydown=ev=>{if(ev.key==='Enter')foot.click();};
+    const cancel=()=>{mode='view';temp=[];refresh();};
+    ctl.scrim.addEventListener('click', e=>{if(e.target===ctl.scrim)cancel();});
+    foot.onclick=async()=>{const ft=parseFeet(inp.value);if(!ft||ft<=0){toast('Enter a length in feet');inp.focus();return;}
+      d.cal={a:[temp[0],temp[1]],b:[temp[2],temp[3]],ft};await pPut('estdrawings',d).catch(()=>toast('Not saved — check connection'));
+      ctl.close();mode='view';temp=[];refresh();toast('Scale set');};
+  }
+  async function finishRun(){
+    if(temp.length<4){toast('Tap at least two points');return;}
+    const pts=temp.slice();const run={id:uid(),estId:d.estId,drawId:d.id,pts,widthMode:'auto',widthFrac:0,manualWidthFt:0,label:'',createdAt:now()};
+    mode='view';temp=[];hint.innerHTML=`${I.info}<span>Reading width…</span>`;
+    try{const img=await estImage(d);const w=estDetectWidthFrac(pts,img);
+      if(w&&w.frac>0){run.widthFrac=w.frac;}
+      else{run.widthMode='manual';run.manualWidthFt=1;toast('Couldn’t read the width — set it by hand');}
+    }catch(e){console.warn(e);run.widthMode='manual';run.manualWidthFt=1;}
+    S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));
+    refresh();runSheet(run.id);
+  }
+  function runSheet(id){
+    const r=S.estruns.find(x=>x.id===id);if(!r)return;
+    const body=document.createElement('div');
+    const draw=()=>{const cur=S.estruns.find(x=>x.id===id);if(!cur){ctl.close();return;}
+      body.innerHTML=`<div class="cl-stat"><div class="cl-statrow">${I.ruler}<span>Linear <b>${ft1(estLenFt(cur.pts,d))} ft</b> · width <b>${ftIn(estWidthFt(cur,d))}</b> · area <b>${Math.round(estAreaFt(cur,d))} sq ft</b></span></div>
+        <div class="cl-statrow"><span>Width read ${cur.widthMode==='auto'?'automatically from the drawing':'by hand'}.</span></div></div>
+        <div class="field" style="margin-top:14px"><label>Label (optional)</label><input class="inp" id="rLabel" value="${esc(cur.label||'')}" placeholder="e.g. Main supply"></div>
+        <div class="seg" id="rWmode" style="margin-top:8px"><button type="button" data-w="auto"${cur.widthMode==='auto'?' class="on"':''}>Auto width</button><button type="button" data-w="manual"${cur.widthMode==='manual'?' class="on"':''}>Set width</button></div>
+        ${cur.widthMode==='manual'?`<div class="field" style="margin-top:10px"><label>Duct width</label><input class="inp" id="rWidth" inputmode="decimal" value="${ftIn(estWidthFt(cur,d))}" placeholder="e.g. 12&quot;"></div>`:''}
+        <button type="button" class="btn danger" id="rDel" style="width:100%;margin-top:18px">Delete run</button>`;
+      body.querySelector('#rLabel').onchange=ev=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.label=ev.target.value.trim();pPut('estruns',c).catch(()=>{});};
+      body.querySelectorAll('[data-w]').forEach(b=>b.onclick=async()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;
+        if(b.dataset.w==='manual'){c.widthMode='manual';if(!c.manualWidthFt)c.manualWidthFt=estWidthFt(c,d)||1;}
+        else{c.widthMode='auto';if(!c.widthFrac){try{const img=await estImage(d);const w=estDetectWidthFrac(c.pts,img);if(w)c.widthFrac=w.frac;}catch(e){}}}
+        pPut("estruns",c).catch(()=>{});draw();refresh();});
+      const wi=body.querySelector('#rWidth');if(wi)wi.onchange=ev=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;const ft=parseFeet(ev.target.value);if(ft&&ft>0){c.manualWidthFt=ft;pPut('estruns',c).catch(()=>{});draw();refresh();}else{toast('Enter a width');}};
+      body.querySelector('#rDel').onclick=async()=>{if(!await confirmDialog({title:'Delete run?',message:'This measured run will be removed.',confirmText:'Delete'}))return;
+        S.estruns=S.estruns.filter(x=>x.id!==id);pDel('estruns',id).catch(()=>{});ctl.close();refresh();toast('Run deleted');};
+    };
+    const ctl=sheetShell({title:'Measured run',bodyNode:body});draw();
+  }
+  function recalibrateNote(){ // when scale changes, auto widths (widthFrac) stay valid; nothing to recompute
+  }
+  app.querySelector('#back').onclick=()=>{EVW=null;back();};
+  app.querySelector('#evMenu').onclick=()=>{
+    const body=document.createElement('div');body.className='actionlist';
+    const rc=mkAction(I.ruler,d.cal?'Reset scale':'Set scale');const rl=mkAction(I.list,'Runs ('+estRunsOf(d.id).length+')');
+    const del=mkAction(I.trash,'Delete drawing','danger');body.append(rc,rl,mkDiv(),del);
+    const c=sheetShell({title:esc(d.name),bodyNode:body});
+    rc.onclick=()=>{c.close();startCal();};
+    rl.onclick=()=>{c.close();runsListSheet();};
+    del.onclick=async()=>{c.close();if(!await confirmDialog({title:'Delete drawing?',message:'This drawing, its scale and its runs will be removed.',confirmText:'Delete'}))return;
+      for(const r of estRunsOf(d.id))await pDel('estruns',r.id).catch(()=>{});S.estruns=S.estruns.filter(r=>r.drawId!==d.id);
+      try{const ch=await pdfChunksByKey(d.pdfKey);for(const x of ch)await pDel('pdfchunks',x.id);}catch(x){}
+      S.estdraws=S.estdraws.filter(x=>x.id!==d.id);await pDel('estdrawings',d.id).catch(()=>{});
+      EVW=null;S.route=['estimate'];render();toast('Drawing deleted');};
+  };
+  function runsListSheet(){
+    const body=document.createElement('div');const rs=estRunsOf(d.id);
+    let L=0,A=0;rs.forEach(r=>{L+=estLenFt(r.pts,d);A+=estAreaFt(r,d);});
+    body.innerHTML=(rs.length?rs.map((r,i)=>`<button type="button" class="row" data-r="${r.id}"><span class="grow"><h3 style="font-size:15px">${esc(r.label||('Run '+(i+1)))}</h3>
+        <span class="meta">${ft1(estLenFt(r.pts,d))} lf · ${ftIn(estWidthFt(r,d))} · ${Math.round(estAreaFt(r,d))} sq ft</span></span><span class="chev">${I.chev}</span></button>`).join('')
+      :`<p class="cl-note">No runs yet.</p>`)+`<div class="cl-stat" style="margin-top:12px"><div class="cl-statrow">${I.ruler}<span>Total <b>${ft1(L)} lf</b> · <b>${Math.round(A)} sq ft</b></span></div></div>`;
+    const ctl=sheetShell({title:'Runs',bodyNode:body,full:true});
+    body.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{ctl.close();runSheet(b.dataset.r);});
+  }
+  app.querySelector('#ezin').onclick=()=>{scale=Math.min(14,scale*1.4);apply();};
+  app.querySelector('#ezout').onclick=()=>{scale=Math.max(0.2,scale/1.4);apply();};
+  app.querySelector('#ezfit').onclick=fit;
+  totBtn.onclick=runsListSheet;
+
+  // ---- pan / zoom / tap ----
+  const ptrs=new Map();let panStart=null,pinch=null,moved=0,downXY=null;
+  viewer.addEventListener('pointerdown',ev=>{viewer.setPointerCapture(ev.pointerId);ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+    if(ptrs.size===1){panStart={x:ev.clientX,y:ev.clientY,tx,ty};downXY={x:ev.clientX,y:ev.clientY};moved=0;}
+    else if(ptrs.size===2){const p=[...ptrs.values()];const mx=(p[0].x+p[1].x)/2,my=(p[0].y+p[1].y)/2;
+      const r=viewer.getBoundingClientRect();pinch={d:Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y),scale,cx:mx-r.left,cy:my-r.top,
+        ax:((mx-r.left)-tx)/scale,ay:((my-r.top)-ty)/scale};panStart=null;}});
+  viewer.addEventListener('pointermove',ev=>{if(!ptrs.has(ev.pointerId))return;ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+    if(pinch&&ptrs.size>=2){const p=[...ptrs.values()];const nd=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y)||1;
+      scale=Math.max(0.2,Math.min(16,pinch.scale*(nd/pinch.d)));tx=pinch.cx-pinch.ax*scale;ty=pinch.cy-pinch.ay*scale;apply();}
+    else if(panStart&&ptrs.size===1){tx=panStart.tx+(ev.clientX-panStart.x);ty=panStart.ty+(ev.clientY-panStart.y);
+      moved=Math.max(moved,Math.hypot(ev.clientX-downXY.x,ev.clientY-downXY.y));apply();}});
+  function up(ev){if(!ptrs.has(ev.pointerId))return;const was1=ptrs.size===1;ptrs.delete(ev.pointerId);
+    if(ptrs.size<2)pinch=null;if(ptrs.size===0){if(was1&&moved<6&&mode!=='view')addPoint(ev.clientX,ev.clientY);panStart=null;}}
+  viewer.addEventListener('pointerup',up);viewer.addEventListener('pointercancel',up);
+
+  requestAnimationFrame(()=>{fit();refresh();});
+}
+
 /* ============================ export: interactive PDF ============================ */
 const dataUrlToBytes=u=>b64ToBytes(String(u).split(',')[1]||'');
 async function fetchBytes(url){const r=await fetch(url);return new Uint8Array(await r.arrayBuffer());}
@@ -3119,7 +3514,8 @@ function bootError(msg){
 }
 // what the app loads at startup: [state key, Firestore collection]
 const BOOT_STORES=[['jobs','jobs'],['drawings','drawings'],['reports','reports'],['markers','markers'],
-  ['users','users'],['groups','mkgroups'],['checklist','checklist']];
+  ['users','users'],['groups','mkgroups'],['checklist','checklist'],
+  ['estimates','estimates'],['estdraws','estdrawings'],['estruns','estruns']];
 // all collections at once. source 'cache' = what this phone already saved (instant, works with no signal)
 async function loadStores(source){
   const out={};

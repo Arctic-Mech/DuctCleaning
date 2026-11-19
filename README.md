@@ -41,6 +41,12 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   - Tag numbers close up after a delete (delete 24 and 25 becomes 24).
 - **Job lists**: reports, cleaning access tags, exhaust tags, notes, and access doors needed
   (filterable by group, copyable).
+- **Estimate** (low-key link in the home top bar): a measuring takeoff tool. Create an estimate
+  (number + job name), upload drawings, then **set a scale** (tap two points and type the real
+  length). **Measure run**: tap along a duct run following its bends — the length is exact because
+  you draw it, and the app reads sideways out to the bold lines to get the width, giving linear feet
+  and area. The detected width shows as a shaded band and can be overridden by hand. Per-run and
+  per-estimate totals (linear ft / sq ft).
 - **Export**: choose what the PDF includes — **Reports**, **Markups**, or **Both**.
   - *Reports*: each plan is a full-resolution vector page with numbered pins; tapping a pin jumps to
     that report's page.
@@ -69,6 +75,9 @@ Firebase Storage is not used, so the project stays on the free Spark plan.
 | `users`     | People, keyed by name (`u_first_last`) |
 | `mkgroups`  | Markup groups, owned by a person, with their set color |
 | `checklist` | Truck checklist items: who checked each one and when, replacement order, replacement history and replace-by date |
+| `estimates` | Estimate takeoffs: number + job name |
+| `estdrawings` | Estimate drawings (PDF per page) with their scale calibration |
+| `estruns` | Measured duct runs: centerline points, detected/entered width |
 
 ### One-time setup
 Because there is no login, the Firestore rules must allow open access:
