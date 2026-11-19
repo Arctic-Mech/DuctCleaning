@@ -384,7 +384,10 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .cl-chev{color:var(--faint);transition:transform .2s;flex:none;display:grid}
 .cl-chev svg{width:20px;height:20px}
 .cl-chev.open{transform:rotate(90deg)}
-.cl-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;padding:8px}
+.cl-board{display:flex;gap:8px;padding:8px;align-items:flex-start;overflow-x:auto}
+.cl-col{flex:1 1 150px;min-width:150px;display:flex;flex-direction:column;gap:8px}
+.cl-who{display:flex;align-items:flex-start;gap:4px;font-size:11.5px;color:var(--muted);line-height:1.25}
+.cl-who svg{width:12px;height:12px;color:var(--good);flex:none;margin-top:1px}
 .cl-cell{display:flex;align-items:stretch;gap:4px;border:1px solid var(--line);border-radius:11px;
   background:var(--surface-2);min-height:50px;overflow:hidden}
 .cl-cell.in{border-color:color-mix(in srgb,var(--good) 45%,var(--line));background:color-mix(in srgb,var(--good) 9%,var(--surface-2))}
@@ -430,17 +433,23 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .cl-add .btn{flex:none}
 .cl-tip{color:var(--faint);font-size:12.5px;margin:6px 2px 14px}
 .cl-tip svg{width:14px;height:14px;vertical-align:-2px}
-/* reorder list */
-.cl-rlist{display:flex;flex-direction:column;gap:6px}
-.cl-rrow{display:flex;align-items:center;gap:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);
-  padding:0 4px 0 0;position:relative;transition:transform .16s ease}
-.cl-rlist.sorting .cl-rrow{user-select:none;-webkit-user-select:none}
-.cl-rrow.dragging{transition:none;z-index:2;background:var(--surface);box-shadow:0 10px 24px rgba(0,0,0,.22);border-color:var(--accent)}
-.cl-drag{width:46px;align-self:stretch;min-height:50px;display:grid;place-items:center;color:var(--faint);flex:none;
+/* drag-around layout editor (columns of chips) */
+.cl-eboard{display:flex;gap:8px;align-items:flex-start;overflow-x:auto;padding-bottom:4px;touch-action:pan-y}
+.cl-eboard.sorting{touch-action:none;cursor:grabbing}
+.cl-ecol{flex:1 0 150px;min-width:150px;display:flex;flex-direction:column;gap:6px;min-height:52px;
+  border:1px dashed transparent;border-radius:var(--radius-sm);padding:2px}
+.cl-eboard.sorting .cl-ecol{border-color:var(--line)}
+.cl-addcol{align-items:center;justify-content:center;color:var(--faint);font-size:11.5px;text-align:center;
+  border:1px dashed var(--line);min-height:62px}
+.cl-echip{display:flex;align-items:center;gap:2px;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:var(--radius-sm);padding:0 2px 0 0}
+.cl-echip.floating{box-shadow:0 12px 28px rgba(0,0,0,.3);border-color:var(--accent);background:var(--surface)}
+.cl-eph{border:1px dashed var(--accent);border-radius:var(--radius-sm);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.cl-egrip{width:38px;align-self:stretch;min-height:46px;display:grid;place-items:center;color:var(--faint);flex:none;
   touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
-.cl-rrow.dragging .cl-drag{color:var(--accent);cursor:grabbing}
-.cl-drag svg{width:20px;height:20px}
-.cl-rname{flex:1;min-width:0;border:none;background:none;text-align:left;color:var(--fg);font:600 15.5px var(--font-body);padding:12px 0}
+.cl-egrip svg{width:19px;height:19px}
+.cl-ename{flex:1;min-width:0;border:none;background:none;text-align:left;color:var(--fg);font:600 14px var(--font-body);
+  padding:11px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* item editor */
 .cl-instat{display:flex;align-items:flex-start;gap:6px;font-size:13.5px;color:var(--muted);margin:10px 2px 0;line-height:1.4}
 .cl-instat b{color:var(--fg)}
@@ -472,7 +481,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .cl-hrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0 4px 2px;border-bottom:1px solid var(--line);font-size:14.5px;color:var(--muted)}
 .cl-hrow b{color:var(--fg)}
 .cl-hrow .ib{color:var(--faint)}
-.cl-rrow .cl-del{color:var(--danger)}
+.cl-echip .cl-del{color:var(--danger)}
 .vchip svg{width:16px;height:16px}
 #hires{position:absolute;left:0;top:0;pointer-events:none;display:none}
 .zoomcol{position:absolute;right:max(12px,env(safe-area-inset-right,0px));
@@ -846,7 +855,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 07:06';
+const BUILD='Nov 19 07:20';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -1143,7 +1152,12 @@ function viewJobs(app){
    One shared list. The box checks an item off (name + time); tapping the item opens its editor:
    replacement ordered (date + name), replacement tracking + history, and when it needs replacing.
    Checking off an ordered item means it arrived, so the order clears. */
-const clSorted=()=>[...S.checklist].sort((a,b)=>(a.pos??0)-(b.pos??0)||(a.createdAt||0)-(b.createdAt||0));
+const clSorted=()=>[...S.checklist].sort((a,b)=>(a.col||0)-(b.col||0)||(a.pos??0)-(b.pos??0)||(a.createdAt||0)-(b.createdAt||0));
+// the checklist as laid-out columns (non-empty, in order); each column is its items top-to-bottom
+function clBoard(){const by={};S.checklist.forEach(it=>{(by[it.col||0]=by[it.col||0]||[]).push(it);});
+  return Object.keys(by).map(Number).sort((a,b)=>a-b).map(c=>by[c].sort((x,y)=>(x.pos??0)-(y.pos??0)||(x.createdAt||0)-(y.createdAt||0)));}
+// write col/pos so columns are 0..n with no gaps and each column's positions are 0..m
+function clReindex(){clBoard().forEach((col,c)=>col.forEach((it,pos)=>{if(it.col!==c||it.pos!==pos){it.col=c;it.pos=pos;pPut('checklist',it).catch(()=>{});}}));}
 const CL_ASK={title:'What’s your name?',why:'So check-offs show who checked them.'};
 const fullName=u=>(u.first+' '+u.last).trim();
 const sameYear=t=>new Date(t).getFullYear()===new Date().getFullYear();
@@ -1216,17 +1230,19 @@ function renderChecklistCard(card){
     if(it.orderedAt)b.push('<span class="cl-bdg ord">Ordered</span>');
     if(it.trackReplace&&due)b.push(`<span class="cl-bdg ${due.cls==='over'?'over':due.cls==='soon'?'soon':'rep'}">${due.cls==='over'?'Overdue':'Due '+esc(fmtDay(it.replaceBy))}</span>`);
     else if(it.trackReplace&&it.replacedAt)b.push(`<span class="cl-bdg rep">${esc(agoDays(it.replacedAt))}</span>`);
+    const who=it.checkedAt?`<span class="cl-who">${I.check}<span>${esc(it.checkedName||'')} · ${esc(fmtStamp(it.checkedAt))}</span></span>`:'';
     return `<div class="cl-cell${it.checkedAt?' in':''}" data-cl="${it.id}">
       <button type="button" class="cl-check" data-check="${it.id}" aria-pressed="${!!it.checkedAt}" aria-label="${it.checkedAt?'Uncheck':'Check off'} ${esc(it.name)}"><span class="cl-box">${I.check}</span></button>
       <button type="button" class="cl-open" data-edit="${it.id}">
-        <span class="cl-name">${esc(it.name)}</span>${b.length?`<span class="cl-badges">${b.join('')}</span>`:''}</button>
+        <span class="cl-name">${esc(it.name)}</span>${who}${b.length?`<span class="cl-badges">${b.join('')}</span>`:''}</button>
     </div>`;
   };
+  const board=clBoard();
   card.innerHTML=`<button type="button" class="cl-head" id="clHead" aria-expanded="${open}">
       <span class="cl-sum"><span><b>${nIn}</b> of ${items.length} in truck${nNeed?` · <span class="cl-warn">${nNeed} to order</span>`:''}${nOrd?` · <span class="cl-warn">${nOrd} ordered</span>`:''}${nOver?` · <span class="cl-over">${nOver} overdue</span>`:''}</span>
         <span class="cl-bar"><i style="width:${Math.round(nIn/items.length*100)}%"></i></span></span>
       <span class="cl-chev${open?' open':''}">${I.chev}</span></button>
-    ${open?`<div class="cl-list">${items.map(row).join('')}</div>`:''}`;
+    ${open?`<div class="cl-board">${board.map(col=>`<div class="cl-col">${col.map(row).join('')}</div>`).join('')}</div>`:''}`;
   card.querySelector('#clHead').onclick=()=>{CL_OPEN=!open;renderChecklistCard(card);};
   card.querySelectorAll('[data-check]').forEach(b=>b.onclick=()=>clToggle(b.dataset.check));
   card.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>clItemSheet(b.dataset.edit));
@@ -1249,8 +1265,7 @@ function clToggle(id){
 }
 function clRemove(id){
   S.checklist=S.checklist.filter(x=>x.id!==id);pDel('checklist',id).catch(()=>{});
-  clSorted().forEach((x,k)=>{if(x.pos!==k){x.pos=k;pPut('checklist',x).catch(()=>{});}});
-  clChanged();
+  clReindex();clChanged();
 }
 // tap an item: name, replacement ordered, track replacements, when it needs replacing, history
 function clItemSheet(id){
@@ -1329,37 +1344,48 @@ function clItemSheet(id){
   CL_SUBS.add(sub);draw();
 }
 // drag rows by their handle; onDrop(fromIndex,toIndex)
-function dragReorder(list,rowSel,onDrop){
-  list.addEventListener('pointerdown',e=>{
-    const h=e.target.closest('.cl-drag');if(!h||!list.contains(h)||(e.button!==undefined&&e.button>0))return;
-    e.preventDefault();
-    const rows=[...list.querySelectorAll(rowSel)],row=h.closest(rowSel),from=rows.indexOf(row);if(from<0)return;
-    const scroller=list.closest('.sheet-body')||document.scrollingElement;
-    const rects=rows.map(r=>r.getBoundingClientRect());
-    const gap=rows.length>1?Math.max(0,rects[1].top-rects[0].bottom):0,shift=rects[from].height+gap;
-    const startY=e.clientY,startScroll=scroller.scrollTop;let lastY=startY,to=from,raf=0;
-    list.classList.add('sorting');row.classList.add('dragging');
-    try{h.setPointerCapture(e.pointerId);}catch(_){}
-    const layout=()=>{
-      const dy=lastY-startY+(scroller.scrollTop-startScroll);
-      row.style.transform=`translateY(${dy}px)`;
-      const mid=rects[from].top+rects[from].height/2+dy;let t=0;
-      rects.forEach((r,i)=>{if(i!==from&&r.top+r.height/2<mid)t++;});to=t;
-      rows.forEach((r,i)=>{if(i===from)return;const s=from<to&&i>from&&i<=to?-shift:from>to&&i>=to&&i<from?shift:0;r.style.transform=s?`translateY(${s}px)`:'';});
+// drag items around a column board (grip to lift, drop into any column — new column at the end)
+function clCommit(order){
+  order.forEach((ids,c)=>ids.forEach((id,pos)=>{const it=clFind(id);
+    if(it&&(it.col!==c||it.pos!==pos)){it.col=c;it.pos=pos;pPut('checklist',it).catch(()=>{});}}));
+  clChanged();
+}
+function boardDrag(board,onCommit){
+  board.addEventListener('pointerdown',e=>{
+    const grip=e.target.closest('.cl-egrip');if(!grip||!board.contains(grip)||(e.button!==undefined&&e.button>0))return;
+    const chip=grip.closest('.cl-echip');if(!chip)return;e.preventDefault();
+    const scroller=board.closest('.sheet-body')||document.scrollingElement;
+    const rect=chip.getBoundingClientRect();
+    const float=chip.cloneNode(true);float.classList.add('floating');
+    float.style.cssText=`position:fixed;left:0;top:0;width:${rect.width}px;pointer-events:none;z-index:200;margin:0`;
+    document.body.appendChild(float);
+    const ph=document.createElement('div');ph.className='cl-eph';ph.style.height=rect.height+'px';
+    chip.parentNode.insertBefore(ph,chip.nextSibling);chip.style.display='none';
+    board.classList.add('sorting');
+    const offX=e.clientX-rect.left,offY=e.clientY-rect.top;let lastX=e.clientX,lastY=e.clientY,raf=0;
+    try{grip.setPointerCapture(e.pointerId);}catch(_){}
+    const place=()=>{
+      float.style.transform=`translate(${lastX-offX}px,${lastY-offY}px)`;
+      const cols=[...board.querySelectorAll('.cl-ecol')];let col=cols[0],best=1e9;
+      cols.forEach(c=>{const r=c.getBoundingClientRect();const cx=Math.max(r.left,Math.min(lastX,r.right));
+        const dd=Math.abs(cx-(r.left+r.right)/2);if(dd<best){best=dd;col=c;}});
+      const chips=[...col.querySelectorAll('.cl-echip')].filter(c=>c!==chip);
+      let before=null;for(const c of chips){const r=c.getBoundingClientRect();if(lastY<r.top+r.height/2){before=c;break;}}
+      col.insertBefore(ph,before);
     };
     const tick=()=>{const sr=scroller.getBoundingClientRect();let v=0;
       if(lastY<sr.top+60)v=-Math.ceil((sr.top+60-lastY)/5);else if(lastY>sr.bottom-60)v=Math.ceil((lastY-sr.bottom+60)/5);
-      if(v){const b=scroller.scrollTop;scroller.scrollTop+=v;if(scroller.scrollTop!==b)layout();}
-      raf=requestAnimationFrame(tick);};
-    raf=requestAnimationFrame(tick);
-    const move=ev=>{if(ev.pointerId!==e.pointerId)return;ev.preventDefault();lastY=ev.clientY;layout();};
+      if(v){const b=scroller.scrollTop;scroller.scrollTop+=v;if(scroller.scrollTop!==b)place();}raf=requestAnimationFrame(tick);};
+    place();raf=requestAnimationFrame(tick);
+    const move=ev=>{if(ev.pointerId!==e.pointerId)return;ev.preventDefault();lastX=ev.clientX;lastY=ev.clientY;place();};
     const up=ev=>{if(ev.pointerId!==e.pointerId)return;cancelAnimationFrame(raf);
       window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);
-      rows.forEach(r=>r.style.transform='');row.classList.remove('dragging');list.classList.remove('sorting');
-      // a drag that ends over the dimmed backdrop must not count as a tap that closes the sheet
-      if(Math.abs(lastY-startY)>4){const eat=ev=>{ev.stopPropagation();ev.preventDefault();};
-        window.addEventListener('click',eat,true);setTimeout(()=>window.removeEventListener('click',eat,true),350);}
-      if(to!==from)onDrop(from,to);};
+      float.remove();ph.parentNode.insertBefore(chip,ph);ph.remove();chip.style.display='';board.classList.remove('sorting');
+      const moved=Math.abs(lastX-e.clientX)+Math.abs(lastY-e.clientY)>4;
+      if(moved){const eat=ev=>{ev.stopPropagation();ev.preventDefault();};window.addEventListener('click',eat,true);setTimeout(()=>window.removeEventListener('click',eat,true),350);}
+      const order=[...board.querySelectorAll('.cl-ecol')].map(c=>[...c.querySelectorAll('.cl-echip')].map(x=>x.dataset.id)).filter(a=>a.length);
+      onCommit(order);
+    };
     window.addEventListener('pointermove',move,{passive:false});window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);
   });
 }
@@ -1367,18 +1393,18 @@ function checklistEditSheet(){
   const body=document.createElement('div');
   body.innerHTML=`<div class="cl-add"><input class="inp" id="clNew" placeholder="Add an item" enterkeyhint="enter" autocapitalize="sentences">
       <button type="button" class="btn primary" id="clAddBtn">${I.plus} Add</button></div>
-    <p class="cl-tip">Paste a list to add several at once. Drag ${I.grip} to reorder, tap a name to edit it.</p>
-    <div id="clEditList" class="cl-rlist"></div>
+    <p class="cl-tip">Paste a list to add several at once. Drag ${I.grip} to move items between columns; drop at the end for a new column. Tap a name to edit it.</p>
+    <div id="clEditBoard" class="cl-eboard"></div>
     <button type="button" class="btn danger" id="clReset" style="margin-top:18px;width:100%">Uncheck everything (new check)</button>`;
   const foot=document.createElement('button');foot.className='btn primary block';foot.textContent='Done';
   const ctl=sheetShell({title:'Edit checklist',bodyNode:body,footNode:foot});
-  const inp=body.querySelector('#clNew'),list=body.querySelector('#clEditList');
+  const inp=body.querySelector('#clNew'),boardEl=body.querySelector('#clEditBoard');
   const sub=()=>{if(!body.isConnected){CL_SUBS.delete(sub);return;}
-    if(!list.classList.contains('sorting')&&(!body.contains(document.activeElement)||document.activeElement===inp))drawList();};
+    if(!boardEl.classList.contains('sorting')&&(!body.contains(document.activeElement)||document.activeElement===inp))drawList();};
   foot.onclick=()=>{CL_SUBS.delete(sub);ctl.close();};
-  const add=names=>{let pos=Math.max(0,...S.checklist.map(i=>(i.pos??0)+1));
+  const add=names=>{let pos=Math.max(0,...S.checklist.filter(i=>(i.col||0)===0).map(i=>(i.pos??0)+1));
     names.map(n=>n.replace(/^\s*(?:[-*•]|\d+[.)])\s*/,'').trim()).filter(Boolean).forEach(name=>{
-      const it={id:uid(),name,pos:pos++,createdAt:now(),trackReplace:CL_AUTO_TRACK.test(name),...CL_CLEAR_CHECK,...CL_CLEAR_ORDER};
+      const it={id:uid(),name,col:0,pos:pos++,createdAt:now(),trackReplace:CL_AUTO_TRACK.test(name),...CL_CLEAR_CHECK,...CL_CLEAR_ORDER};
       S.checklist.push(it);pPut('checklist',it).catch(()=>toast('Not saved — check connection'));});
     clChanged();drawList();};
   const addTyped=()=>{const v=inp.value.trim();if(!v){inp.focus();return;}add([v]);inp.value='';inp.focus();};
@@ -1386,25 +1412,20 @@ function checklistEditSheet(){
   inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addTyped();}};
   inp.onpaste=e=>{const t=(e.clipboardData||window.clipboardData).getData('text');
     if(t&&/\n/.test(t.trim())){e.preventDefault();add(t.split(/\r?\n/));toast('Items added');}};
-  dragReorder(list,'.cl-rrow',(from,to)=>{
-    const items=clSorted();const [m]=items.splice(from,1);items.splice(to,0,m);
-    items.forEach((it,k)=>{if(it.pos!==k){it.pos=k;pPut('checklist',it).catch(()=>{});}});
-    clChanged();drawList();
-  });
+  boardDrag(boardEl,order=>{clCommit(order);drawList();});
   function drawList(){
-    const items=clSorted();
-    list.innerHTML=items.length?items.map(it=>`<div class="cl-rrow" data-id="${it.id}">
-        <span class="cl-drag" aria-label="Drag to reorder ${esc(it.name)}">${I.grip}</span>
-        <button type="button" class="cl-rname" data-edit>${esc(it.name)}</button>
-        <button type="button" class="ib cl-del" data-del aria-label="Remove ${esc(it.name)}">${I.trash}</button></div>`).join('')
-      :`<p class="cl-tip" style="text-align:center;margin:18px 0">No items yet.</p>`;
-    list.querySelectorAll('.cl-rrow').forEach(r=>{const id=r.dataset.id;
-      r.querySelector('[data-edit]').onclick=()=>clItemSheet(id);
-      r.querySelector('[data-del]').onclick=async()=>{const it=clFind(id);if(!it)return;
-        if(!await confirmDialog({title:'Remove item?',message:`“${it.name}” will be removed from the checklist.`,confirmText:'Remove'}))return;
-        clRemove(id);drawList();};
-    });
-    body.querySelector('#clReset').disabled=!items.some(i=>i.checkedAt);
+    const board=clBoard();
+    const colHtml=col=>`<div class="cl-ecol">${col.map(it=>`<div class="cl-echip" data-id="${it.id}">
+        <span class="cl-egrip" aria-label="Drag ${esc(it.name)}">${I.grip}</span>
+        <button type="button" class="cl-ename" data-edit>${esc(it.name)}</button>
+        <button type="button" class="ib cl-del" data-del aria-label="Remove ${esc(it.name)}">${I.trash}</button></div>`).join('')}</div>`;
+    boardEl.innerHTML=(board.length?board.map(colHtml).join(''):'')
+      +`<div class="cl-ecol cl-addcol"><span>${board.length?'Drag here for<br>a new column':'No items yet'}</span></div>`;
+    boardEl.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>clItemSheet(b.closest('.cl-echip').dataset.id));
+    boardEl.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{const id=b.closest('.cl-echip').dataset.id;const it=clFind(id);if(!it)return;
+      if(!await confirmDialog({title:'Remove item?',message:`“${it.name}” will be removed from the checklist.`,confirmText:'Remove'}))return;
+      clRemove(id);drawList();});
+    body.querySelector('#clReset').disabled=!S.checklist.some(i=>i.checkedAt);
   }
   body.querySelector('#clReset').onclick=async()=>{
     if(!await confirmDialog({title:'Uncheck everything?',confirmText:'Uncheck all',
@@ -1415,7 +1436,6 @@ function checklistEditSheet(){
   CL_SUBS.add(sub);drawList();
   if(!S.checklist.length)setTimeout(()=>inp.focus(),250);
 }
-
 /* ---------- job form (create / edit) ---------- */
 function jobForm(existing){
   const j=existing||{};

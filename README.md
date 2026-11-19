@@ -15,8 +15,10 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
     replacement. Due within two weeks shows orange; overdue shows red and in the summary.
   - Rename or remove the item.
 
-  Items show as a compact two-column grid (more columns on iPad) with status badges — **To order**,
-  **Ordered**, **Overdue**, **Due** — so a long list stays short. Tapping an item opens an editor
+  Items show as a free column layout you arrange yourself: each cell has the checkbox, the name, who
+  checked it and when, and status badges (**To order**, **Ordered**, **Overdue**, **Due**). In
+  **Edit list** you drag items between columns (grip handle) — columns can hold different numbers of
+  items, and dropping at the end starts a new column. Tapping an item opens an editor
   with a **Need to order new / more** toggle (a shopping-list flag, counted in the summary) plus the
   Replacement-ordered, tracking and replace-by options. **Edit list** adds items (type or paste a
   list), reorders them by dragging the handle, and can uncheck everything for a fresh check. Changes
