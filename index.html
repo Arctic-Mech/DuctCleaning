@@ -353,6 +353,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .lyr.hrow .eyeic svg{width:20px;height:20px}
 .lyr.hrow.off .eyeic{color:var(--faint)}
 .linkbtn{border:none;background:none;color:var(--accent);font:600 13.5px var(--font-body);padding:6px 2px}
+.zoomnote{background:color-mix(in srgb,var(--warn) 16%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:16px;font-size:14px;line-height:1.45;color:var(--fg)}
 .buildinfo{margin-top:28px;text-align:center;font-size:11px;color:var(--faint);opacity:.75;line-height:1.4}
 /* truck checklist */
 .cl-eyebrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
@@ -797,25 +798,31 @@ const SAFE=(function(){
       (document.body||root).appendChild(p);return Math.round(parseFloat(getComputedStyle(p).paddingTop)||0);}
     catch(e){return 0;}finally{if(p&&p.parentNode)p.parentNode.removeChild(p);}};
   const ios=/iP(hone|od|ad)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  // Safari "Page Zoom" (the aA menu, synced across devices by iCloud) makes CSS px smaller or bigger than
+  // screen points, but iOS still reports the status bar in points. 0.5 = page zoomed to 50%.
+  const zoomNow=()=>{const portrait=innerHeight>innerWidth,sw=portrait?Math.min(screen.width,screen.height):Math.max(screen.width,screen.height);
+    let z=innerWidth>0?sw/innerWidth:1;if(!isFinite(z)||z<0.25||z>4)z=1;return Math.abs(z-1)<0.06?1:Math.round(z*100)/100;};
   const why=[];
   if(navigator.standalone===true)why.push('standalone');
   if(ios&&(mm('(display-mode: standalone)')||mm('(display-mode: fullscreen)')||mm('(display-mode: minimal-ui)')))why.push('display-mode');
   // page covers the status bar too (Safari itself says standalone===false, so it never lands here)
-  if(ios&&navigator.standalone!==false&&innerHeight>innerWidth&&Math.abs(screen.height-innerHeight)<2)why.push('full-screen');
-  const S0={app:why.length>0,why:why.join('+'),reported:0,top:0};
+  if(ios&&navigator.standalone!==false&&innerHeight>innerWidth&&Math.abs(screen.height-innerHeight*zoomNow())<3)why.push('full-screen');
+  const S0={app:why.length>0,why:why.join('+'),reported:0,top:0,zoom:1};
   if(S0.app)root.classList.add('ios-app');
   function apply(){
-    S0.reported=reported();const portrait=innerHeight>innerWidth;
-    S0.top=S0.app&&portrait?Math.max(S0.reported,62):S0.reported;
+    S0.reported=reported();S0.zoom=zoomNow();const portrait=innerHeight>innerWidth;
+    // 62 screen points of room, converted to this page's px (124px when the page is zoomed to 50%)
+    S0.top=S0.app&&portrait?Math.max(S0.reported,Math.round(62/S0.zoom)):S0.reported;
     root.style.setProperty('--safe-top',S0.top+'px');
     const b=document.getElementById('buildInfo');if(b)b.textContent=buildInfoText();
+    const zn=document.getElementById('zoomNote');if(zn)zn.hidden=S0.zoom===1;
   }
   S0.apply=apply;apply();
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 18 14:42';
-const buildInfoText=()=>`Build ${BUILD} · ${SAFE.app?'app':'browser'} · top ${SAFE.top}px (phone says ${SAFE.reported})`;
+const BUILD='Nov 18 16:00';
+const buildInfoText=()=>`Build ${BUILD} · ${SAFE.app?'app':'browser'} · top ${SAFE.top}px (phone says ${SAFE.reported}) · zoom ${Math.round(SAFE.zoom*100)}% · ${innerWidth}/${screen.width}`;
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],user:null,route:['jobs'],jobId:null,drawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -1059,6 +1066,9 @@ function viewJobs(app){
       <button class="iconbtn" id="themeBtn" aria-label="Toggle theme">${I.dots}</button>
     </div>
     <div class="content">
+      <div class="zoomnote" id="zoomNote"${SAFE.zoom===1?' hidden':''}><b>Safari has this site zoomed to ${Math.round(SAFE.zoom*100)}%</b>, so everything is
+        ${SAFE.zoom<1?'smaller':'bigger'} than it should be. To fix: open the site in Safari, tap <b>aA</b> in the address bar, and set it to <b>100%</b>.
+        Then close and reopen this app.</div>
       <div class="eyebrow cl-eyebrow"><span>Truck checklist</span><button type="button" class="linkbtn" id="clEdit">Edit list</button></div>
       <div class="card cl-card" id="clCard"></div>
       <div class="eyebrow" style="margin-top:24px">Jobs</div>
