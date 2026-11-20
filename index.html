@@ -898,7 +898,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 20 07:27';
+const BUILD='Nov 20 11:41';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2930,6 +2930,8 @@ function estFactorFor(kind,widthIn,s){s=s||estSettings();let f=({mps:s.fMps,lps:
 // a run split into pieces with their own width: [{lf, sf, win (width in inches, nearest ½")}]
 function estRunParts(r,d){const rIn=w=>Math.round(w*24)/2;
   if(r.widthMode==='fill')return [{lf:estRunLenFt(r,d),sf:estAreaFt(r,d),win:rIn(estFillWidthFt(r,d))}];
+  if(estAreaEdited(r)){const m=estRunParts(Object.assign({},r,{areaPoly:null,areaPolys:null,areaFrac:0}),d),tot=m.reduce((t,p)=>t+p.sf,0),a=estAreaFt(r,d);
+    return tot>0?m.map(p=>({lf:p.lf,sf:p.sf*a/tot,win:p.win})):[{lf:estLenFt(r.pts,d),sf:a,win:rIn(estWidthFt(r,d))}];}
   const sw=estSegW(r);if(sw){const L=estSegLensFt(r,d),k=(d.w||1)*estFpp(d);
     if(Array.isArray(r.wProf)&&r.wProf.length===sw.length)   // width profile: each size along a segment is its own piece (reducers)
       return [].concat(...r.wProf.map((pr,i)=>(pr&&pr.length?pr:[[1,sw[i]]]).map(q=>({lf:L[i]*q[0],sf:L[i]*q[0]*q[1]*k,win:rIn(q[1]*k)}))));
@@ -2975,6 +2977,11 @@ function estFpp(d){ if(!d||!d.cal)return 0; const W=d.w||1,H=d.h||1,c=d.cal;
   const px=Math.hypot((c.b[0]-c.a[0])*W,(c.b[1]-c.a[1])*H)||1; return c.ft/px; }
 function estLenFt(pts,d){ const W=d.w||1,H=d.h||1,fpp=estFpp(d); let L=0;
   for(let i=0;i+3<pts.length;i+=2)L+=Math.hypot((pts[i+2]-pts[i])*W,(pts[i+3]-pts[i+1])*H); return L*fpp; }
+// a drawn run whose area was painted / erased by hand: that outline is its area (its line stays its linear footage)
+// (one outline per separate piece: erasing a section out of the middle leaves two)
+const estAreaRings=r=>Array.isArray(r.areaPolys)?r.areaPolys.map(o=>o&&o.p).filter(p=>Array.isArray(p)&&p.length>=6):(Array.isArray(r.areaPoly)&&r.areaPoly.length>=6?[r.areaPoly]:[]);
+const estAreaEdited=r=>r.widthMode!=='fill'&&r.widthMode!=='manual'&&r.areaFrac>0&&estAreaRings(r).length>0;
+const estAreaClear=r=>{r.areaPolys=null;r.areaPoly=null;r.areaFrac=0;};
 const estHasEdges=r=>r.widthMode!=='manual'&&r.edgeL&&r.edgeR&&r.edgeL.length>=4&&r.edgeR.length>=4;
 // true area of the filled band (polygon between the two detected edges), in sq ft
 function estPolyAreaFt(r,d){ const fpp=estFpp(d); if(!fpp)return 0; const W=d.w||1,H=d.h||1,poly=[];
@@ -2990,7 +2997,7 @@ function estWidthFt(r,d){ if(r.widthMode==='manual')return +r.manualWidthFt||0;
   {const sw=estSegW(r);if(sw){const L=estSegLensFt(r,d),tot=L.reduce((a,b)=>a+b,0)||1;let s=0;sw.forEach((w,i)=>s+=w*(d.w||1)*estFpp(d)*L[i]);return s/tot;}}
   if(estHasEdges(r)){const L=estLenFt(r.pts,d);return L>0?estPolyAreaFt(r,d)/L:0;}
   return (r.widthFrac||0)*(d.w||1)*estFpp(d); }
-function estAreaFt(r,d){ if(r.widthMode==='fill')return (r.fillFrac||0)*(d.w||1)*(d.h||1)*estFpp(d)*estFpp(d);
+function estAreaFt(r,d){ if(r.widthMode==='fill'||estAreaEdited(r))return ((r.widthMode==='fill'?r.fillFrac:r.areaFrac)||0)*(d.w||1)*(d.h||1)*estFpp(d)*estFpp(d);
   {const sw=estSegW(r);if(sw){const L=estSegLensFt(r,d);let a=0;sw.forEach((w,i)=>a+=L[i]*w*(d.w||1)*estFpp(d));return a;}}
   if(estHasEdges(r))return estPolyAreaFt(r,d); return estLenFt(r.pts,d)*estWidthFt(r,d); }
 // linear footage of a fill, from its detected centerline (medial axis), with the end-trim added back
@@ -3333,6 +3340,16 @@ function estFloodWin(win,sx,sy){
   return {mask,minx,miny,maxx,maxy,count,touch};
 }
 // raw Moore-neighbour outline of the mask (pixel coords)
+// outlines (grid px, simplified) of every separate piece of a painted mask, biggest first
+function estMaskPieces(mask,W,H){const seen=new Uint8Array(W*H),buf=new Uint8Array(W*H),out=[];
+  for(let p0=0;p0<W*H;p0++){if(!mask[p0]||seen[p0])continue;const px=[p0];seen[p0]=1;let minx=W,miny=H,maxx=0,maxy=0;
+    for(let q=0;q<px.length;q++){const p=px[q],x=p%W,y=(p/W)|0;if(x<minx)minx=x;if(x>maxx)maxx=x;if(y<miny)miny=y;if(y>maxy)maxy=y;
+      if(x>0&&mask[p-1]&&!seen[p-1]){seen[p-1]=1;px.push(p-1);}if(x<W-1&&mask[p+1]&&!seen[p+1]){seen[p+1]=1;px.push(p+1);}
+      if(y>0&&mask[p-W]&&!seen[p-W]){seen[p-W]=1;px.push(p-W);}if(y<H-1&&mask[p+W]&&!seen[p+W]){seen[p+W]=1;px.push(p+W);}}
+    if(px.length<9)continue;px.forEach(p=>buf[p]=1);
+    const raw=estTraceMask(buf,W,H,minx,miny,maxx,maxy);px.forEach(p=>buf[p]=0);
+    if(raw.length>=3)out.push({n:px.length,c:estSimplify(raw.map(q=>[q[0]+0.5,q[1]+0.5]),0.7)});}
+  return out.sort((a,b)=>b.n-a.n).map(o=>o.c);}
 function estTraceMask(mask,W,H,minx,miny,maxx,maxy){
   const at=(x,y)=>x<0||y<0||x>=W||y>=H?0:mask[y*W+x];let sx=-1,sy=-1;
   outer:for(let y=miny;y<=maxy;y++)for(let x=minx;x<=maxx;x++)if(mask[y*W+x]){sx=x;sy=y;break outer;}
@@ -3507,15 +3524,28 @@ async function estRunWallsHD(d,ptsN,opt){
         for(let c0=0;;c0+=CH){const c1=Math.min(L,c0+CH),e0=Math.max(0,c0-80),e1=Math.min(L,c1+80);   // overlap so the wall test sees past chunk ends
           const strip=await estRenderStrip(pg,A,ux,uy,opt.walls?e0:c0,opt.walls?e1:c1,MAXH,R);const base=opt.walls?e0:c0;if(opt.walls)estStripPrep(strip);
           for(let k=0;k<=n;k++){const s=L*k/n;if(s<c0||(s>=c1&&c1<L))continue;const col=strip.m+(s-base)*R;
-            if(opt.walls){const cl=estStripWall(strip,col,1,Kp),cr=estStripWall(strip,col,-1,Kp);sg.cl=sg.cl||[];sg.cr=sg.cr||[];sg.cl[k]=cl;sg.cr[k]=cr;put(sg,k,s,cl?cl[0]:null,cr?cr[0]:null);}else put(sg,k,s,estStripRay(strip,col,1),estStripRay(strip,col,-1));}
+            if(opt.walls){const cl=estStripWall(strip,col,1,Kp),cr=estStripWall(strip,col,-1,Kp);sg.cl=sg.cl||[];sg.cr=sg.cr||[];sg.cl[k]=cl;sg.cr[k]=cr;put(sg,k,s,cl?cl[0]:null,cr?cr[0]:null);
+              const f1=estStripRay(strip,col,1),f2=estStripRay(strip,col,-1);sg.w1=sg.w1||[];sg.c1=sg.c1||[];sg.w1[k]=f1!=null&&f2!=null?f1+f2:null;sg.c1[k]=f1!=null&&f2!=null?(f1-f2)/2:null;}else put(sg,k,s,estStripRay(strip,col,1),estStripRay(strip,col,-1));}
           if(c1>=L)break;}
       }}
   }
+  // a wall found by looking past a nearer line (a tag, a box, a crossing duct) must line up with the wall of the stretch
+  // either side; otherwise the nearer line was the duct's own wall bending (a transition) and the far line is outside
+  // the duct (a grid or dashed line) — that spot is left unknown and takes the size from either side
+  for(const sg of segs){if(!sg||!sg.cl)continue;const N=sg.s.length;
+    for(const side of ['l','r']){const C=side==='l'?sg.cl:sg.cr;
+      const ok=k=>C[k]&&!C[k].past;
+      for(let k=0;k<N;k++){if(!C[k]||!C[k].past)continue;const v=C[k][0];let match=false;
+        for(const dirn of [-1,1]){let j=k+dirn,seen=0;while(j>=0&&j<N&&seen<80){if(ok(j)){if(Math.abs(C[j][0]-v)<=0.75)match=true;break;}j+=dirn;seen++;}if(match)break;}
+        if(!match){C[k]=null;if(side==='l')sg.dl[k]=null;else sg.dr[k]=null;}}}
+    for(let k=0;k<N;k++){const dl=sg.dl[k],dr=sg.dr[k];if(dl!=null&&dr!=null){sg.w[k]=dl+dr;sg.c[k]=(dl-dr)/2;}else{sg.w[k]=null;sg.c[k]=null;}}}
   // something drawn over the duct (another duct, a box) can put a long line inside it; the duct's own wall still runs on
   // behind it. Where the wall offset on a side is nearer than the offset that holds over the stretch around it, and a
   // line is still there at that offset, that line is the wall. (A real size change ends the old wall, so it is left.)
-  for(const sg of segs){if(!sg||!sg.cl)continue;const N=sg.s.length;
-    for(const side of ['l','r']){const C=side==='l'?sg.cl:sg.cr,cur=C.map(c=>c?c[0]:null);
+  // the width where a segment meets its neighbour across a bend (median of the nearest readings)
+  const endW=(sg,atEnd)=>{if(!sg||!sg.w)return null;const v=[];const N=sg.w.length;for(let q=0;q<N&&v.length<12;q++){const k=atEnd?N-1-q:q;if(sg.w[k]!=null)v.push(sg.w[k]);}v.sort((x,y)=>x-y);return v.length>=4?v[v.length>>1]:null;};
+  segs.forEach((sg,si)=>{if(!sg||!sg.cl)return;const N=sg.s.length;
+    for(const side of ['l','r']){const C=side==='l'?sg.cl:sg.cr,cur=C.map(c=>c?c[0]:null),oth=side==='l'?sg.dr:sg.dl;
       for(let pass=0;pass<3;pass++){
         const runs=[];let rr=null;   // stretches of (nearly) the same wall offset
         for(let k=0;k<N;k++){const v=cur[k];if(v==null)continue;if(rr&&Math.abs(v-rr.last)<=0.5){rr.ks.push(k);rr.last=v;}else{rr={v,last:v,ks:[k]};runs.push(rr);}}
@@ -3523,20 +3553,48 @@ async function estRunWallsHD(d,ptsN,opt){
         let changed=false;
         runs.forEach((ru,j)=>{const nb=[];for(let q=j-1;q>=0;q--)if(runs[q].ks.length>=3){nb.push(runs[q]);break;}for(let q=j+1;q<runs.length;q++)if(runs[q].ks.length>=3){nb.push(runs[q]);break;}
           for(const o of nb){const ov=cur[o.ks[0]>ru.ks[0]?o.ks[0]:o.ks[o.ks.length-1]];   /* the neighbour's wall right where it meets this stretch */
-            if(!(ov>ru.v+1)||o.ks.length<Math.max(15,ru.ks.length))continue;/* only a stretch at least as long can correct it */const hits=ru.ks.map(k=>(C[k]||[]).find(c=>Math.abs(c-ov)<=0.6));
+            if(!(ov>ru.v+1))continue;const hits=ru.ks.map(k=>(C[k]||[]).find(c=>Math.abs(c-ov)<=0.6));
+            if(o.ks.length<Math.max(15,ru.ks.length)){   /* a shorter stretch may correct it only beside a bend, when the corrected width carries on from the segment across the bend */
+              const med=a=>{const b=a.filter(v=>v!=null&&isFinite(v)).sort((x,y)=>x-y);return b.length?b[b.length>>1]:null;};
+              const wOld=med(ru.ks.map(k=>oth[k]!=null?cur[k]+oth[k]:null)),wNew=med(ru.ks.map((k,i)=>hits[i]!=null&&oth[k]!=null?hits[i]+oth[k]:null));
+              const atStart=ru.ks[0]<=3&&si>0,atEnd=ru.ks[ru.ks.length-1]>=N-4&&si<segs.length-1;
+              const wx=atStart?endW(segs[si-1],true):atEnd?endW(segs[si+1],false):null;
+              if(wOld==null||wNew==null||wx==null||Math.abs(wNew-wx)>0.75||Math.abs(wOld-wx)<=0.75)continue;}
             if(hits.filter(h=>h!=null).length>=0.7*ru.ks.length){ru.ks.forEach((k,i)=>{if(hits[i]!=null){cur[k]=hits[i];changed=true;}});break;}}});
         if(!changed)break;}
       cur.forEach((v,k)=>{if(side==='l')sg.dl[k]=v;else sg.dr[k]=v;});}
-    for(let k=0;k<N;k++){const dl=sg.dl[k],dr=sg.dr[k];if(dl!=null&&dr!=null){sg.w[k]=dl+dr;sg.c[k]=(dl-dr)/2;}else{sg.w[k]=null;sg.c[k]=null;}}}
+    for(let k=0;k<N;k++){const dl=sg.dl[k],dr=sg.dr[k];if(dl!=null&&dr!=null){sg.w[k]=dl+dr;sg.c[k]=(dl-dr)/2;}else{sg.w[k]=null;sg.c[k]=null;}}});
+  // a whole segment with something drawn along it inside the duct reads too narrow all the way; when the segments on
+  // either side agree on a width and one side has a line all along that gives exactly that width, that line is the wall
+  segs.forEach((sg,si)=>{if(!sg||!sg.cl)return;const N=sg.s.length;
+    const med=a=>{const b=a.filter(v=>v!=null&&isFinite(v)).sort((x,y)=>x-y);return b.length?b[b.length>>1]:null;};
+    const wm=med(sg.w);if(wm==null)return;
+    const long=j=>{const g=segs[j];if(!g||!g.w)return false;const w=med(g.w);return w!=null&&g.L>=3*w;};   // short pieces (offsets, fittings) read unreliably: look past them
+    let jp=si-1;while(jp>=0&&!long(jp))jp--;let jn=si+1;while(jn<segs.length&&!long(jn))jn++;
+    const tp=jp>=0?endW(segs[jp],true):null,tn=jn<segs.length?endW(segs[jn],false):null;
+    if(tp==null||tn==null||Math.abs(tp-tn)>1.5||Math.abs(wm-tp)<=1.5||Math.abs(wm-tn)<=1.5)return;   // only a segment sandwiched between two that agree
+    for(const t of [(tp+tn)/2]){let done=false;
+      for(const side of ['l','r']){const C=side==='l'?sg.cl:sg.cr,cur=side==='l'?sg.dl:sg.dr,oth=side==='l'?sg.dr:sg.dl;
+        const om=med(oth);if(om==null)continue;const off=t-om;if(!(off>0))continue;
+        let n=0,hit=0;for(let k=0;k<N;k++){if(oth[k]==null)continue;n++;if((C[k]||[]).some(c=>Math.abs(c+oth[k]-t)<=0.75))hit++;}
+        if(n<10||hit<0.6*n)continue;
+        for(let k=0;k<N;k++){const c=(C[k]||[]).find(v=>Math.abs(v-off)<=0.6);if(c!=null)cur[k]=c;}
+        for(let k=0;k<N;k++){const dl=sg.dl[k],dr=sg.dr[k];if(dl!=null&&dr!=null){sg.w[k]=dl+dr;sg.c[k]=(dl-dr)/2;}else{sg.w[k]=null;sg.c[k]=null;}}
+        done=true;break;}
+      if(done)break;}});
   // local mode of the width (and the matching centre offset) at every sample
-  for(const sg of segs){if(!sg||!sg.s.length)continue;const N=sg.s.length,K=12;sg.lw=new Array(N).fill(null);sg.lc=new Array(N).fill(null);
-    for(let k=0;k<N;k++){const a=Math.max(0,k-K),b=Math.min(N-1,k+K);const vals=[];for(let j=a;j<=b;j++)if(sg.w[j]!=null)vals.push(j);
+  const localMode=(N,W_,C_)=>{const K=12,lw=new Array(N).fill(null),lc=new Array(N).fill(null);
+    for(let k=0;k<N;k++){const a=Math.max(0,k-K),b=Math.min(N-1,k+K);const vals=[];for(let j=a;j<=b;j++)if(W_[j]!=null)vals.push(j);
       if(vals.length<Math.max(4,0.35*(b-a+1)))continue;
-      let best=null;for(const j of vals){const v=sg.w[j],tol=Math.max(0.02*v,0.6);let cnt=0;for(const q of vals)if(Math.abs(sg.w[q]-v)<=tol)cnt++;if(!best||cnt>best.cnt)best={v,cnt,tol};}
+      let best=null;for(const j of vals){const v=W_[j],tol=Math.max(0.02*v,0.6);let cnt=0;for(const q of vals)if(Math.abs(W_[q]-v)<=tol)cnt++;if(!best||cnt>best.cnt)best={v,cnt,tol};}
       if(best.cnt<Math.max(4,0.5*vals.length))continue;
-      const inl=vals.filter(q=>Math.abs(sg.w[q]-best.v)<=best.tol);const ws=inl.map(q=>sg.w[q]).sort((x,y)=>x-y),cs=inl.map(q=>sg.c[q]).sort((x,y)=>x-y);
-      sg.lw[k]=ws[ws.length>>1];sg.lc[k]=cs[cs.length>>1];}
-    sg.known=sg.lw.filter(v=>v!=null).length/N;}
+      const inl=vals.filter(q=>Math.abs(W_[q]-best.v)<=best.tol);const ws=inl.map(q=>W_[q]).sort((x,y)=>x-y),cs=inl.map(q=>C_[q]).sort((x,y)=>x-y);
+      lw[k]=ws[ws.length>>1];lc[k]=cs[cs.length>>1];}
+    return {lw,lc,known:lw.filter(v=>v!=null).length/N};};
+  for(const sg of segs){if(!sg||!sg.s.length)continue;const N=sg.s.length;let m=localMode(N,sg.w,sg.c);
+    // a segment along a curved fitting (a big radius elbow) has no long straight walls: there the nearest line each way is the wall
+    if(m.known<0.35&&sg.w1){const m1=localMode(N,sg.w1,sg.c1);if(m1.known>=0.5&&m1.known>m.known)m=m1;}
+    sg.lw=m.lw;sg.lc=m.lc;sg.known=m.known;}
   // fill gaps from either side (within the segment, then across the run)
   const all=[];segs.forEach((sg,i)=>{if(sg&&sg.s)sg.s.forEach((s,k)=>all.push({i,k}));});
   const val=e=>segs[e.i].lw[e.k];
@@ -3547,8 +3605,11 @@ async function estRunWallsHD(d,ptsN,opt){
     const first=all.findIndex(e=>val(e)!=null);for(let m=0;m<first;m++)segs[all[m].i].lw[all[m].k]=val(all[first]);
     let lastK=-1;for(let q=all.length-1;q>=0;q--)if(val(all[q])!=null){lastK=q;break;}for(let m=lastK+1;m<all.length;m++)segs[all[m].i].lw[all[m].k]=val(all[lastK]);}
   // per segment: misalignment (slope of the centre offset), mean perpendicular width, centred line
-  for(const sg of segs){if(!sg||!sg.s.length)continue;
-    const pts=[];sg.s.forEach((s,k)=>{if(sg.lc[k]!=null)pts.push([s,sg.lc[k]]);});
+  segs.forEach((sg,si)=>{if(!sg||!sg.s.length)return;
+    // centre line from the straight part only: next to a bend the walls belong to the fitting
+    const wv=sg.lw.filter(v=>v!=null).sort((x,y)=>x-y),wq0=wv.length?wv[wv.length>>1]:0,wq=sg.L>6*wq0?2*wq0:wq0,lo=si>0?wq:0,hi=si<segs.length-1?sg.L-wq:sg.L;   // an elbow reaches ~2 duct widths along each leg
+    let pts=[];sg.s.forEach((s,k)=>{if(sg.lc[k]!=null&&s>=lo&&s<=hi)pts.push([s,sg.lc[k]]);});
+    if(pts.length<4){pts=[];sg.s.forEach((s,k)=>{if(sg.lc[k]!=null)pts.push([s,sg.lc[k]]);});}
     let a=0,m=0;
     if(pts.length>=4){let use=pts;   // line through the centres, refit without outliers (a stretch with something drawn over the duct)
       for(let it=0;it<3;it++){const n=use.length,sx=use.reduce((t,p)=>t+p[0],0)/n,sy=use.reduce((t,p)=>t+p[1],0)/n;let sxx=0,sxy=0;use.forEach(p=>{sxx+=(p[0]-sx)**2;sxy+=(p[0]-sx)*(p[1]-sy);});
@@ -3556,7 +3617,7 @@ async function estRunWallsHD(d,ptsN,opt){
         const nxt=pts.filter((p,i)=>res[i]<=Math.max(0.75,2.5*mad));if(nxt.length<Math.max(4,0.3*pts.length)||nxt.length===use.length)break;use=nxt;}}
     else if(pts.length){a=pts.reduce((t,p)=>t+p[1],0)/pts.length;}
     const cos=1/Math.sqrt(1+m*m);sg.cosT=cos;sg.a=a;sg.m=m;
-    let area=0;for(let k=1;k<sg.s.length;k++)area+=(sg.lw[k]+sg.lw[k-1])/2*(sg.s[k]-sg.s[k-1]);sg.area=area*cos;sg.wMean=sg.L>0?sg.area/sg.L:0;}
+    let area=0;for(let k=1;k<sg.s.length;k++)area+=(sg.lw[k]+sg.lw[k-1])/2*(sg.s[k]-sg.s[k-1]);sg.area=area*cos;sg.wMean=sg.L>0?sg.area/sg.L:0;});
   return {segs,P,PW,PH,MAXH};
 }
 // render a strip of the page along a segment, turned so the segment runs left→right through the middle row:
@@ -3579,13 +3640,17 @@ function estStripPrep(st){const {L,W,H}=st,N=W*H,B=new Uint8Array(N);for(let i=0
   for(let x=0;x<W;x++){let cnt=0;for(let y=0;y<Math.min(H,r);y++)cnt+=B[y*W+x];
     for(let y=0;y<H;y++){if(y+r<H)cnt+=B[(y+r)*W+x];if(y-r-1>=0)cnt-=B[(y-r-1)*W+x];D[y*W+x]=cnt>0?1:0;}}
   const P=new Uint16Array((W+1)*H);for(let y=0;y<H;y++){let acc=0;const o=y*(W+1);for(let x=0;x<W;x++){acc+=D[y*W+x];P[o+x+1]=acc;}}
-  st.P=P;}
+  st.P=P;st.D=D;}
 // distance (pt) from the strip's axis at column col to the duct wall on one side (dir +1 down / −1 up): the first line
 // that runs on along the duct for most of ±K px. A tag, a crossing duct or a damper box inside the duct is short, so the
 // search looks past it; a branch opening in the wall is a short gap, so the wall is still found there. null if none.
 function estStripWall(st,col,dir,K){const {W,H,R,mid,P,L}=st;const x=Math.round(col),a=Math.max(0,x-K),b=Math.min(W,x+K+1),n=b-a;if(n<K)return null;
-  const y0=Math.round(mid),out=[];
+  const y0=Math.round(mid),out=[],skip=[];   // skip: row spans of dashed lines passed over
+  const dashed=y=>{   // a dashed/grid line breaks every few points even along its most solid row; a wall is solid but for an odd opening
+    let yc=y,fc=-1;for(let j=0;j<=12;j++){const yy=y+dir*j;if(yy<0||yy>=H)break;const oo=yy*(W+1),f=(P[oo+b]-P[oo+a])/n;if(f>fc){fc=f;yc=yy;}}
+    const D=st.D,o=yc*W,gmin=R;let gaps=0,run=0;for(let xx=a;xx<b;xx++){if(D[o+xx]){if(run>=gmin)gaps++;run=0;}else run++;}return gaps>=4;};
   for(let t=1;out.length<3;t++){const y=y0+dir*t;if(y<0||y>=H)break;const o=y*(W+1);if((P[o+b]-P[o+a])/n<0.6)continue;
+    if(dashed(y)){let tt=t+1;for(;;tt++){const yy=y0+dir*tt;if(yy<0||yy>=H)break;const oo=yy*(W+1);if((P[oo+b]-P[oo+a])/n<0.3)break;}skip.push([t,tt]);t=tt;continue;}
     // the line's centre: darkness profile across the next rows, averaged along the window
     const prof=[];for(let k=0;k<=16;k++){const yy=y+dir*k;if(yy<0||yy>=H){prof.push(0);continue;}let ds=0,c=0;for(let xx=a;xx<b;xx+=3){const v=248-L[yy*W+xx];if(v>0)ds+=v;c++;}prof.push(ds/c);}
     let pk=0,ip=0;for(let k=0;k<=8;k++)if(prof[k]>pk){pk=prof[k];ip=k;}if(pk<=0)break;
@@ -3594,7 +3659,11 @@ function estStripWall(st,col,dir,K){const {W,H,R,mid,P,L}=st;const x=Math.round(
     out.push(((y0+dir*(t+kc)+0.5)-mid)*dir/R);
     // step past this line before looking for the next one
     let tt=t+Math.ceil(kc)+1;for(;;tt++){const yy=y0+dir*tt;if(yy<0||yy>=H)break;const oo=yy*(W+1);if((P[oo+b]-P[oo+a])/n<0.3)break;}t=tt;}
-  return out.length?out:null;}
+  if(!out.length)return null;
+  // did the search look past a nearer line here (other than a dashed line it passed over)?
+  let firstHit=null;for(let t=1;t<H;t++){const y=y0+dir*t;if(y<0||y>=H)break;if(skip.some(q=>t>=q[0]&&t<=q[1]))continue;if(L[y*W+x]<EST_WALL){firstHit=t/R;break;}}
+  out.past=firstHit!=null&&out[0]>firstHit+1;
+  return out;}
 // distance (pt) from the strip's middle row at column col to the centre of the first wall stroke, going up (dir=−1)
 // or down (dir=+1); null if the spot is on a line or no wall is found within the strip
 function estStripRay(st,col,dir){const {L,W,H,R,mid}=st;const x=Math.round(col);if(x<0||x>=W)return null;
@@ -3623,8 +3692,9 @@ async function estMeasureRun(d,ptsN,centre){
   let pts=ptsN;
   if(centre){const r1=await estRunWallsHD(d,ptsN);if(r1){const c=estCentreRun(r1,0.5);if(c)pts=[].concat(...c).map(v=>+v.toFixed(6));}}
   let r=await estRunWallsHD(d,pts,{walls:true});if(!r)return null;
-  if(centre){const c=estCentreRun(r,0.5);   // once more on the cleaner walls (pass 1 can be pulled by something drawn over the duct)
-    if(c){const flat=[].concat(...c).map(v=>+v.toFixed(6));if(flat.some((v,i)=>Math.abs(v-pts[i])*(i%2?r.PH:r.PW)>0.3)){const r3=await estRunWallsHD(d,flat,{walls:true});if(r3){r=r3;pts=flat;}}}}
+  if(centre)for(let it=0;it<2;it++){const c=estCentreRun(r,0.5);   // again on the cleaner walls until it settles (pass 1 can be pulled by something drawn over the duct)
+    if(!c)break;const flat=[].concat(...c).map(v=>+v.toFixed(6));if(!flat.some((v,i)=>Math.abs(v-pts[i])*(i%2?r.PH:r.PW)>0.3))break;
+    const r3=await estRunWallsHD(d,flat,{walls:true});if(!r3)break;r=r3;pts=flat;}
   const PW=r.PW,PH=r.PH,segW=[],prof=[],L=[],R=[];
   r.segs.forEach((sg,i)=>{if(!sg||!sg.s.length){segW.push(0);prof.push([]);return;}
     segW.push(+(sg.wMean/PW).toFixed(7));
@@ -3712,13 +3782,14 @@ async function estFillProbeRaw(d,nx,ny){
 // total area of a drawing's runs as a UNION (rasterized), so tie-ins/overlaps are not double counted
 // a run's outline in plan px: {poly:[[x,y]...]} or {line:[[x,y]...],w} (uniform-width band)
 function estRunShape(r,d){const W=d.w||1,H=d.h||1;
-  if(r.widthMode==='fill'){if(!r.fillPoly||r.fillPoly.length<6)return null;const P=[];for(let i=0;i<r.fillPoly.length;i+=2)P.push([r.fillPoly[i]*W,r.fillPoly[i+1]*H]);return {poly:P};}
+  if(estAreaEdited(r)){const rings=estAreaRings(r).map(fp=>{const P=[];for(let i=0;i<fp.length;i+=2)P.push([fp[i]*W,fp[i+1]*H]);return P;});return rings.length===1?{poly:rings[0]}:{polys:rings};}
+  if(r.widthMode==='fill'){const fp=r.fillPoly;if(!fp||fp.length<6)return null;const P=[];for(let i=0;i<fp.length;i+=2)P.push([fp[i]*W,fp[i+1]*H]);return {poly:P};}
   if(estHasEdges(r)){const P=[];for(let i=0;i<r.edgeL.length;i+=2)P.push([r.edgeL[i]*W,r.edgeL[i+1]*H]);for(let i=r.edgeR.length-2;i>=0;i-=2)P.push([r.edgeR[i]*W,r.edgeR[i+1]*H]);return {poly:P};}
   const w=estEffFrac(r,d)*W;if(!(w>0)||!r.pts||r.pts.length<4)return null;const P=[];for(let i=0;i<r.pts.length;i+=2)P.push([r.pts[i]*W,r.pts[i+1]*H]);return {line:P,w};}
-function estShapeBBox(sh){const P=sh.poly||sh.line,m=sh.w?sh.w/2:0;let x0=1e18,y0=1e18,x1=-1e18,y1=-1e18;
+function estShapeBBox(sh){const P=sh.poly||sh.line||[].concat(...sh.polys),m=sh.w?sh.w/2:0;let x0=1e18,y0=1e18,x1=-1e18,y1=-1e18;
   for(const p of P){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1];}return [x0-m,y0-m,x1+m,y1+m];}
 function estDrawShape(g,sh,sc,ox,oy){g.beginPath();
-  if(sh.poly){sh.poly.forEach((p,i)=>{const x=(p[0]-ox)*sc,y=(p[1]-oy)*sc;i?g.lineTo(x,y):g.moveTo(x,y);});g.closePath();g.fill();}
+  if(sh.poly||sh.polys){(sh.polys||[sh.poly]).forEach(P=>{P.forEach((p,i)=>{const x=(p[0]-ox)*sc,y=(p[1]-oy)*sc;i?g.lineTo(x,y):g.moveTo(x,y);});g.closePath();});g.fill();}
   else{g.lineWidth=sh.w*sc;sh.line.forEach((p,i)=>{const x=(p[0]-ox)*sc,y=(p[1]-oy)*sc;i?g.lineTo(x,y):g.moveTo(x,y);});g.stroke();}}
 // total sq ft of a drawing's runs as a UNION, so tie-ins / overlapping pours are never double counted.
 // Exact per-run areas are summed; overlap is measured with a fine raster only where outlines actually meet,
@@ -3955,6 +4026,9 @@ function viewEstMeasure(app){
 
   function ptsPath(arr){let dd='';for(let i=0;i<arr.length;i+=2){const [x,y]=toPx(arr[i],arr[i+1]);dd+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}return dd;}
   function bandSvg(r,col){
+    if(mode==='filledit'&&r.id===editRun)return '';
+    if(estAreaEdited(r)){let dd='';estAreaRings(r).forEach(fp=>{for(let i=0;i<fp.length;i+=2){const [x,y]=toPx(fp[i],fp[i+1]);dd+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}dd+='Z';});
+      return `<path class="eband" d="${dd}" fill="${col}" stroke="none" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;}
     if(estHasEdges(r)){let dd='';const L=r.edgeL,R=r.edgeR;
       for(let i=0;i<L.length;i+=2){const [x,y]=toPx(L[i],L[i+1]);dd+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}
       for(let i=R.length-2;i>=0;i-=2){const [x,y]=toPx(R[i],R[i+1]);dd+='L'+x.toFixed(1)+','+y.toFixed(1);}
@@ -4060,7 +4134,7 @@ function viewEstMeasure(app){
       }
     }else if(mode==='filledit'){
       const r=S.estruns.find(x=>x.id===editRun);const lab=r?(estGroupLabel(estRunsOf(d.id),r)||'fill'):'fill';
-      hint.innerHTML=`${I.fill}<span>${editTool==='add'?'Paint':'Erase'} <b>${esc(lab)}</b> fill · drag on the drawing · brush ${(Math.round(editBrushIn()*2)/2)}″</span>`;
+      hint.innerHTML=`${I.fill}<span>${editTool==='add'?'Paint':'Erase'} <b>${esc(lab)}</b> ${r&&r.widthMode!=='fill'?'area':'fill'} · drag on the drawing · brush ${(Math.round(editBrushIn()*2)/2)}″</span>`;
       vbar.innerHTML=`<div class="estrun"><div class="seg" id="efTool" style="max-width:220px"><button type="button" data-t="add"${editTool==='add'?' class="on"':''}>Paint</button><button type="button" data-t="erase"${editTool==='erase'?' class="on"':''}>Erase</button></div>
         <div class="drawbar"><button class="dt" id="efMinus" title="Smaller brush">−</button><button class="dt" id="efPlus" title="Bigger brush">+</button>
         <button class="btn block" id="efCancel">${I.x} Cancel</button>
@@ -4161,16 +4235,30 @@ function viewEstMeasure(app){
   function fillFinish(){mode='view';fillTarget=null;fillStep='pour';fillGroupId=null;fillLeadId=null;fillTemp=[];refresh();}
   // paint/erase editor: a grid over just this piece (+margin) at up to 8 px/pt, so edits keep the fill's precision
   let editBB=null,editRpt=1;
-  function startFillEdit(id){const r=S.estruns.find(x=>x.id===id);if(!r||r.widthMode!=='fill'||!r.fillPoly||r.fillPoly.length<6){toast('Only a fill can be painted');return;}
-    const fp=r.fillPoly;let x0=1,y0=1,x1=0,y1=0;for(let i=0;i<fp.length;i+=2){x0=Math.min(x0,fp[i]);x1=Math.max(x1,fp[i]);y0=Math.min(y0,fp[i+1]);y1=Math.max(y1,fp[i+1]);}
-    const PW=d.pw||((d.w||1200)),PH=d.ph||((d.h||900)),wPt=estFillGeom(r,d).w*PW/(d.w||1)||12,mPt=Math.max(80,3*wPt);
+  function startFillEdit(id){const r=S.estruns.find(x=>x.id===id);if(!r){return;}
+    const isFill=r.widthMode==='fill';
+    if(isFill&&(!r.fillPoly||r.fillPoly.length<6)){toast('Nothing to paint yet');return;}
+    if(!isFill&&(!r.pts||r.pts.length<4)){toast('Nothing to paint yet');return;}
+    // the outline to start from: the fill, the run's hand-edited area, or the run's measured band
+    const PW=d.pw||((d.w||1200)),PH=d.ph||((d.h||900));
+    const src=isFill?[r.fillPoly]:(estAreaEdited(r)?estAreaRings(r):null);
+    let x0=1,y0=1,x1=0,y1=0;const ext=(a)=>{for(let i=0;i<a.length;i+=2){x0=Math.min(x0,a[i]);x1=Math.max(x1,a[i]);y0=Math.min(y0,a[i+1]);y1=Math.max(y1,a[i+1]);}};
+    if(src)src.forEach(ext);else ext(r.pts);if(!src&&estHasEdges(r)){ext(r.edgeL);ext(r.edgeR);}
+    const wPt=isFill?(estFillGeom(r,d).w*PW/(d.w||1)||12):((estEffFrac(r,d)*PW)||12),mPt=Math.max(80,3*wPt);
     x0=Math.max(0,x0-mPt/PW);x1=Math.min(1,x1+mPt/PW);y0=Math.max(0,y0-mPt/PH);y1=Math.min(1,y1+mPt/PH);editBB=[x0,y0,x1,y1];
     const bwPt=(x1-x0)*PW,bhPt=(y1-y0)*PH;editRpt=Math.min(8,2400/Math.max(bwPt,bhPt));
     editGW=Math.max(8,Math.ceil(bwPt*editRpt));editGH=Math.max(8,Math.ceil(bhPt*editRpt));
+    const fp=src;
     editRun=id;editTool='add';editGroupCol=estKindOf(r).color;editR=Math.max(3,Math.round(0.35*wPt*editRpt));
     editCv=document.createElement('canvas');editCv.width=editGW;editCv.height=editGH;editCv.id='efedit';
-    const g=editCv.getContext('2d');g.fillStyle=editGroupCol;g.beginPath();
-    for(let i=0;i<fp.length;i+=2){const x=(fp[i]-x0)/(x1-x0)*editGW,y=(fp[i+1]-y0)/(y1-y0)*editGH;i?g.lineTo(x,y):g.moveTo(x,y);}g.closePath();g.fill();
+    const g=editCv.getContext('2d');g.fillStyle=editGroupCol;g.strokeStyle=editGroupCol;const gx=v=>(v-x0)/(x1-x0)*editGW,gy=v=>(v-y0)/(y1-y0)*editGH;
+    const polyFill=a=>{g.beginPath();for(let i=0;i<a.length;i+=2){i?g.lineTo(gx(a[i]),gy(a[i+1])):g.moveTo(gx(a[i]),gy(a[i+1]));}g.closePath();g.fill();};
+    if(fp)fp.forEach(polyFill);
+    else{   // the measured band: its outline, plus each segment at its width (fills the corners)
+      if(estHasEdges(r)){const L=r.edgeL,R=r.edgeR,P=[];for(let i=0;i<L.length;i++)P.push(L[i]);for(let i=R.length-2;i>=0;i-=2)P.push(R[i],R[i+1]);polyFill(P);}
+      const sw=estSegW(r),w0=estEffFrac(r,d);g.lineCap='butt';g.lineJoin='round';
+      for(let i=0;i+3<r.pts.length;i+=2){const w=sw?sw[i/2]:w0;g.lineWidth=Math.max(1,w/(x1-x0)*editGW);
+        g.beginPath();g.moveTo(gx(r.pts[i]),gy(r.pts[i+1]));g.lineTo(gx(r.pts[i+2]),gy(r.pts[i+3]));g.stroke();}}
     editCv.style.cssText='position:absolute;opacity:0.5;pointer-events:none';
     editCv.style.left=(x0*baseW)+'px';editCv.style.top=(y0*baseH)+'px';editCv.style.width=((x1-x0)*baseW)+'px';editCv.style.height=((y1-y0)*baseH)+'px';
     stage.insertBefore(editCv,ink);mode='filledit';refresh();toast('Paint to add, Erase to remove — zoom in close for precise edges');}
@@ -4185,6 +4273,13 @@ function viewEstMeasure(app){
     if(editCv&&r&&B){const g=editCv.getContext('2d');const dta=g.getImageData(0,0,editGW,editGH).data;
       let count=0,minx=editGW,miny=editGH,maxx=0,maxy=0;const mask=new Uint8Array(editGW*editGH);
       for(let pq=0,i=0;pq<mask.length;pq++,i+=4){if(dta[i+3]>=128){mask[pq]=1;count++;const x=pq%editGW,y=(pq/editGW)|0;if(x<minx)minx=x;if(x>maxx)maxx=x;if(y<miny)miny=y;if(y>maxy)maxy=y;}}
+      if(r.widthMode!=='fill'){   // a drawn run: the painted outline becomes its area; its line stays its linear footage
+        if(count<9){estAreaClear(r);pPut('estruns',r).catch(()=>{});toast('Area erased — back to the measured width');}
+        else{const sx=(B[2]-B[0])/editGW,sy=(B[3]-B[1])/editGH,rings=[];
+          estMaskPieces(mask,editGW,editGH).forEach(c=>{if(c.length>=3){const poly=[];c.forEach(pt=>poly.push(+(B[0]+pt[0]*sx).toFixed(6),+(B[1]+pt[1]*sy).toFixed(6)));rings.push({p:poly});}});
+          if(rings.length){r.areaPoly=null;r.areaPolys=rings;r.areaFrac=count*sx*sy;pPut('estruns',r).catch(()=>{});
+            const a=estAreaFt(r,d);toast((a<100?ft1(a):Math.round(a))+' sq ft · '+ft1(estLenFt(r.pts,d))+' lf (area edited'+(rings.length>1?', '+rings.length+' pieces':'')+')');}}
+        editCleanup();mode='view';refresh();return;}
       if(count<9){S.estruns=S.estruns.filter(x=>x.id!==editRun);pDel('estruns',editRun).catch(()=>{});toast('Fill erased');}
       else{const raw=estTraceMask(mask,editGW,editGH,minx,miny,maxx,maxy);const c=estSimplify(raw.map(q=>[q[0]+0.5,q[1]+0.5]),0.7);
         const sx=(B[2]-B[0])/editGW,sy=(B[3]-B[1])/editGH;
@@ -4305,6 +4400,7 @@ function viewEstMeasure(app){
         ${isFill?`<button type="button" class="btn" id="rEditFill" style="width:100%;margin-top:16px">${I.fill} Edit fill area (paint / erase)</button>`:`<div class="cl-subhead">Width</div>
         <div class="seg" id="rWmode" style="margin-top:6px"><button type="button" data-w="auto"${cur.widthMode==='auto'?' class="on"':''}>Auto width</button><button type="button" data-w="manual"${cur.widthMode==='manual'?' class="on"':''}>Set width</button></div>
         ${cur.widthMode==='manual'?`<div class="field" style="margin-top:10px"><label>Duct width</label><input class="inp" id="rWidth" inputmode="decimal" value="${ftIn(estWidthFt(cur,d))}" placeholder="e.g. 12&quot;"></div>`:''}
+        ${cur.widthMode!=='manual'?`<button type="button" class="btn" id="rEditArea" style="width:100%;margin-top:16px">${I.fill} Edit area (paint / erase)</button>${estAreaEdited(cur)?`<p class="cl-note" style="margin-top:8px">Area edited by hand: <b>${Math.round(estAreaFt(cur,d))} sq ft</b> (measured ${Math.round(estAreaFt(Object.assign({},cur,{areaPoly:null,areaPolys:null,areaFrac:0}),d))} sq ft). The line you drew is still the linear footage.</p><button type="button" class="btn" id="rResetArea" style="width:100%;margin-top:8px">Reset area to measured</button>`:''}`:''}
         <button type="button" class="btn" id="rBranch" style="width:100%;margin-top:16px">${I.plus} Add a branch</button>`}
         <div id="rDelWrap">${(function(){let h='';const only=members.length<=1;
           if(isFill){h+=`<button type="button" class="btn danger" id="rDelOne" style="width:100%;margin-top:10px">Delete this fill</button>`;if(!only)h+=`<button type="button" class="btn danger" id="rDelAll" style="width:100%;margin-top:8px">Delete whole run · ${esc(glabel)}</button>`;}
@@ -4314,10 +4410,12 @@ function viewEstMeasure(app){
       body.querySelectorAll('#rKind [data-k]').forEach(b=>b.onclick=()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.kind=b.dataset.k;pPut('estruns',c).catch(()=>{});draw();refresh();});
       body.querySelector('#rLabel').onchange=ev=>{const rsL=estRunsOf(d.id);const cc=S.estruns.find(x=>x.id===id);const m=estRunMain(rsL,estGroupOf(cc))||cc;if(!m)return;m.label=ev.target.value.trim();pPut('estruns',m).catch(()=>{});refresh();};
       {const ef=body.querySelector('#rEditFill');if(ef)ef.onclick=()=>{ctl.close();startFillEdit(id);};}
+      {const ea=body.querySelector('#rEditArea');if(ea)ea.onclick=()=>{ctl.close();startFillEdit(id);};}
+      {const ra=body.querySelector('#rResetArea');if(ra)ra.onclick=()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;estAreaClear(c);pPut('estruns',c).catch(()=>{});draw();refresh();toast('Area reset to measured');};}
       {const ct=body.querySelector('#rClearTrace');if(ct)ct.onclick=()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.center=[];pPut('estruns',c).catch(()=>{});draw();refresh();toast('Using measured length');};}
       body.querySelectorAll('[data-w]').forEach(b=>b.onclick=async()=>{const c=S.estruns.find(x=>x.id===id);if(!c||c.widthMode==='fill')return;
         if(b.dataset.w==='manual'){c.widthMode='manual';if(!c.manualWidthFt)c.manualWidthFt=estWidthFt(c,d)||1;}
-        else{c.widthMode='auto';try{const m=await estMeasureRun(d,c.pts,false);if(m){c.segW=m.segW;c.wProf=m.wProf;c.edgeL=m.edgeL;c.edgeR=m.edgeR;}else{const img=await estImage(d);const e=estDetectEdges(c.pts,img,estMaxPx(d,img));if(e){c.edgeL=e.edgeL;c.edgeR=e.edgeR;}else{const w=estDetectWidthFrac(c.pts,img);if(w)c.widthFrac=w.frac;}}}catch(e){}}
+        else{c.widthMode='auto';estAreaClear(c);try{const m=await estMeasureRun(d,c.pts,false);if(m){c.segW=m.segW;c.wProf=m.wProf;c.edgeL=m.edgeL;c.edgeR=m.edgeR;}else{const img=await estImage(d);const e=estDetectEdges(c.pts,img,estMaxPx(d,img));if(e){c.edgeL=e.edgeL;c.edgeR=e.edgeR;}else{const w=estDetectWidthFrac(c.pts,img);if(w)c.widthFrac=w.frac;}}}catch(e){}}
         pPut("estruns",c).catch(()=>{});draw();refresh();});
       const wi=body.querySelector('#rWidth');if(wi)wi.onchange=ev=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;const ft=parseFeet(ev.target.value);if(ft&&ft>0){c.manualWidthFt=ft;pPut('estruns',c).catch(()=>{});draw();refresh();}else{toast('Enter a width');}};
       {const bb=body.querySelector('#rBranch');if(bb)bb.onclick=()=>{const c=S.estruns.find(x=>x.id===id);ctl.close();if(c&&c.kind)estKind=c.kind;startRun(estGroupOf(c));toast('Tap on the main to start the branch');};}

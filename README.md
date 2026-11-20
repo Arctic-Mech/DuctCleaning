@@ -51,7 +51,10 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   boxes and ducts drawn over it are looked past, and stretches where the walls are hidden take the
   size on either side), centers your line on the duct, and reads every size along it — a reducer in
   the middle of a segment splits into its sizes, each with its own width factor. Linear feet and
-  area follow from that. The line you drew shows as a crisp centerline with end dots (your linear measurement)
+  area follow from that. Dashed/grid lines and lines drawn over the duct are not taken for its
+  walls. Tap a run and choose **Edit area (paint / erase)** to fix the area by hand anywhere the
+  drawing is ambiguous (the brush starts from the measured band); the painted outline becomes the
+  run's sq ft while the drawn line stays its linear footage, and **Reset area to measured** undoes it. The line you drew shows as a crisp centerline with end dots (your linear measurement)
   and the detected width as a translucent band out to the bold lines (the area); width can be
   overridden by hand. Runs are colored by duct type — medium-pressure supply orange, low-pressure
   supply yellow, return green, exhaust purple — chosen while measuring or in the run sheet, with a
