@@ -71,7 +71,10 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   Ctrl/⌘-Z) removes the most recent run or fill. A **branch load** accounts for branches being slower
   to clean than a straight run: Standards holds a flat *hours per branch*, toggled **On/Off** per
   estimate. When on, it folds into the hrs-by-lf and hrs-by-sf totals and also shows as its own
-  "Branches (N)" figure on the estimate card. A **Standards** screen sets hours per linear foot, hours per square foot, and one
+  "Branches (N)" figure on the estimate card.
+  **Labor factors** (Standards): a multiplier per duct type (MPS / LPS / Return / Exhaust, e.g. Return ×1.05,
+  supply ×0.98) and width rules ("wider than 24″ ×1.10", "narrower than 8″ ×1.15") applied to each piece's
+  measured width (rounded to ½″). Factors multiply hrs by lf and hrs by sf; access doors use raw footage. A **Standards** screen sets hours per linear foot, hours per square foot, and one
   access door every N feet; because crews price labor two ways, each estimate shows **hours by lf**
   and **hours by sf** side by side (not summed) plus access doors — pick whichever your crew prices
   by. Estimating is desktop/laptop oriented (mouse wheel zooms); the drawing renders at high

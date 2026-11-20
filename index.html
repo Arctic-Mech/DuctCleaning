@@ -433,6 +433,8 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .estrun{display:flex;flex-direction:column;gap:8px;width:100%}
 .estkinds{display:flex;gap:6px}
 .scchips{display:flex;flex-wrap:wrap;gap:6px}
+.facgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px}.facgrid .field{margin:0}
+.facrow{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px}.facrow .inp{width:84px;flex:none}
 .fcrow{gap:8px;align-items:center}.fcrow .fcbtn{padding:7px 10px;font-size:12.5px;white-space:nowrap}.fcrow .fcbtn svg{width:14px;height:14px}
 .scchips .chip{border:1.5px solid var(--line);background:var(--surface-2);color:var(--fg);border-radius:999px;padding:7px 11px;font:600 13px var(--font-body);cursor:pointer}
 .scchips .chip.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--accent)}
@@ -889,7 +891,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 17:21';
+const BUILD='Nov 19 22:13';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2914,7 +2916,20 @@ function estGroupLabel(rs,r){const m=estRunMain(rs,estGroupOf(r));return (m&&m.l
 function estAutoLabel(rs,kind){const n=rs.filter(x=>estIsMain(x)&&(x.kind||'mps')===kind).length+1;return (LABELCODE[kind]||String(kind).toUpperCase())+' '+n;}
 function estDefaultKind(){try{const k=localStorage.getItem('ductpro-est-kind');if(DUCT_KINDS[k])return k;}catch(e){}return 'mps';}
 // estimating standards (shared): hours per lf/sf and one access door every N feet of run
-function estSettings(){const d={hrPerLf:0,hrPerSf:0,lfPerDoor:0,hrPerBranch:0};const v=S.estsetArr&&S.estsetArr[0];if(v){['hrPerLf','hrPerSf','lfPerDoor','hrPerBranch'].forEach(k=>{if(typeof v[k]==='number')d[k]=v[k];});}return d;}
+function estSettings(){const d={hrPerLf:0,hrPerSf:0,lfPerDoor:0,hrPerBranch:0,fMps:0,fLps:0,fRet:0,fExh:0,wideIn:0,wideF:0,narrowIn:0,narrowF:0};const v=S.estsetArr&&S.estsetArr[0];if(v){['hrPerLf','hrPerSf','lfPerDoor','hrPerBranch','fMps','fLps','fRet','fExh','wideIn','wideF','narrowIn','narrowF'].forEach(k=>{if(typeof v[k]==='number')d[k]=v[k];});}return d;}
+// labor factor for a piece of duct: duct-type factor × width rule(s) (blank = ×1 / off)
+function estFactorFor(kind,widthIn,s){s=s||estSettings();let f=({mps:s.fMps,lps:s.fLps,ret:s.fRet,exh:s.fExh})[kind||'mps'];if(!(f>0))f=1;
+  if(widthIn>0){if(s.wideIn>0&&s.wideF>0&&widthIn>s.wideIn)f*=s.wideF;if(s.narrowIn>0&&s.narrowF>0&&widthIn<s.narrowIn)f*=s.narrowF;}return f;}
+// a run split into pieces with their own width: [{lf, sf, win (width in inches, nearest ½")}]
+function estRunParts(r,d){const rIn=w=>Math.round(w*24)/2;
+  if(r.widthMode==='fill')return [{lf:estRunLenFt(r,d),sf:estAreaFt(r,d),win:rIn(estFillWidthFt(r,d))}];
+  const sw=estSegW(r);if(sw){const L=estSegLensFt(r,d);return sw.map((w,i)=>{const wf=w*(d.w||1)*estFpp(d);return {lf:L[i],sf:L[i]*wf,win:rIn(wf)};});}
+  return [{lf:estLenFt(r.pts,d),sf:estAreaFt(r,d),win:rIn(estWidthFt(r,d))}];}
+// factor-weighted totals for an estimate: kL / kA = effective multipliers on lf and sf labor
+function estFactored(estId){const s=estSettings();let L=0,fL=0,A=0,fA=0;
+  estDrawsOf(estId).forEach(d=>estRunsOf(d.id).forEach(r=>estRunParts(r,d).forEach(p=>{const f=estFactorFor(r.kind,p.win,s);L+=p.lf;fL+=p.lf*f;A+=p.sf;fA+=p.sf*f;})));
+  return {L,fL,A,fA,kL:L>0?fL/L:1,kA:A>0?fA/A:1};}
+function estFactorsActive(s){s=s||estSettings();return ['fMps','fLps','fRet','fExh'].some(k=>s[k]>0&&s[k]!==1)||(s.wideIn>0&&s.wideF>0&&s.wideF!==1)||(s.narrowIn>0&&s.narrowF>0&&s.narrowF!==1);}
 function estBranchCount(estId){let n=0;estDrawsOf(estId).forEach(d=>{estRunsOf(d.id).forEach(r=>{if(r.role==='branch'||(!r.role&&r.tieStart&&r.widthMode!=='fill'))n++;});});return n;}
 function estStandardsSheet(){
   const cur=estSettings();const body=document.createElement('div');
@@ -2923,17 +2938,22 @@ function estStandardsSheet(){
     <div class="field"><label>Hours per square foot</label><input class="inp" id="sHs" inputmode="decimal" value="${cur.hrPerSf||''}" placeholder="e.g. 0.02"></div>
     <div class="field"><label>Access door every ___ feet of run</label><input class="inp" id="sDd" inputmode="decimal" value="${cur.lfPerDoor||''}" placeholder="e.g. 20"></div>
     <div class="cl-subhead" style="margin-top:4px">Branch load — branches are slower to clean than a straight run</div>
-    <div class="field" style="margin-top:8px;margin-bottom:2px"><label>Extra hours per branch</label><input class="inp" id="sHb" inputmode="decimal" value="${cur.hrPerBranch||''}" placeholder="e.g. 0.4"></div>`;
+    <div class="field" style="margin-top:8px"><label>Extra hours per branch</label><input class="inp" id="sHb" inputmode="decimal" value="${cur.hrPerBranch||''}" placeholder="e.g. 0.4"></div>
+    <div class="cl-subhead" style="margin-top:4px">Labor factors — multiply hours by duct type and size (blank = ×1)</div>
+    <div class="facgrid">${[['fMps','MPS'],['fLps','LPS'],['fRet','Return'],['fExh','Exhaust']].map(([k,l])=>`<div class="field"><label>${l} ×</label><input class="inp" id="s_${k}" inputmode="decimal" value="${cur[k]||''}" placeholder="1.00"></div>`).join('')}</div>
+    <div class="facrow"><span>Wider than</span><input class="inp" id="s_wideIn" inputmode="decimal" value="${cur.wideIn||''}" placeholder="e.g. 24"><span>″ ×</span><input class="inp" id="s_wideF" inputmode="decimal" value="${cur.wideF||''}" placeholder="1.10"></div>
+    <div class="facrow" style="margin-bottom:2px"><span>Narrower than</span><input class="inp" id="s_narrowIn" inputmode="decimal" value="${cur.narrowIn||''}" placeholder="e.g. 8"><span>″ ×</span><input class="inp" id="s_narrowF" inputmode="decimal" value="${cur.narrowF||''}" placeholder="1.15"></div>
+    <p class="cl-note" style="font-size:12.5px;margin-top:6px">Width is each piece's measured duct width (rounded to ½″). Factors multiply both hrs by lf and hrs by sf; access doors use the raw footage.</p>`;
   const foot=document.createElement('button');foot.className='btn primary block';foot.textContent='Save standards';
   const ctl=sheetShell({title:'Estimating standards',bodyNode:body,footNode:foot});
   foot.onclick=async()=>{const num=id=>{const v=parseFloat(body.querySelector(id).value);return isNaN(v)||v<0?0:v;};
-    const doc={id:'default',hrPerLf:num('#sHl'),hrPerSf:num('#sHs'),lfPerDoor:num('#sDd'),hrPerBranch:num('#sHb'),createdAt:now()};
+    const doc={id:'default',hrPerLf:num('#sHl'),hrPerSf:num('#sHs'),lfPerDoor:num('#sDd'),hrPerBranch:num('#sHb'),fMps:num('#s_fMps'),fLps:num('#s_fLps'),fRet:num('#s_fRet'),fExh:num('#s_fExh'),wideIn:num('#s_wideIn'),wideF:num('#s_wideF'),narrowIn:num('#s_narrowIn'),narrowF:num('#s_narrowF'),createdAt:now()};
     S.estsetArr=[doc];await pPut('estsettings',doc).catch(()=>toast('Not saved — check connection'));
     ctl.close();render();toast('Standards saved');};
 }
 // labor + access-door estimate from totals and the standards
-function estDerived(totL,totA,branches,mode){const s=estSettings();branches=branches||0;mode=(mode==='none')?'none':'flat';
-  const baseLf=totL*s.hrPerLf, baseSf=totA*s.hrPerSf;
+function estDerived(totL,totA,branches,mode,kL,kA){const s=estSettings();branches=branches||0;mode=(mode==='none')?'none':'flat';kL=kL>0?kL:1;kA=kA>0?kA:1;
+  const baseLf=totL*s.hrPerLf*kL, baseSf=totA*s.hrPerSf*kA;
   const flat=(mode==='flat')?branches*s.hrPerBranch:0;
   return {hrsLf:baseLf+flat, hrsSf:baseSf+flat, baseLf, baseSf, doors:s.lfPerDoor>0?Math.ceil(totL/s.lfPerDoor):0,
     branches, branchMode:mode, branchFlat:flat,
@@ -3521,7 +3541,7 @@ function viewEstimate(app){
         <div class="stats"><div class="s"><b>${draws.length}</b><span>Drawings</span></div>
           <div class="s"><b>${ft1(totL)}</b><span>Linear ft</span></div>
           <div class="s"><b>${Math.round(totA)}</b><span>Sq ft</span></div></div></div>
-      ${(()=>{const branches=estBranchCount(e.id);const bmode=(e.branchMode==='none')?'none':'flat';const dv=estDerived(totL,totA,branches,bmode);const es=estSettings();
+      ${(()=>{const branches=estBranchCount(e.id);const bmode=(e.branchMode==='none')?'none':'flat';const fx=estFactored(e.id);const dv=estDerived(totL,totA,branches,bmode,fx.kL,fx.kA);const es=estSettings();const facOn=estFactorsActive(es);
         const bBig=(!dv.hasBranchRate||bmode==='none'||!branches)?'—':('+'+ft1(dv.branchFlat)+'h');
         const noteAdd=bmode==='none'?'nothing':(es.hrPerBranch>0?ft1(es.hrPerBranch)+'h per branch':'nothing yet (set it in Standards)');
         return `<div class="card est-card" style="padding:14px 16px;margin-top:12px">
@@ -3534,7 +3554,8 @@ function viewEstimate(app){
           <div class="seg" id="estBranchMode" style="flex:1;min-width:160px;max-width:220px">
             <button type="button" data-bm="flat"${bmode!=='none'?' class="on"':''}>On</button>
             <button type="button" data-bm="none"${bmode==='none'?' class="on"':''}>Off</button></div></div>
-        ${dv.any?`<p class="cl-note" style="margin:10px 0 0;font-size:12.5px">Hrs by lf and hrs by sf each already include branch time — pick whichever your crew prices by. Branch load adds ${noteAdd}.</p>`:'<p class="cl-note" style="margin:10px 0 0">Set your standards (hours per lf and/or sf, access door spacing, branch load) to estimate labor and doors.</p>'}</div>`;})()}
+        ${facOn?`<div class="cl-statrow" id="estFac" style="margin-top:10px;font-size:12.5px">Labor factors applied: <b>×${fx.kL.toFixed(3)}</b> on lf hours · <b>×${fx.kA.toFixed(3)}</b> on sf hours</div>`:''}
+        ${dv.any?`<p class="cl-note" style="margin:10px 0 0;font-size:12.5px">Hrs by lf and hrs by sf each already include branch time${facOn?' and your duct-type / size factors':''} — pick whichever your crew prices by. Branch load adds ${noteAdd}.</p>`:'<p class="cl-note" style="margin:10px 0 0">Set your standards (hours per lf and/or sf, access door spacing, branch load) to estimate labor and doors.</p>'}</div>`;})()}
       <div class="section-head"><h2>Drawings</h2></div>
       ${draws.length?`<div class="card" style="padding:0">${list}</div>`
         :`<div class="empty"><div class="ic">${I.plan}</div><h2>No drawings yet</h2><p>Upload a PDF to measure.</p></div>`}
