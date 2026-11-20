@@ -53,9 +53,10 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   the middle of a segment splits into its sizes, each with its own width factor. Linear feet and
   area follow from that. Dashed/grid lines and lines drawn over the duct are not taken for its
   walls. When the PDF is a vector drawing (CAD output), the walls are read from the PDF's own lines,
-  so positions are exact, and at each bend the band follows the real elbow — radius or mitered
-  (snapped to the midline between its walls), with square elbows and tees kept square — so the
-  line runs along the duct's true centreline and the area is the duct's own. Tap a run and choose **Edit area (paint / erase)** to fix the area by hand anywhere the
+  so positions are exact, and at each bend the app traces the fitting's own walls line by line
+  (radius or mitered elbows and angled offsets alike), so the band's outline is the fitting's exact
+  shape, the line runs along the midline between its walls and the area is the duct's own; square
+  elbows and tees stay square. Tap a run and choose **Edit area (paint / erase)** to fix the area by hand anywhere the
   drawing is ambiguous (the brush starts from the measured band); the painted outline becomes the
   run's sq ft while the drawn line stays its linear footage, and **Reset area to measured** undoes it. The line you drew shows as a crisp centerline with end dots (your linear measurement)
   and the detected width as a translucent band out to the bold lines (the area); width can be
