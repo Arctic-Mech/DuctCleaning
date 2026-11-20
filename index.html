@@ -898,7 +898,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 20 11:41';
+const BUILD='Nov 20 11:48';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -3720,7 +3720,7 @@ async function estMeasureRun(d,ptsN,centre){
   return {pts,segW,wProf:prof,edgeL:L.length>=2?flatN(L):null,edgeR:R.length>=2?flatN(R):null};}
 // the duct sizes along a drawn run, longest first ("60″ · 42″"), from its measured pieces
 function estRunSizes(r,d){const by={};estRunParts(r,d).forEach(p=>{if(p.win>0)by[p.win]=(by[p.win]||0)+p.lf;});
-  return Object.keys(by).sort((a,b)=>by[b]-by[a]).filter(k=>by[k]>=0.5).map(k=>k+'″').join(' · ');}
+  const tot=Object.values(by).reduce((a,b)=>a+b,0);return Object.keys(by).sort((a,b)=>by[b]-by[a]).filter(k=>by[k]>=Math.max(0.5,0.05*tot)).map(k=>k+'″').join(' · ');}   // sizes covering ≥5% of the run
 // is a probed piece a clean duct piece (band-shaped, lying along the duct)? Only then may a tap snap to its centreline:
 // a chunk cut out by crossing walls or tags can lie crosswise or be irregular, and snapping to it kinks the run.
 function estCleanPiece(r){return !!(r&&r.wMedPt>0&&r.wPt>0&&Math.abs(r.wPt-r.wMedPt)<=0.06*r.wMedPt&&(r.lenAWPt||0)>=1.0*r.wMedPt);}
