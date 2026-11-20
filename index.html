@@ -898,7 +898,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 20 14:24';
+const BUILD='Nov 20 14:44';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -3737,7 +3737,13 @@ async function estRunWallsHD(d,ptsN,opt){
   segs.forEach((sg,si)=>{if(!sg||!sg.s.length)return;
     // centre line from the straight part only: next to a bend the walls belong to the fitting
     const wv=sg.lw.filter(v=>v!=null).sort((x,y)=>x-y),wq0=wv.length?wv[wv.length>>1]:0,wq=sg.L>6*wq0?2*wq0:wq0,lo=si>0?wq:0,hi=si<segs.length-1?sg.L-wq:sg.L;   // an elbow reaches ~2 duct widths along each leg
-    let pts=[];sg.s.forEach((s,k)=>{if(sg.lc[k]!=null&&s>=lo&&s<=hi)pts.push([s,sg.lc[k]]);});
+    // ...and from the segment's main size only: a short wider / narrower section (a silencer, a box, a lopsided
+    // transition) has its middle elsewhere and would tilt the line
+    let wMain=null;{const ws=[];sg.s.forEach((s,k)=>{if(sg.lw[k]!=null)ws.push(sg.lw[k]);});ws.sort((x,y)=>x-y);let best=0;
+      for(let i=0,j=0;i<ws.length;i++){while(ws[i]-ws[j]>Math.max(0.03*ws[i],0.6))j++;if(i-j+1>best){best=i-j+1;wMain=ws[(i+j)>>1];}}}
+    const main=k=>wMain==null||(sg.lw[k]!=null&&Math.abs(sg.lw[k]-wMain)<=Math.max(0.03*wMain,0.6));
+    let pts=[];sg.s.forEach((s,k)=>{if(sg.lc[k]!=null&&s>=lo&&s<=hi&&main(k))pts.push([s,sg.lc[k]]);});
+    if(pts.length<4){pts=[];sg.s.forEach((s,k)=>{if(sg.lc[k]!=null&&main(k))pts.push([s,sg.lc[k]]);});}
     if(pts.length<4){pts=[];sg.s.forEach((s,k)=>{if(sg.lc[k]!=null)pts.push([s,sg.lc[k]]);});}
     let a=0,m=0;
     if(pts.length>=4){let use=pts;   // line through the centres, refit without outliers (a stretch with something drawn over the duct)
