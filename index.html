@@ -898,7 +898,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 20 11:48';
+const BUILD='Nov 20 12:54';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2934,7 +2934,8 @@ function estRunParts(r,d){const rIn=w=>Math.round(w*24)/2;
     return tot>0?m.map(p=>({lf:p.lf,sf:p.sf*a/tot,win:p.win})):[{lf:estLenFt(r.pts,d),sf:a,win:rIn(estWidthFt(r,d))}];}
   const sw=estSegW(r);if(sw){const L=estSegLensFt(r,d),k=(d.w||1)*estFpp(d);
     if(Array.isArray(r.wProf)&&r.wProf.length===sw.length)   // width profile: each size along a segment is its own piece (reducers)
-      return [].concat(...r.wProf.map((pr,i)=>(pr&&pr.length?pr:[[1,sw[i]]]).map(q=>({lf:L[i]*q[0],sf:L[i]*q[0]*q[1]*k,win:rIn(q[1]*k)}))));
+      return [].concat(...r.wProf.map((o,i)=>{let pr=null;if(o&&Array.isArray(o.p)&&o.p.length>=2){pr=[];for(let j=0;j+1<o.p.length;j+=2)pr.push([o.p[j],o.p[j+1]]);}else if(Array.isArray(o)&&o.length)pr=o;
+        return (pr&&pr.length?pr:[[1,sw[i]]]).map(q=>({lf:L[i]*q[0],sf:L[i]*q[0]*q[1]*k,win:rIn(q[1]*k)}));}));
     return sw.map((w,i)=>{const wf=w*k;return {lf:L[i],sf:L[i]*wf,win:rIn(wf)};});}
   return [{lf:estLenFt(r.pts,d),sf:estAreaFt(r,d),win:rIn(estWidthFt(r,d))}];}
 // factor-weighted totals for an estimate: kL / kA = effective multipliers on lf and sf labor
@@ -3717,7 +3718,7 @@ async function estMeasureRun(d,ptsN,centre){
   if(!segW.some(w=>w>0))return null;
   const med=segW.filter(w=>w>0).sort((x,y)=>x-y);const m0=med[med.length>>1];segW.forEach((w,i)=>{if(!(w>0)){segW[i]=m0;prof[i]=[[1,m0]];}});
   const flatN=Q=>[].concat(...estSimplify(Q,0.15).map(p=>[+(p[0]/PW).toFixed(6),+(p[1]/PH).toFixed(6)]));
-  return {pts,segW,wProf:prof,edgeL:L.length>=2?flatN(L):null,edgeR:R.length>=2?flatN(R):null};}
+  return {pts,segW,wProf:prof.map(pr=>({p:[].concat(...pr)})),edgeL:L.length>=2?flatN(L):null,edgeR:R.length>=2?flatN(R):null};}
 // the duct sizes along a drawn run, longest first ("60″ · 42″"), from its measured pieces
 function estRunSizes(r,d){const by={};estRunParts(r,d).forEach(p=>{if(p.win>0)by[p.win]=(by[p.win]||0)+p.lf;});
   const tot=Object.values(by).reduce((a,b)=>a+b,0);return Object.keys(by).sort((a,b)=>by[b]-by[a]).filter(k=>by[k]>=Math.max(0.5,0.05*tot)).map(k=>k+'″').join(' · ');}   // sizes covering ≥5% of the run
@@ -4249,7 +4250,7 @@ function viewEstMeasure(app){
     const bwPt=(x1-x0)*PW,bhPt=(y1-y0)*PH;editRpt=Math.min(8,2400/Math.max(bwPt,bhPt));
     editGW=Math.max(8,Math.ceil(bwPt*editRpt));editGH=Math.max(8,Math.ceil(bhPt*editRpt));
     const fp=src;
-    editRun=id;editTool='add';editGroupCol=estKindOf(r).color;editR=Math.max(3,Math.round(0.35*wPt*editRpt));
+    editRun=id;editDirty=false;editTool='add';editGroupCol=estKindOf(r).color;editR=Math.max(3,Math.round(0.35*wPt*editRpt));
     editCv=document.createElement('canvas');editCv.width=editGW;editCv.height=editGH;editCv.id='efedit';
     const g=editCv.getContext('2d');g.fillStyle=editGroupCol;g.strokeStyle=editGroupCol;const gx=v=>(v-x0)/(x1-x0)*editGW,gy=v=>(v-y0)/(y1-y0)*editGH;
     const polyFill=a=>{g.beginPath();for(let i=0;i<a.length;i+=2){i?g.lineTo(gx(a[i]),gy(a[i+1])):g.moveTo(gx(a[i]),gy(a[i+1]));}g.closePath();g.fill();};
@@ -4257,19 +4258,22 @@ function viewEstMeasure(app){
     else{   // the measured band: its outline, plus each segment at its width (fills the corners)
       if(estHasEdges(r)){const L=r.edgeL,R=r.edgeR,P=[];for(let i=0;i<L.length;i++)P.push(L[i]);for(let i=R.length-2;i>=0;i-=2)P.push(R[i],R[i+1]);polyFill(P);}
       const sw=estSegW(r),w0=estEffFrac(r,d);g.lineCap='butt';g.lineJoin='round';
-      for(let i=0;i+3<r.pts.length;i+=2){const w=sw?sw[i/2]:w0;g.lineWidth=Math.max(1,w/(x1-x0)*editGW);
+      const minW=i=>{const o=Array.isArray(r.wProf)?r.wProf[i]:null;const p=o&&Array.isArray(o.p)?o.p:null;let m=sw?sw[i]:w0;if(p)for(let j=1;j<p.length;j+=2)m=Math.min(m,p[j]);return m;};
+      for(let i=0;i+3<r.pts.length;i+=2){const w=estHasEdges(r)?minW(i/2):(sw?sw[i/2]:w0);g.lineWidth=Math.max(1,w/(x1-x0)*editGW);
         g.beginPath();g.moveTo(gx(r.pts[i]),gy(r.pts[i+1]));g.lineTo(gx(r.pts[i+2]),gy(r.pts[i+3]));g.stroke();}}
     editCv.style.cssText='position:absolute;opacity:0.5;pointer-events:none';
     editCv.style.left=(x0*baseW)+'px';editCv.style.top=(y0*baseH)+'px';editCv.style.width=((x1-x0)*baseW)+'px';editCv.style.height=((y1-y0)*baseH)+'px';
     stage.insertBefore(editCv,ink);mode='filledit';refresh();toast('Paint to add, Erase to remove — zoom in close for precise edges');}
   function editBrushIn(){const PW=d.pw||(d.w||1);const ftPerPt=estFpp(d)*(d.w||1)/PW;return 2*editR/editRpt*ftPerPt*12;}
-  function editPaint(cx,cy){if(!editCv||!editBB)return;const {nx,ny}=toNorm(cx,cy);const B=editBB;
+  let editDirty=false;
+  function editPaint(cx,cy){if(!editCv||!editBB)return;editDirty=true;const {nx,ny}=toNorm(cx,cy);const B=editBB;
     const gx=(nx-B[0])/(B[2]-B[0])*editGW,gy=(ny-B[1])/(B[3]-B[1])*editGH;const g=editCv.getContext('2d');
     if(editTool==='erase'){g.save();g.globalCompositeOperation='destination-out';g.beginPath();g.arc(gx,gy,editR,0,7);g.fill();g.restore();}
     else{g.globalCompositeOperation='source-over';g.fillStyle=editGroupCol;g.beginPath();g.arc(gx,gy,editR,0,7);g.fill();}}
   function editCleanup(){if(editCv&&editCv.parentNode)editCv.parentNode.removeChild(editCv);editCv=null;editRun=null;editPainting=false;editBB=null;}
   function editCancel(){editCleanup();mode='view';refresh();}
   function editDone(){const r=S.estruns.find(x=>x.id===editRun),B=editBB;
+    if(!editDirty){editCleanup();mode='view';refresh();return;}   // nothing painted or erased: leave it exactly as it was
     if(editCv&&r&&B){const g=editCv.getContext('2d');const dta=g.getImageData(0,0,editGW,editGH).data;
       let count=0,minx=editGW,miny=editGH,maxx=0,maxy=0;const mask=new Uint8Array(editGW*editGH);
       for(let pq=0,i=0;pq<mask.length;pq++,i+=4){if(dta[i+3]>=128){mask[pq]=1;count++;const x=pq%editGW,y=(pq/editGW)|0;if(x<minx)minx=x;if(x>maxx)maxx=x;if(y<miny)miny=y;if(y>maxy)maxy=y;}}
@@ -4474,7 +4478,14 @@ function viewEstMeasure(app){
 
   // ---- pan / zoom / tap ----
   const ptrs=new Map();let panStart=null,pinch=null,moved=0,downXY=null;
-  viewer.addEventListener('pointerdown',ev=>{if(mode==='filledit'){viewer.setPointerCapture(ev.pointerId);editPainting=true;editPaint(ev.clientX,ev.clientY);return;}viewer.setPointerCapture(ev.pointerId);ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+  let midPan=null;   // middle button (scroll wheel held down): drag moves the plan in any mode
+  viewer.addEventListener('mousedown',ev=>{if(ev.button===1)ev.preventDefault();});   // no browser autoscroll
+  viewer.addEventListener('auxclick',ev=>{if(ev.button===1)ev.preventDefault();});
+  viewer.addEventListener('pointerdown',ev=>{if(ev.button===1&&ev.pointerType==='mouse'){ev.preventDefault();viewer.setPointerCapture(ev.pointerId);midPan={id:ev.pointerId,x:ev.clientX,y:ev.clientY,tx,ty};viewer.style.cursor='grabbing';return;}},true);
+  viewer.addEventListener('pointermove',ev=>{if(midPan&&ev.pointerId===midPan.id){ev.stopImmediatePropagation();tx=midPan.tx+(ev.clientX-midPan.x);ty=midPan.ty+(ev.clientY-midPan.y);apply();}},true);
+  const midUp=ev=>{if(midPan&&ev.pointerId===midPan.id&&!(ev.buttons&4)){ev.stopImmediatePropagation();midPan=null;viewer.style.cursor='';}};
+  viewer.addEventListener('pointerup',midUp,true);viewer.addEventListener('pointercancel',midUp,true);
+  viewer.addEventListener('pointerdown',ev=>{if(midPan||ev.button===1)return;if(mode==='filledit'){viewer.setPointerCapture(ev.pointerId);editPainting=true;editPaint(ev.clientX,ev.clientY);return;}viewer.setPointerCapture(ev.pointerId);ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
     if(ptrs.size===1){panStart={x:ev.clientX,y:ev.clientY,tx,ty};downXY={x:ev.clientX,y:ev.clientY};moved=0;}
     else if(ptrs.size===2){const p=[...ptrs.values()];const mx=(p[0].x+p[1].x)/2,my=(p[0].y+p[1].y)/2;
       const r=viewer.getBoundingClientRect();pinch={d:Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y),scale,cx:mx-r.left,cy:my-r.top,
@@ -4495,7 +4506,18 @@ function viewEstMeasure(app){
 
   requestAnimationFrame(()=>{fit();refresh();
     estImage(d).then(img=>{if(img&&img.url&&S.estDrawId===d.id){const pl=app.querySelector('#eplan');if(pl&&pl.isConnected)pl.src=img.url;}}).catch(()=>{});
-    loadPdfE().then(pg=>{if(pg)renderHiresE();}).catch(()=>{});});
+    loadPdfE().then(pg=>{if(pg)renderHiresE();}).catch(()=>{});
+    setTimeout(healRuns,600);});
+  // runs saved without their measured width (e.g. the save after measuring failed): measure them again now
+  async function healRuns(){const todo=estRunsOf(d.id).filter(r=>r.widthMode==='auto'&&r.pts&&r.pts.length>=4&&!estSegW(r)&&!estHasEdges(r)&&!(r.widthFrac>0));
+    if(!todo.length||!d.cal)return;
+    for(const r of todo){if(!viewer.isConnected)return;if(!S.estruns.includes(r)||estSegW(r))continue;
+      hint.innerHTML=`${I.info}<span>Reading width…</span>`;
+      try{const m=await estMeasureRun(d,r.pts,true);if(!m||!S.estruns.includes(r))continue;
+        if(m.pts.length===r.pts.length){const keep=r.tieStart?r.pts.slice(0,2):null;r.pts=m.pts;if(keep){r.pts[0]=keep[0];r.pts[1]=keep[1];}}
+        r.segW=m.segW;r.wProf=m.wProf;r.edgeL=m.edgeL;r.edgeR=m.edgeR;pPut('estruns',r).catch(()=>toast('Not saved — check connection'));
+        if(viewer.isConnected)refresh();}catch(e){console.warn('re-measure',e);}}
+    if(viewer.isConnected){renderBar();toast('Re-measured '+todo.length+' run'+(todo.length>1?'s':''));}}
 }
 
 /* ============================ export: interactive PDF ============================ */
