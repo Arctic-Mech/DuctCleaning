@@ -898,7 +898,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 20 12:54';
+const BUILD='Nov 20 14:24';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -3484,7 +3484,114 @@ function estInscribedDiam(P){const n=P.length;if(n<3)return 0;let x0=1e18,y0=1e1
   return 2*best;}
 const estPolyLen=Q=>{let L=0;for(let i=1;i<Q.length;i++)L+=Math.hypot(Q[i][0]-Q[i-1][0],Q[i][1]-Q[i-1][1]);return L;};
 // width of the duct under each segment of a drawn run (page points), from the piece the segment runs through
-async function estRunWidthsHD(d,pts){const r=await estRunWallsHD(d,pts,{walls:true});if(!r)return null;return r.segs.map(sg=>sg&&sg.wMean>0?sg.wMean/r.PW:0);}
+async function estRunWidthsHD(d,pts){const r=await estRunWallsHD(d,pts,{walls:true,V:await estVecPage(d)});if(!r)return null;return r.segs.map(sg=>sg&&sg.wMean>0?sg.wMean/r.PW:0);}
+// ---- exact geometry from the PDF's own vector drawing ----
+// The drawing's strokes (lines, curves, rectangles) are read from the page's operator list, mapped to page points,
+// and kept with their gray level, width and dash; text, images and fills are left out. Light-gray strokes (the
+// architectural background) are dropped, like in the measuring render. A grid makes ray queries fast.
+const ESTVEC={};
+function estVecPage(d){
+  if(!(d.id in ESTVEC))ESTVEC[d.id]=(async()=>{const pg=await estPdfPage(d);if(!pg||typeof pdfjsLib==='undefined'||!pdfjsLib.OPS)return null;
+    const ol=await pg.getOperatorList();return estVecBuild(ol,pg.getViewport({scale:1}),pdfjsLib.OPS);})().catch(e=>{console.warn('vector read',e);return null;});
+  return ESTVEC[d.id];}
+function estVecBuild(ol,vp,OPS){
+  const vt=vp.transform,PW=vp.width,PH=vp.height;
+  const mul=(T,M)=>[T[0]*M[0]+T[2]*M[1],T[1]*M[0]+T[3]*M[1],T[0]*M[2]+T[2]*M[3],T[1]*M[2]+T[3]*M[3],T[0]*M[4]+T[2]*M[5]+T[4],T[1]*M[4]+T[3]*M[5]+T[5]];
+  let ctm=[1,0,0,1,0,0],lw=1,dash=false,lum=0;const stack=[];
+  const X=[],Y=[],X2=[],Y2=[],LW=[],LU=[],DA=[];
+  let path=[],cx=0,cy=0,sx=0,sy=0;   // current path: flat list of page-point segments
+  const tp=(x,y)=>{const ux=ctm[0]*x+ctm[2]*y+ctm[4],uy=ctm[1]*x+ctm[3]*y+ctm[5];return [vt[0]*ux+vt[2]*uy+vt[4],vt[1]*ux+vt[3]*uy+vt[5]];};
+  const seg=(a,b)=>{if(Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1])>1e-6)path.push(a[0],a[1],b[0],b[1]);};
+  const bez=(p0,p1,p2,p3)=>{const L=Math.hypot(p1[0]-p0[0],p1[1]-p0[1])+Math.hypot(p2[0]-p1[0],p2[1]-p1[1])+Math.hypot(p3[0]-p2[0],p3[1]-p2[1]);
+    const n=Math.max(2,Math.min(24,Math.ceil(L/1.5)));let q=p0;
+    for(let i=1;i<=n;i++){const t=i/n,u=1-t,a=u*u*u,b=3*u*u*t,c=3*u*t*t,e=t*t*t;const r=[a*p0[0]+b*p1[0]+c*p2[0]+e*p3[0],a*p0[1]+b*p1[1]+c*p2[1]+e*p3[1]];seg(q,r);q=r;}};
+  const scaleOf=()=>Math.sqrt(Math.abs(ctm[0]*ctm[3]-ctm[1]*ctm[2]))||1;
+  const commit=()=>{if(lum<EST_WALL&&path.length){const w=Math.max(0.1,lw*scaleOf());
+      for(let i=0;i<path.length;i+=4){X.push(path[i]);Y.push(path[i+1]);X2.push(path[i+2]);Y2.push(path[i+3]);LW.push(w);LU.push(lum);DA.push(dash?1:0);}}path=[];};
+  const fn=ol.fnArray,args=ol.argsArray;
+  for(let k=0;k<fn.length;k++){const f=fn[k],a=args[k];
+    switch(f){
+      case OPS.save:stack.push({ctm,lw,dash,lum});break;
+      case OPS.restore:{const s=stack.pop();if(s){ctm=s.ctm;lw=s.lw;dash=s.dash;lum=s.lum;}break;}
+      case OPS.transform:ctm=mul(ctm,a);break;
+      case OPS.paintFormXObjectBegin:stack.push({ctm,lw,dash,lum});if(a&&a[0]&&a[0].length===6)ctm=mul(ctm,a[0]);break;
+      case OPS.paintFormXObjectEnd:{const s=stack.pop();if(s){ctm=s.ctm;lw=s.lw;dash=s.dash;lum=s.lum;}break;}
+      case OPS.beginGroup:stack.push({ctm,lw,dash,lum});if(a&&a[0]&&a[0].matrix)ctm=mul(ctm,a[0].matrix);break;
+      case OPS.endGroup:{const s=stack.pop();if(s){ctm=s.ctm;lw=s.lw;dash=s.dash;lum=s.lum;}break;}
+      case OPS.setLineWidth:lw=a[0];break;
+      case OPS.setDash:dash=!!(a&&a[0]&&a[0].length&&a[0].some(v=>v>0));break;
+      case OPS.setGState:if(a&&a[0])for(const kv of a[0]){if(kv[0]==='LW')lw=kv[1];else if(kv[0]==='D')dash=!!(kv[1]&&kv[1][0]&&kv[1][0].length&&kv[1][0].some(v=>v>0));}break;
+      case OPS.setStrokeRGBColor:lum=(a[0]*77+a[1]*151+a[2]*28)>>8;break;
+      case OPS.setStrokeGray:lum=Math.round((a[0]<=1?a[0]*255:a[0]));break;
+      case OPS.constructPath:{const ops=a[0],c=a[1];let j=0;
+        for(const op of ops){
+          if(op===OPS.moveTo){cx=c[j++];cy=c[j++];sx=cx;sy=cy;}
+          else if(op===OPS.lineTo){const x=c[j++],y=c[j++];seg(tp(cx,cy),tp(x,y));cx=x;cy=y;}
+          else if(op===OPS.curveTo){const x1=c[j++],y1=c[j++],x2=c[j++],y2=c[j++],x=c[j++],y=c[j++];bez(tp(cx,cy),tp(x1,y1),tp(x2,y2),tp(x,y));cx=x;cy=y;}
+          else if(op===OPS.curveTo2){const x2=c[j++],y2=c[j++],x=c[j++],y=c[j++];bez(tp(cx,cy),tp(cx,cy),tp(x2,y2),tp(x,y));cx=x;cy=y;}
+          else if(op===OPS.curveTo3){const x1=c[j++],y1=c[j++],x=c[j++],y=c[j++];bez(tp(cx,cy),tp(x1,y1),tp(x,y),tp(x,y));cx=x;cy=y;}
+          else if(op===OPS.closePath){seg(tp(cx,cy),tp(sx,sy));cx=sx;cy=sy;}
+          else if(op===OPS.rectangle){const x=c[j++],y=c[j++],w=c[j++],h=c[j++];const p0=tp(x,y),p1=tp(x+w,y),p2=tp(x+w,y+h),p3=tp(x,y+h);seg(p0,p1);seg(p1,p2);seg(p2,p3);seg(p3,p0);cx=x;cy=y;sx=x;sy=y;}
+        }break;}
+      case OPS.stroke:case OPS.closeStroke:case OPS.fillStroke:case OPS.eoFillStroke:case OPS.closeFillStroke:case OPS.closeEOFillStroke:commit();break;
+      case OPS.fill:case OPS.eoFill:case OPS.endPath:path=[];break;
+    }}
+  const n=X.length,G=16,GW=Math.ceil(PW/G)+1,GH=Math.ceil(PH/G)+1;
+  const V={n,PW,PH,G,GW,GH,x1:Float32Array.from(X),y1:Float32Array.from(Y),x2:Float32Array.from(X2),y2:Float32Array.from(Y2),lw:Float32Array.from(LW),lum:Uint8Array.from(LU),dash:Uint8Array.from(DA)};
+  // grid (CSR): which segments touch each cell
+  const cnt=new Int32Array(GW*GH+1);const cells=(i,cb)=>{const ax=V.x1[i],ay=V.y1[i],bx=V.x2[i],by=V.y2[i];
+    const L=Math.hypot(bx-ax,by-ay),m=Math.max(1,Math.ceil(L/(G/2)));let last=-1;
+    for(let s=0;s<=m;s++){const x=ax+(bx-ax)*s/m,y=ay+(by-ay)*s/m;const gx=Math.min(GW-1,Math.max(0,Math.floor(x/G))),gy=Math.min(GH-1,Math.max(0,Math.floor(y/G))),c=gy*GW+gx;if(c!==last){cb(c);last=c;}}};
+  for(let i=0;i<n;i++)cells(i,c=>cnt[c+1]++);
+  for(let c=0;c<GW*GH;c++)cnt[c+1]+=cnt[c];
+  const fill=cnt.slice(0,GW*GH),idx=new Int32Array(cnt[GW*GH]);
+  for(let i=0;i<n;i++)cells(i,c=>{idx[fill[c]++]=i;});
+  V.start=cnt;V.idx=idx;V.stamp=new Int32Array(n);V.tick=0;
+  return V;}
+// every crossing of a ray (from x,y along unit dx,dy, up to tmax) with the drawing's strokes, nearest first:
+// [{t, i (segment), c (|cos| between the segment and the ray's normal: 1 = the line runs across the ray)}]
+function estVecRay(V,x,y,dx,dy,tmax){const out=[];if(!V)return out;V.tick++;const G=V.G,step=G/2,n=Math.ceil(tmax/step)+1;
+  for(let s=0;s<=n;s++){const px=x+dx*Math.min(tmax,s*step),py=y+dy*Math.min(tmax,s*step);
+    for(const ox of [-1,0,1])for(const oy of [-1,0,1]){const gx=Math.floor(px/G)+ox,gy=Math.floor(py/G)+oy;if(gx<0||gy<0||gx>=V.GW||gy>=V.GH)continue;const c=gy*V.GW+gx;
+      for(let q=V.start[c];q<V.start[c+1];q++){const i=V.idx[q];if(V.stamp[i]===V.tick)continue;V.stamp[i]=V.tick;
+        const ax=V.x1[i],ay=V.y1[i],ex=V.x2[i]-ax,ey=V.y2[i]-ay,den=dx*ey-dy*ex;if(Math.abs(den)<1e-12)continue;
+        const t=((ax-x)*ey-(ay-y)*ex)/den,u=((ax-x)*dy-(ay-y)*dx)/den;if(t<=1e-6||t>tmax||u<-1e-6||u>1+1e-6)continue;
+        const L=Math.hypot(ex,ey)||1;out.push({t,i,c:Math.abs(-dy*ex+dx*ey)/L});}}}
+  out.sort((p,q)=>p.t-q.t);return out;}
+// How a vector line runs along the duct around a point: the line through segment i at (qx,qy), followed in its own
+// direction over [−Kb, +Ka] (collinear pieces merged). Covered fractions (both sides / each side) and breaks ≥ 1 pt.
+function estVecCover(V,i,qx,qy,ux,uy,Kb,Ka){let ex=V.x2[i]-V.x1[i],ey=V.y2[i]-V.y1[i];const el=Math.hypot(ex,ey)||1;ex/=el;ey/=el;if(ex*ux+ey*uy<0){ex=-ex;ey=-ey;}
+  const iv=[];V.tick++;const G=V.G,len=Kb+Ka,steps=Math.ceil(len/(G/2))+1;
+  for(let s=0;s<=steps;s++){const tau=-Kb+len*s/steps,px=qx+ex*tau,py=qy+ey*tau;
+    for(const ox of [-1,0,1])for(const oy of [-1,0,1]){const gx=Math.floor(px/G)+ox,gy=Math.floor(py/G)+oy;if(gx<0||gy<0||gx>=V.GW||gy>=V.GH)continue;const c=gy*V.GW+gx;
+      for(let q=V.start[c];q<V.start[c+1];q++){const j=V.idx[q];if(V.stamp[j]===V.tick)continue;V.stamp[j]=V.tick;
+        const ax=V.x1[j],ay=V.y1[j],bx=V.x2[j],by=V.y2[j];
+        const da=(ax-qx)*-ey+(ay-qy)*ex,db=(bx-qx)*-ey+(by-qy)*ex;if(Math.abs(da)>0.15||Math.abs(db)>0.15)continue;   // on the same line
+        let ta=(ax-qx)*ex+(ay-qy)*ey,tb=(bx-qx)*ex+(by-qy)*ey;if(ta>tb){const t=ta;ta=tb;tb=t;}
+        ta=Math.max(ta,-Kb);tb=Math.min(tb,Ka);if(tb>ta)iv.push([ta,tb]);}}}
+  iv.sort((a,b)=>a[0]-b[0]);let cov=0,covB=0,covA=0,gaps=0,end=-Kb;
+  for(const [a,b] of iv){if(b<=end)continue;const a2=Math.max(a,end);if(a2-end>=1&&end>-Kb)gaps++;cov+=b-a2;covB+=Math.max(0,Math.min(b,0)-Math.min(a2,0));covA+=Math.max(0,Math.max(b,0)-Math.max(a2,0));end=b;}
+  return {f2:cov/(len||1),fb:Kb>0?covB/Kb:0,fa:Ka>0?covA/Ka:0,gaps,Kb,Ka};}
+// the duct's wall on one side (dir +1 along the normal / −1 against it): the continuous lines (solid, running along the
+// duct for most of the window or all of one side of it) nearest first, up to 3; .past when a nearer line was looked past
+function estVecWall(V,x,y,nx,ny,dir,ux,uy,s,L,K,maxT){const hits=estVecRay(V,x,y,nx*dir,ny*dir,maxT);const out=[];let first=null;
+  const Kb=Math.max(0,Math.min(K,s+20)),Ka=Math.max(0,Math.min(K,L-s+20));
+  for(const h of hits){if(h.t<0.05)continue;
+    if(h.c<0.9){if(first==null)first=h.t;continue;}
+    const qx=x+nx*dir*h.t,qy=y+ny*dir*h.t,cv=estVecCover(V,h.i,qx,qy,ux,uy,Kb,Ka);
+    if(cv.gaps>=4)continue;   // a dashed / grid line: passed over
+    if(first==null)first=h.t;
+    const cont=(Kb+Ka>=K&&cv.f2>=0.6)||(cv.Kb>=20&&cv.fb>=0.85)||(cv.Ka>=20&&cv.fa>=0.85);
+    if(cont&&!out.some(o=>Math.abs(o-h.t)<0.3)){out.push(h.t);if(out.length>=3)break;}}
+  if(!out.length)return null;out.past=first!=null&&out[0]>first+1;return out;}
+// the nearest line running along the duct (within ~25°) on one side — the plain reading, for short pieces and lining up
+function estVecFirst(V,x,y,nx,ny,dir,maxT){for(const h of estVecRay(V,x,y,nx*dir,ny*dir,maxT)){if(h.t<0.05)continue;if(h.c>=0.9)return h.t;}return null;}
+// the line running along the duct nearest to an expected distance (inside a fitted elbow: about half its width)
+function estVecNear(V,x,y,nx,ny,dir,target,tol,maxT){let best=null;for(const h of estVecRay(V,x,y,nx*dir,ny*dir,maxT)){if(h.t<0.05||h.c<0.85)continue;const e=Math.abs(h.t-target);if(e<=tol&&(!best||e<best.e))best={e,t:h.t};}return best?best.t:null;}
+// inside a fitted elbow: the wall line nearest an expected distance, and the point's true (perpendicular) distance to it
+function estVecPerp(V,x,y,nx,ny,dir,target,tol,maxT){let best=null;for(const h of estVecRay(V,x,y,nx*dir,ny*dir,maxT)){if(h.t<0.05||h.c<0.5)continue;const e=Math.abs(h.t-target);if(e<=tol&&(!best||e<best.e))best={e,i:h.i};}
+  if(!best)return null;const i=best.i,ax=V.x1[i],ay=V.y1[i],ex=V.x2[i]-ax,ey=V.y2[i]-ay,L=Math.hypot(ex,ey)||1;return Math.abs((x-ax)*ey-(y-ay)*ex)/L;}
+
 // ---- drawn runs: duct walls found by measuring straight across the duct at many points ----
 // Every ~2 pt along each segment a ray goes out to each side, perpendicular to the segment, to the centre of the first
 // wall stroke. The width at a spot is the most common width nearby (a local mode), so a crossing wall, a tag, a damper
@@ -3507,7 +3614,17 @@ async function estRunWallsHD(d,ptsN,opt){
     if(gp&&gp.win){const u=[Math.min(gp.bb[0],bb[0]),Math.min(gp.bb[1],bb[1]),Math.max(gp.bb[2],bb[2]),Math.max(gp.bb[3],bb[3])];if(area(u)<=BUDGET){gp.bb=u;gp.segs.push(i);continue;}}
     gp={bb,segs:[i],win:area(bb)<=BUDGET};groups.push(gp);}
   const put=(sg,k,s,dl,dr)=>{sg.s[k]=s;sg.dl[k]=dl;sg.dr[k]=dr;if(dl!=null&&dr!=null){sg.w[k]=dl+dr;sg.c[k]=(dl-dr)/2;}else{sg.w[k]=null;sg.c[k]=null;}};
-  for(const gr of groups){
+  if(opt.V){const V=opt.V;   // the PDF's vector lines: exact, and no rendering needed
+    for(let i=0;i+1<P.length;i++){const A=P[i],B=P[i+1],L=Math.hypot(B[0]-A[0],B[1]-A[1]);
+      const sg={L,s:[],w:[],c:[],dl:[],dr:[]};segs[i]=sg;if(L<1e-6)continue;
+      const ux=(B[0]-A[0])/L,uy=(B[1]-A[1])/L,nx=-uy,ny=ux,n=Math.max(2,Math.min(1500,Math.round(L/STEP))),K=Math.min(80,Math.max(20,L/2));
+      if(opt.walls&&L>=40){sg.cl=[];sg.cr=[];sg.w1=[];sg.c1=[];}
+      for(let k=0;k<=n;k++){const s=L*k/n,x=A[0]+ux*s,y=A[1]+uy*s;
+        if(opt.walls&&L>=40){const cl=estVecWall(V,x,y,nx,ny,1,ux,uy,s,L,K,MAXH),cr=estVecWall(V,x,y,nx,ny,-1,ux,uy,s,L,K,MAXH);sg.cl[k]=cl;sg.cr[k]=cr;put(sg,k,s,cl?cl[0]:null,cr?cr[0]:null);
+          const f1=estVecFirst(V,x,y,nx,ny,1,MAXH),f2=estVecFirst(V,x,y,nx,ny,-1,MAXH);sg.w1[k]=f1!=null&&f2!=null?f1+f2:null;sg.c1[k]=f1!=null&&f2!=null?(f1-f2)/2:null;}
+        else if(opt.hints&&opt.hints[i]){const h=opt.hints[i].half;put(sg,k,s,estVecPerp(V,x,y,nx,ny,1,h,0.4*h,MAXH),estVecPerp(V,x,y,nx,ny,-1,h,0.4*h,MAXH));}
+        else put(sg,k,s,estVecFirst(V,x,y,nx,ny,1,MAXH),estVecFirst(V,x,y,nx,ny,-1,MAXH));}}
+  }else for(const gr of groups){
     let win=null,bb=null;
     if(gr.win){bb=[Math.max(0,gr.bb[0]),Math.max(0,gr.bb[1]),Math.min(PW,gr.bb[2]),Math.min(PH,gr.bb[3])];win=await estRenderWindow(pg,bb[0],bb[1],bb[2]-bb[0],bb[3]-bb[1],R);}
     for(const i of gr.segs){const A=P[i],B=P[i+1],L=Math.hypot(B[0]-A[0],B[1]-A[1]);
@@ -3570,7 +3687,7 @@ async function estRunWallsHD(d,ptsN,opt){
   segs.forEach((sg,si)=>{if(!sg||!sg.cl)return;const N=sg.s.length;
     const med=a=>{const b=a.filter(v=>v!=null&&isFinite(v)).sort((x,y)=>x-y);return b.length?b[b.length>>1]:null;};
     const wm=med(sg.w);if(wm==null)return;
-    const long=j=>{const g=segs[j];if(!g||!g.w)return false;const w=med(g.w);return w!=null&&g.L>=3*w;};   // short pieces (offsets, fittings) read unreliably: look past them
+    const long=j=>{const g=segs[j];if(!g||!g.w)return false;const w=med(g.w);if(w==null||g.L<3*w)return false;const kn=g.w.filter(v=>v!=null).length/g.w.length;return kn>=0.6;};   // long and mostly read   // short pieces (offsets, fittings) read unreliably: look past them
     let jp=si-1;while(jp>=0&&!long(jp))jp--;let jn=si+1;while(jn<segs.length&&!long(jn))jn++;
     const tp=jp>=0?endW(segs[jp],true):null,tn=jn<segs.length?endW(segs[jn],false):null;
     if(tp==null||tn==null||Math.abs(tp-tn)>1.5||Math.abs(wm-tp)<=1.5||Math.abs(wm-tn)<=1.5)return;   // only a segment sandwiched between two that agree
@@ -3583,6 +3700,14 @@ async function estRunWallsHD(d,ptsN,opt){
         for(let k=0;k<N;k++){const dl=sg.dl[k],dr=sg.dr[k];if(dl!=null&&dr!=null){sg.w[k]=dl+dr;sg.c[k]=(dl-dr)/2;}else{sg.w[k]=null;sg.c[k]=null;}}
         done=true;break;}
       if(done)break;}});
+  // exact walls: where the PDF's own vector lines are known, each wall reading moves onto the line it found
+  if(opt.V){const V=opt.V;segs.forEach((sg,i)=>{if(!sg||!sg.s.length)return;const A=P[i],B=P[i+1],L=sg.L;if(!(L>0))return;
+    const ux=(B[0]-A[0])/L,uy=(B[1]-A[1])/L,nx=-uy,ny=ux;
+    for(let k=0;k<sg.s.length;k++){const x=A[0]+ux*sg.s[k],y=A[1]+uy*sg.s[k];
+      for(const side of [1,-1]){const cur=side>0?sg.dl[k]:sg.dr[k];if(cur==null)continue;let best=null;
+        for(const h of estVecRay(V,x,y,nx*side,ny*side,cur+0.8)){if(h.c<0.96)continue;const e=Math.abs(h.t-cur);if(e<=0.6&&(!best||e<best.e))best={e,t:h.t};}
+        if(best){if(side>0)sg.dl[k]=best.t;else sg.dr[k]=best.t;}}
+      const dl=sg.dl[k],dr=sg.dr[k];if(dl!=null&&dr!=null){sg.w[k]=dl+dr;sg.c[k]=(dl-dr)/2;}}});}
   // local mode of the width (and the matching centre offset) at every sample
   const localMode=(N,W_,C_)=>{const K=12,lw=new Array(N).fill(null),lc=new Array(N).fill(null);
     for(let k=0;k<N;k++){const a=Math.max(0,k-K),b=Math.min(N-1,k+K);const vals=[];for(let j=a;j<=b;j++)if(W_[j]!=null)vals.push(j);
@@ -3593,6 +3718,9 @@ async function estRunWallsHD(d,ptsN,opt){
       lw[k]=ws[ws.length>>1];lc[k]=cs[cs.length>>1];}
     return {lw,lc,known:lw.filter(v=>v!=null).length/N};};
   for(const sg of segs){if(!sg||!sg.s.length)continue;const N=sg.s.length;let m=localMode(N,sg.w,sg.c);
+    if(N<10&&m.known<0.5){const ok=[];for(let k=0;k<N;k++)if(sg.w[k]!=null)ok.push(k);   // a short piece (an elbow chord): its readings, when they agree
+      if(ok.length>=2){const ws=ok.map(k=>sg.w[k]).sort((a,b)=>a-b),md=ws[ws.length>>1];if(ws[ws.length-1]-ws[0]<=0.05*md+0.3){const cs=ok.map(k=>sg.c[k]).sort((a,b)=>a-b);
+        m={lw:new Array(N).fill(md),lc:new Array(N).fill(cs[cs.length>>1]),known:ok.length/N};}}}
     // a segment along a curved fitting (a big radius elbow) has no long straight walls: there the nearest line each way is the wall
     if(m.known<0.35&&sg.w1){const m1=localMode(N,sg.w1,sg.c1);if(m1.known>=0.5&&m1.known>m.known)m=m1;}
     sg.lw=m.lw;sg.lc=m.lc;sg.known=m.known;}
@@ -3686,16 +3814,68 @@ function estCentreRun(res,maxShiftFrac){const {segs,P,PW,PH}=res;const n=P.lengt
     if(lp&&ln){const x=inter(lp,ln);out[v]=x&&Math.hypot(x[0]-P[v][0],x[1]-P[v][1])<(segs[v].wMean||30)*1.5?x:[(lp.B[0]+ln.A[0])/2,(lp.B[1]+ln.A[1])/2];}
     else if(ln)out[v]=ln.A;else if(lp)out[v]=lp.B;}
   return out.map(p=>[p[0]/PW,p[1]/PH]);}
+
+// At each bend, the elbow's real shape. Measured across the elbow along its bisector (exact vector lines): the duct's
+// two walls there give the centreline radius that fits a radius or mitered elbow; a square elbow or a tee gives none
+// and the corner stays sharp. Returns the run's points with each fitted bend replaced by its centreline arc, or null.
+function estFitElbows(r,V){const P=r.P,segs=r.segs,n=P.length;if(!V||n<3)return null;
+  const med=a=>{const b=a.filter(v=>v!=null&&isFinite(v)).sort((x,y)=>x-y);return b.length?b[b.length>>1]:null;};
+  const legW=(sg,atEnd)=>{if(!sg||!sg.lw||!sg.lw.length)return null;const w0=med(sg.lw);if(!(w0>0))return null;const v=[];
+    sg.s.forEach((s,k)=>{const d=atEnd?sg.L-s:s;if(d>=1.2*w0&&d<=4*w0&&sg.lw[k]!=null)v.push(sg.lw[k]);});return v.length>=3?med(v):w0;};
+  const out=[P[0].slice()];let changed=false,used=0;const fits=[],arcs=[];
+  for(let v=1;v<n-1;v++){const A=P[v-1],C0=P[v],B=P[v+1];const L1=Math.hypot(C0[0]-A[0],C0[1]-A[1]),L2=Math.hypot(B[0]-C0[0],B[1]-C0[1]);
+    const keep=()=>{out.push(C0.slice());used=0;};
+    if(!(L1>0&&L2>0)){keep();continue;}
+    const u1=[(C0[0]-A[0])/L1,(C0[1]-A[1])/L1],u2=[(B[0]-C0[0])/L2,(B[1]-C0[1])/L2];const th=Math.acos(Math.max(-1,Math.min(1,u1[0]*u2[0]+u1[1]*u2[1])));
+    if(th<30*Math.PI/180||th>150*Math.PI/180){keep();continue;}   // a gentle bend: sharp and curved differ by < 0.5% of its area
+    const W1=legW(segs[v-1],true),W2=legW(segs[v],false);if(!(W1>0&&W2>0)){keep();continue;}
+    const Wc=(W1+W2)/2,half=th/2,ic=1/Math.cos(half);
+    let bx=u2[0]-u1[0],by=u2[1]-u1[1];const bl=Math.hypot(bx,by);bx/=bl;by/=bl;   // bisector, toward the inside of the turn
+    const far=3*Wc*ic,xs=estVecRay(V,C0[0]-bx*far,C0[1]-by*far,bx,by,2*far).filter(h=>h.c>=0.88).map(h=>far-h.t);   // walls running across the bisector (the elbow's own walls), + = outer side
+    let best=null;
+    for(const xo of xs)for(const xi of xs){if(!(xo>xi))continue;const wb=xo-xi,m=(xo+xi)/2;
+      if(Math.abs(wb-Wc)>0.07*Wc||m>0.15*Wc||m<-2.5*Wc)continue;   // across a radius / mitered elbow the duct is its own width
+      const score=Math.abs(wb-Wc)/Wc+0.02*Math.abs(m)/Wc;
+      if(!best||score<best.score)best={xo,xi,m,wb,score};}
+    if(!best){keep();fits.push({v,model:'none'});continue;}
+    let Rc=best.m<-0.03*Wc?best.m/(1-ic):0;
+    const room1=L1-used-1,room2=(v+1<n-1?L2/2:L2)-1;let T=Rc*Math.tan(half);
+    if(T>Math.min(room1,room2)){T=Math.max(0,Math.min(room1,room2));Rc=T/Math.tan(half);}
+    if(!(Rc>0.08*Wc)||T<0.5){keep();fits.push({v,model:'sharp',m:best.m,wb:best.wb});continue;}
+    const cx=C0[0]+bx*Rc*ic,cy=C0[1]+by*Rc*ic,P1=[C0[0]-u1[0]*T,C0[1]-u1[1]*T],P2=[C0[0]+u2[0]*T,C0[1]+u2[1]*T];
+    const a1=Math.atan2(P1[1]-cy,P1[0]-cx);let da=Math.atan2(P2[1]-cy,P2[0]-cx)-a1;while(da>Math.PI)da-=2*Math.PI;while(da<-Math.PI)da+=2*Math.PI;
+    // check: across the arc, the walls should sit about half a width either side
+    let ok=0,tried=0;for(const f of [0.25,0.5,0.75]){const a=a1+da*f,ex=Math.cos(a),ey=Math.sin(a),qx=cx+ex*Rc,qy=cy+ey*Rc;tried++;
+      const hit=(dx,dy)=>{const h=estVecRay(V,qx,qy,dx,dy,1.5*Wc).find(z=>z.c>=0.5&&z.t>0.25*Wc);return h?h.t:null;};
+      const ho=hit(ex,ey),hi=hit(-ex,-ey);if(ho!=null&&hi!=null&&Math.abs(ho-Wc/2)<=0.2*Wc&&Math.abs(hi-Wc/2)<=0.2*Wc)ok++;}
+    if(ok<2){keep();fits.push({v,model:'unverified',Rc,ok});continue;}
+    out.push(P1);const i0=out.length-1,m=Math.max(2,Math.ceil(Math.abs(da)/(6*Math.PI/180)));for(let j=1;j<m;j++){const a=a1+da*j/m;out.push([cx+Math.cos(a)*Rc,cy+Math.sin(a)*Rc]);}out.push(P2);arcs.push({i0,i1:out.length-1,half:Wc/2});
+    // each point to the middle between the elbow's walls, by its true (perpendicular) distance to each wall line:
+    // radius elbow -> the arc; mitered elbow -> each piece's own midline (its walls may be closer than the duct's width)
+    const wallSeg=(q,ex,ey,dir)=>{let best=null;for(const h of estVecRay(V,q[0],q[1],ex*dir,ey*dir,1.5*Wc)){if(h.t<0.05||h.c<0.5)continue;const e=Math.abs(h.t-Wc/2);if(e<=0.4*Wc&&(!best||e<best.e))best={e,i:h.i};}return best?best.i:null;};
+    const perp=(q,i)=>{const ax=V.x1[i],ay=V.y1[i],ex=V.x2[i]-ax,ey=V.y2[i]-ay,L=Math.hypot(ex,ey)||1;return Math.abs((q[0]-ax)*ey-(q[1]-ay)*ex)/L;};
+    for(let it=0;it<8;it++){const nxt=out.map(p=>p.slice());
+      for(let j=i0+1;j<out.length-1;j++){const a=out[j-1],b=out[j+1];let tx=b[0]-a[0],ty=b[1]-a[1];const tl=Math.hypot(tx,ty);if(!(tl>0))continue;tx/=tl;ty/=tl;const ex=-ty,ey=tx,q=out[j];
+        const io=wallSeg(q,ex,ey,1),ii=wallSeg(q,ex,ey,-1);if(io==null||ii==null)continue;const dp=perp(q,io),dm=perp(q,ii);
+        if(Math.abs(dp+dm-Wc)<=0.3*Wc){const sh=(dp-dm)/2;nxt[j]=[q[0]+ex*sh,q[1]+ey*sh];}}
+      for(let j=i0+1;j<out.length-1;j++)out[j]=nxt[j];}
+    used=T;changed=true;fits.push({v,model:'arc',Rc,T,ok});}
+  out.push(P[n-1].slice());
+  return changed?{pts:out,fits,arcs}:{pts:null,fits,arcs};}
 // everything a drawn run stores from the wall sampler: centred points, per-segment mean width, width profile, outline
 async function estMeasureRun(d,ptsN,centre){
   // pass 1 (first line each way) lines the run up on its duct; pass 2 (on the lined-up run) finds the walls proper:
   // lines that run on along the duct, looking past tags, crossing ducts and boxes inside it
-  let pts=ptsN;
-  if(centre){const r1=await estRunWallsHD(d,ptsN);if(r1){const c=estCentreRun(r1,0.5);if(c)pts=[].concat(...c).map(v=>+v.toFixed(6));}}
-  let r=await estRunWallsHD(d,pts,{walls:true});if(!r)return null;
+  let pts=ptsN;const V=await estVecPage(d);   // the PDF's own vector lines (exact walls), when the drawing has them
+  if(centre){const r1=await estRunWallsHD(d,ptsN,V?{walls:true,V}:{});if(r1){const c=estCentreRun(r1,0.5);if(c)pts=[].concat(...c).map(v=>+v.toFixed(6));}}
+  let r=await estRunWallsHD(d,pts,{walls:true,V});if(!r)return null;
   if(centre)for(let it=0;it<2;it++){const c=estCentreRun(r,0.5);   // again on the cleaner walls until it settles (pass 1 can be pulled by something drawn over the duct)
     if(!c)break;const flat=[].concat(...c).map(v=>+v.toFixed(6));if(!flat.some((v,i)=>Math.abs(v-pts[i])*(i%2?r.PH:r.PW)>0.3))break;
-    const r3=await estRunWallsHD(d,flat,{walls:true});if(!r3)break;r=r3;pts=flat;}
+    const r3=await estRunWallsHD(d,flat,{walls:true,V});if(!r3)break;r=r3;pts=flat;}
+  // the elbows' real shapes: each fitted bend becomes its centreline arc, and the run is measured along it
+  if(centre&&V){const f=estFitElbows(r,V);if(f&&f.pts){const flat=[].concat(...f.pts.map(p=>[+(p[0]/r.PW).toFixed(6),+(p[1]/r.PH).toFixed(6)]));
+      const hints=[];f.arcs.forEach(a=>{for(let j=a.i0;j<a.i1;j++)hints[j]={half:a.half};});
+      const r4=await estRunWallsHD(d,flat,{walls:true,V,hints});if(r4){r=r4;pts=flat;}}}
   const PW=r.PW,PH=r.PH,segW=[],prof=[],L=[],R=[];
   r.segs.forEach((sg,i)=>{if(!sg||!sg.s.length){segW.push(0);prof.push([]);return;}
     segW.push(+(sg.wMean/PW).toFixed(7));
@@ -3711,9 +3891,12 @@ async function estMeasureRun(d,ptsN,centre){
     prof.push(pr.filter(q=>q[0]>1e-4).map(q=>[+q[0].toFixed(4),+((q[1]*scale)/PW).toFixed(7)]));
     // outline: walls either side of the (centred) line, every ~4 pt, trimmed back from the bends
     const A=r.P[i],B=r.P[i+1],ux=(B[0]-A[0])/sg.L,uy=(B[1]-A[1])/sg.L,nx=-uy,ny=ux,last=r.segs.length-1;
+    const turn=j=>{if(j<=0||j>=r.P.length-1)return 0;const p=r.P[j-1],q=r.P[j],o=r.P[j+1],l1=Math.hypot(q[0]-p[0],q[1]-p[1]),l2=Math.hypot(o[0]-q[0],o[1]-q[1]);if(!(l1>0&&l2>0))return 0;
+      return Math.acos(Math.max(-1,Math.min(1,((q[0]-p[0])*(o[0]-q[0])+(q[1]-p[1])*(o[1]-q[1]))/(l1*l2))));};
+    const t0=Math.tan(Math.min(turn(i),2.6)/2),t1=Math.tan(Math.min(turn(i+1),2.6)/2);
     const step=Math.max(1,Math.round(4/((sg.s[1]-sg.s[0])||2)));
     for(let k=0;k<sg.s.length;k++){if(k%step&&k!==sg.s.length-1)continue;const s=sg.s[k],w=sg.lw[k],c=sg.lc[k]!=null?sg.lc[k]:0;
-      if((i>0&&s<w/2)||(i<last&&sg.L-s<w/2))continue;
+      if((i>0&&s<w/2*t0)||(i<last&&sg.L-s<w/2*t1))continue;
       const x=A[0]+ux*s,y=A[1]+uy*s;L.push([x+nx*(c+w/2),y+ny*(c+w/2)]);R.push([x+nx*(c-w/2),y+ny*(c-w/2)]);}});
   if(!segW.some(w=>w>0))return null;
   const med=segW.filter(w=>w>0).sort((x,y)=>x-y);const m0=med[med.length>>1];segW.forEach((w,i)=>{if(!(w>0)){segW[i]=m0;prof[i]=[[1,m0]];}});
@@ -4376,7 +4559,7 @@ function viewEstMeasure(app){
     S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));   // on the plan right away (branches can tie to it)
     refresh();hint.innerHTML=`${I.info}<span>Reading width…</span>`;
     try{const m=await estMeasureRun(d,pts,true);
-      if(m){if(m.pts.length===run.pts.length){const keep=run.tieStart?run.pts.slice(0,2):null;run.pts=m.pts;if(keep){run.pts[0]=keep[0];run.pts[1]=keep[1];}}run.segW=m.segW;run.wProf=m.wProf;run.edgeL=m.edgeL;run.edgeR=m.edgeR;}
+      if(m){{const keep=run.tieStart?run.pts.slice(0,2):null;run.pts=m.pts;if(keep){run.pts[0]=keep[0];run.pts[1]=keep[1];}}run.segW=m.segW;/* measured points (centred, elbows as arcs) always go with their widths */run.wProf=m.wProf;run.edgeL=m.edgeL;run.edgeR=m.edgeR;}
       else{const img=await estImage(d);const e=estDetectEdges(pts,img,estMaxPx(d,img));
         if(e){run.edgeL=e.edgeL;run.edgeR=e.edgeR;}
         else{const w=estDetectWidthFrac(pts,img);if(w&&w.frac>0)run.widthFrac=w.frac;else{run.widthMode='manual';run.manualWidthFt=1;toast('Couldn’t read the width — set it by hand');}}}
@@ -4514,7 +4697,7 @@ function viewEstMeasure(app){
     for(const r of todo){if(!viewer.isConnected)return;if(!S.estruns.includes(r)||estSegW(r))continue;
       hint.innerHTML=`${I.info}<span>Reading width…</span>`;
       try{const m=await estMeasureRun(d,r.pts,true);if(!m||!S.estruns.includes(r))continue;
-        if(m.pts.length===r.pts.length){const keep=r.tieStart?r.pts.slice(0,2):null;r.pts=m.pts;if(keep){r.pts[0]=keep[0];r.pts[1]=keep[1];}}
+        {const keep=r.tieStart?r.pts.slice(0,2):null;r.pts=m.pts;if(keep){r.pts[0]=keep[0];r.pts[1]=keep[1];}}
         r.segW=m.segW;r.wProf=m.wProf;r.edgeL=m.edgeL;r.edgeR=m.edgeR;pPut('estruns',r).catch(()=>toast('Not saved — check connection'));
         if(viewer.isConnected)refresh();}catch(e){console.warn('re-measure',e);}}
     if(viewer.isConnected){renderBar();toast('Re-measured '+todo.length+' run'+(todo.length>1?'s':''));}}
