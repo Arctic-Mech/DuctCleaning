@@ -433,6 +433,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .estrun{display:flex;flex-direction:column;gap:8px;width:100%}
 .estkinds{display:flex;gap:6px}
 .scchips{display:flex;flex-wrap:wrap;gap:6px}
+.fcrow{gap:8px;align-items:center}.fcrow .fcbtn{padding:7px 10px;font-size:12.5px;white-space:nowrap}.fcrow .fcbtn svg{width:14px;height:14px}
 .scchips .chip{border:1.5px solid var(--line);background:var(--surface-2);color:var(--fg);border-radius:999px;padding:7px 11px;font:600 13px var(--font-body);cursor:pointer}
 .scchips .chip.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--accent)}
 .estkinds button{flex:1;min-width:0;border:1.5px solid var(--line);background:var(--surface-2);color:var(--muted);
@@ -888,7 +889,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 16:36';
+const BUILD='Nov 19 17:21';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2952,14 +2953,47 @@ function estPolyAreaFt(r,d){ const fpp=estFpp(d); if(!fpp)return 0; const W=d.w|
   let a=0;for(let i=0;i<poly.length;i++){const p=poly[i],q=poly[(i+1)%poly.length];a+=p[0]*q[1]-q[0]*p[1];}
   return Math.abs(a/2)*fpp*fpp; }
 // a run's width in feet: manual value, the average of the filled band, or the old single widthFrac
+// per-segment widths (fraction of the page width) measured by the fill engine for drawn runs
+function estSegW(r){return (r.widthMode==='auto'&&Array.isArray(r.segW)&&r.pts&&r.segW.length===r.pts.length/2-1&&r.segW.every(x=>x>0))?r.segW:null;}
+function estSegLensFt(r,d){const W=d.w||1,H=d.h||1,f=estFpp(d),o=[];for(let i=0;i+3<r.pts.length;i+=2)o.push(Math.hypot((r.pts[i+2]-r.pts[i])*W,(r.pts[i+3]-r.pts[i+1])*H)*f);return o;}
 function estWidthFt(r,d){ if(r.widthMode==='manual')return +r.manualWidthFt||0;
+  {const sw=estSegW(r);if(sw){const L=estSegLensFt(r,d),tot=L.reduce((a,b)=>a+b,0)||1;let s=0;sw.forEach((w,i)=>s+=w*(d.w||1)*estFpp(d)*L[i]);return s/tot;}}
   if(estHasEdges(r)){const L=estLenFt(r.pts,d);return L>0?estPolyAreaFt(r,d)/L:0;}
   return (r.widthFrac||0)*(d.w||1)*estFpp(d); }
-function estAreaFt(r,d){ if(r.widthMode==='fill')return (r.fillFrac||0)*(d.w||1)*(d.h||1)*estFpp(d)*estFpp(d); if(estHasEdges(r))return estPolyAreaFt(r,d); return estLenFt(r.pts,d)*estWidthFt(r,d); }
+function estAreaFt(r,d){ if(r.widthMode==='fill')return (r.fillFrac||0)*(d.w||1)*(d.h||1)*estFpp(d)*estFpp(d);
+  {const sw=estSegW(r);if(sw){const L=estSegLensFt(r,d);let a=0;sw.forEach((w,i)=>a+=L[i]*w*(d.w||1)*estFpp(d));return a;}}
+  if(estHasEdges(r))return estPolyAreaFt(r,d); return estLenFt(r.pts,d)*estWidthFt(r,d); }
 // linear footage of a fill, from its detected centerline (medial axis), with the end-trim added back
 function estCenterLenFt(r,d){ if(!r.center||!r.center.length)return 0; let raw=0;r.center.forEach(p=>raw+=estLenFt(p.pts,d)); return raw; }
 // a run's linear footage: drawn length for runs, detected centerline for fills
-function estRunLenFt(r,d){ return r.widthMode==='fill'?estCenterLenFt(r,d):estLenFt(r.pts,d); }
+// geometry of a fill piece from its stored outline, in plan px (cached; never persisted)
+const EST_GEOM=new WeakMap();
+function estFillGeom(r,d){const fp=r.fillPoly;if(!fp||fp.length<6)return {area:0,w:0,len:0};
+  const key=fp.length+':'+fp[0]+':'+fp[1]+':'+fp[fp.length-1]+':'+(d.w||1)+'x'+(d.h||1);const c=EST_GEOM.get(r);if(c&&c.key===key)return c;
+  const W=d.w||1,H=d.h||1,P=[];for(let i=0;i<fp.length;i+=2)P.push([fp[i]*W,fp[i+1]*H]);
+  const bm=estBandMetrics(P),w=estBandWidth(P)||bm.W,g={key,area:bm.A,w,len:w>0?bm.A/w:bm.L};EST_GEOM.set(r,g);return g;}
+// does another fill in this run carry a traced (manual) line? then that line is the run's LF
+function estGroupTraced(r){const g=estGroupOf(r);return S.estruns.some(x=>x!==r&&x.widthMode==='fill'&&estGroupOf(x)===g&&x.center&&x.center.length);}
+// a run's linear footage: drawn length for runs; for fills, the traced line if there is one,
+// otherwise each piece's exact centreline length (area ÷ width) from its outline
+function estRunLenFt(r,d){ if(r.widthMode!=='fill')return estLenFt(r.pts,d);
+  if(r.center&&r.center.length)return estCenterLenFt(r,d);
+  if(estGroupTraced(r))return 0;
+  return estFillGeom(r,d).len*estFpp(d); }
+function estFillWidthFt(r,d){return estFillGeom(r,d).w*estFpp(d);}
+// snap a normalized point onto the centreline of the run piece it falls in (and onto its end if close)
+function estSnapToCenter(d,groupId,nx,ny){if(!groupId)return null;const W=d.w||1,H=d.h||1,X=nx*W,Y=ny*H;
+  const inPoly=(fp)=>{let c=false;for(let i=0,j=fp.length-2;i<fp.length;j=i,i+=2){const xi=fp[i]*W,yi=fp[i+1]*H,xj=fp[j]*W,yj=fp[j+1]*H;if(((yi>Y)!==(yj>Y))&&(X<(xj-xi)*(Y-yi)/((yj-yi)||1e-12)+xi))c=!c;}return c;};
+  for(const r of S.estruns){if(r.drawId!==d.id||r.widthMode!=='fill'||estGroupOf(r)!==groupId||!r.fillPoly||!r.autoCenter||r.autoCenter.length<4)continue;
+    if(!inPoly(r.fillPoly))continue;
+    const C=[];for(let i=0;i<r.autoCenter.length;i+=2)C.push([r.autoCenter[i]*W,r.autoCenter[i+1]*H]);
+    let best=null,bd=Infinity;
+    for(let i=0;i+1<C.length;i++){const a=C[i],b=C[i+1],ex=b[0]-a[0],ey=b[1]-a[1],L2=ex*ex+ey*ey||1e-12;let t=((X-a[0])*ex+(Y-a[1])*ey)/L2;t=Math.max(0,Math.min(1,t));
+      const px=a[0]+ex*t,py=a[1]+ey*t,dd=Math.hypot(X-px,Y-py);if(dd<bd){bd=dd;best=[px,py];}}
+    const w=estFillGeom(r,d).w,e0=C[0],e1=C[C.length-1];
+    if(Math.hypot(best[0]-e0[0],best[1]-e0[1])<w*0.6)best=e0;else if(Math.hypot(best[0]-e1[0],best[1]-e1[1])<w*0.6)best=e1;
+    return [best[0]/W,best[1]/H];}
+  return null;}
 // uniform band thickness (plan-width fraction) — used for manual width or legacy single-width runs
 function estEffFrac(r,d){ const fpp=estFpp(d); if(!fpp||!d.w)return 0; return estWidthFt(r,d)/(d.w*fpp); }
 const ft1=n=>Math.round(n*10)/10;
@@ -3277,8 +3311,87 @@ function estOutlinePoly(win,fl){
   let A2=0;for(let i=0;i<out.length;i++){const p=out[i],q=out[(i+1)%out.length];A2+=p[0]*q[1]-q[0]*p[1];}
   return {poly:out,areaPx:Math.abs(A2)/2};
 }
+// ---- linear footage of a filled duct piece, exactly, from its outline ----
+// Any constant-width piece (straight or radius elbow) has perimeter = 2L + 2W and area = L·W,
+// so its centreline length is the larger root: L = (P/2 + sqrt((P/2)^2 − 4A)) / 2.
+function estPolyMerge(P){ // drop near-collinear vertices so a straight side is one edge
+  let pts=P.slice(),changed=true;
+  while(changed&&pts.length>3){changed=false;
+    for(let i=0;i<pts.length&&pts.length>3;i++){const a=pts[(i-1+pts.length)%pts.length],b=pts[i],c=pts[(i+1)%pts.length];
+      const ux=b[0]-a[0],uy=b[1]-a[1],vx=c[0]-b[0],vy=c[1]-b[1],lu=Math.hypot(ux,uy),lv=Math.hypot(vx,vy);
+      if(lu<1e-9||lv<1e-9){pts.splice(i,1);changed=true;break;}
+      const cs=(ux*vx+uy*vy)/(lu*lv);if(cs>Math.cos(8*Math.PI/180)){pts.splice(i,1);changed=true;break;}}}
+  return pts;}
+function estBandMetrics(P){let A=0,per=0;for(let i=0;i<P.length;i++){const p=P[i],q=P[(i+1)%P.length];A+=p[0]*q[1]-q[0]*p[1];per+=Math.hypot(q[0]-p[0],q[1]-p[1]);}
+  A=Math.abs(A)/2;const h=per/2,s=Math.sqrt(Math.max(0,h*h-4*A));return {A,P:per,L:(h+s)/2,W:(h-s)/2};}
+// centreline of a band-shaped piece: split at its two end edges (length ≈ W), resample both long sides
+// by arc length and take midpoints (mid-line of a straight, mid-radius arc of an elbow). null if not band-like.
+function estBandCenterline(P0,W){
+  const P=estPolyMerge(P0),n=P.length;if(n<4||!(W>0))return null;
+  const el=[];for(let i=0;i<n;i++){const p=P[i],q=P[(i+1)%n];el.push(Math.hypot(q[0]-p[0],q[1]-p[1]));}
+  const per=el.reduce((x,y)=>x+y,0);
+  const turn=new Array(n);for(let v=0;v<n;v++){const a=P[(v-1+n)%n],b=P[v],c=P[(v+1)%n];
+    const ux=b[0]-a[0],uy=b[1]-a[1],vx=c[0]-b[0],vy=c[1]-b[1];turn[v]=Math.acos(Math.max(-1,Math.min(1,(ux*vx+uy*vy)/((Math.hypot(ux,uy)*Math.hypot(vx,vy))||1))))*180/Math.PI;}
+  // an END is a short run of 1..4 edges whose endpoints are ≈ W apart AND that turns ~180° in total
+  // (two square corners, or bevel pairs) — a stretch of an elbow's arc has a W-long chord but barely turns
+  const ends=[];
+  for(let i=0;i<n;i++){let plen=0,tt=turn[i];for(let k=1;k<=4&&k<n-1;k++){plen+=el[(i+k-1)%n];tt+=turn[(i+k)%n];const q=P[(i+k)%n],c=Math.hypot(q[0]-P[i][0],q[1]-P[i][1]);
+    if(plen>1.7*W)break;if(Math.abs(c-W)<=0.25*W&&tt>=140)ends.push({i,k,plen,c,q:Math.abs(tt-180)/90+Math.abs(c-W)/W+0.1*(k-1)});}}
+  // pick the best-quality pair of non-overlapping ends (an elbow's two sides differ in length by design)
+  let best=null;
+  for(const e1 of ends)for(const e2 of ends){if(e1===e2)continue;
+    const t1=(e1.i+e1.k)%n,len1=((e2.i-t1)%n+n)%n,len2=((e1.i-(e2.i+e2.k))%n+n)%n;
+    if(len1+e2.k+len2+e1.k!==n)continue;                 // e2 lies strictly on the far side of e1
+    let c1=0;for(let k=0;k<len1;k++)c1+=el[(t1+k)%n];const c2=per-e1.plen-e2.plen-c1;if(c1<=0.3*W||c2<=0.3*W)continue;
+    const score=e1.q+e2.q;if(!best||score<best.score)best={e1,e2,c1,c2,score};}
+  if(!best)return null;
+  const t1=(best.e1.i+best.e1.k)%n,s2=best.e2.i,t2=(best.e2.i+best.e2.k)%n,s1=best.e1.i;
+  const A=[];for(let k=t1;;k=(k+1)%n){A.push(P[k]);if(k===s2)break;}
+  const B=[];for(let k=t2;;k=(k+1)%n){B.push(P[k]);if(k===s1)break;}B.reverse();
+  // A runs end1 -> end2 along one side; B (reversed) runs end1 -> end2 along the other
+  const rs=(ch,m)=>{const cum=[0];for(let k=1;k<ch.length;k++)cum.push(cum[k-1]+Math.hypot(ch[k][0]-ch[k-1][0],ch[k][1]-ch[k-1][1]));
+    const T=cum[cum.length-1],out=[];let k=1;
+    for(let s=0;s<m;s++){const t=T*s/(m-1);while(k<cum.length-1&&cum[k]<t)k++;const u=(t-cum[k-1])/((cum[k]-cum[k-1])||1);
+      out.push([ch[k-1][0]+(ch[k][0]-ch[k-1][0])*u,ch[k-1][1]+(ch[k][1]-ch[k-1][1])*u]);}
+    return out;};
+  if(A.length<2||B.length<2)return null;
+  const m=Math.max(2,Math.min(80,Math.ceil(Math.max(best.c1,best.c2)/(W*0.25))+1));
+  const ra=rs(A,m),rb=rs(B,m);
+  return estSimplify(ra.map((p,k)=>[(p[0]+rb[k][0])/2,(p[1]+rb[k][1])/2]),W*0.01);
+}
+// duct width of a piece = median inward chord from points along its outline to the opposite wall
+// (W for straights and elbows alike; a few samples through a notch or gap cannot move a median)
+function estBandWidth(P){const n=P.length;if(n<3)return 0;let A=0;for(let i=0;i<n;i++){const p=P[i],q=P[(i+1)%n];A+=p[0]*q[1]-q[0]*p[1];}
+  const sg=A>0?1:-1;const el=[];let per=0;for(let i=0;i<n;i++){const p=P[i],q=P[(i+1)%n];const l=Math.hypot(q[0]-p[0],q[1]-p[1]);el.push(l);per+=l;}
+  const N=120,ch=[];
+  for(let s=0;s<N;s++){let t=per*(s+0.5)/N,i=0;while(i<n-1&&t>el[i]){t-=el[i];i++;}
+    const p=P[i],q=P[(i+1)%n],L=el[i]||1,dx=(q[0]-p[0])/L,dy=(q[1]-p[1])/L;if(t<L*0.08||t>L*0.92)continue;
+    const ox=p[0]+dx*t,oy=p[1]+dy*t,nx=-sg*dy,ny=sg*dx;   // inward normal (y-down)
+    let best=Infinity;
+    for(let j=0;j<n;j++){if(j===i)continue;const a=P[j],b=P[(j+1)%n];const ex=b[0]-a[0],ey=b[1]-a[1];const den=nx*ey-ny*ex;if(Math.abs(den)<1e-12)continue;
+      const tt=((a[0]-ox)*ey-(a[1]-oy)*ex)/den,u=((a[0]-ox)*ny-(a[1]-oy)*nx)/den;if(tt>1e-6&&u>=0&&u<=1&&tt<best)best=tt;}
+    if(isFinite(best))ch.push(best);}
+  if(!ch.length)return 0;ch.sort((a,b)=>a-b);return ch[ch.length>>1];}
+const estPolyLen=Q=>{let L=0;for(let i=1;i<Q.length;i++)L+=Math.hypot(Q[i][0]-Q[i-1][0],Q[i][1]-Q[i-1][1]);return L;};
+// width of the duct under each segment of a drawn run (page points), from the piece the segment runs through
+async function estRunWidthsHD(d,pts){const pg=await estPdfPage(d);if(!pg)return null;const PW=pg.getViewport({scale:1}).width;const out=[];
+  for(let i=0;i+3<pts.length;i+=2){let w=0;
+    for(const t of [0.5,0.35,0.65,0.2,0.8]){const nx=pts[i]+(pts[i+2]-pts[i])*t,ny=pts[i+1]+(pts[i+3]-pts[i+1])*t;
+      let r;try{r=await estFillProbe(d,nx,ny);}catch(e){r=null;}
+      if(r&&r.status==='ok'&&r.wMedPt>0&&r.wMedPt<100){w=r.wMedPt;break;}}
+    out.push(w);}
+  const ok=out.filter(w=>w>0);if(!ok.length)return null;const med=ok.slice().sort((a,b)=>a-b)[ok.length>>1];
+  return out.map(w=>(w>0?w:med)/PW);}
 // fill at normalized (nx,ny) -> {status:'ok', fillFrac, fillPoly, areaPt} | {status:'onLine'|'leak'}
+const ESTPROBE={};
+function estPtInPolyN(fp,nx,ny){let c=false;for(let i=0,j=fp.length-2;i<fp.length;j=i,i+=2){const xi=fp[i],yi=fp[i+1],xj=fp[j],yj=fp[j+1];if(((yi>ny)!==(yj>ny))&&(nx<(xj-xi)*(ny-yi)/((yj-yi)||1e-12)+xi))c=!c;}return c;}
 async function estFillProbe(d,nx,ny){
+  const cache=ESTPROBE[d.id]||(ESTPROBE[d.id]=[]);
+  for(const c of cache)if(estPtInPolyN(c.fillPoly,nx,ny))return c;
+  const r=await estFillProbeRaw(d,nx,ny);
+  if(r.status==='ok'&&r.engine==='vector-hd'){cache.push(r);if(cache.length>400)cache.shift();}
+  return r;}
+async function estFillProbeRaw(d,nx,ny){
   const pg=await estPdfPage(d);
   if(!pg){const img=await estImage(d);const r=estFillAt(img,nx,ny,Math.round(img.W*img.H*0.06));   // image-only drawing: old raster path
     if(r.onLine)return {status:'onLine'};if(r.leak||!r.fillPoly)return {status:'leak'};return {status:'ok',fillFrac:r.fillFrac,fillPoly:r.fillPoly,engine:'raster'};}
@@ -3302,8 +3415,12 @@ async function estFillProbe(d,nx,ny){
       if(grow.includes('t'))y0=Math.max(0,y0-gh);if(grow.includes('b'))y1=Math.min(PH,y1+gh);continue;}
     const op=estOutlinePoly(win,fl);if(!op)return {status:'leak'};
     const areaPt=op.areaPx/(R*R);
-    const poly=[];op.poly.forEach(p=>poly.push(+((x0+p[0]/R)/PW).toFixed(6),+((y0+p[1]/R)/PH).toFixed(6)));
-    return {status:'ok',fillFrac:areaPt/(PW*PH),fillPoly:poly,areaPt,R,engine:'vector-hd'};
+    const ptPoly=op.poly.map(p=>[x0+p[0]/R,y0+p[1]/R]);
+    const poly=[];ptPoly.forEach(p=>poly.push(+(p[0]/PW).toFixed(6),+(p[1]/PH).toFixed(6)));
+    const bm=estBandMetrics(ptPoly),wM=estBandWidth(ptPoly),cl=estBandCenterline(ptPoly,wM||bm.W);
+    const center=[];if(cl)cl.forEach(p=>center.push(+(p[0]/PW).toFixed(6),+(p[1]/PH).toFixed(6)));
+    const wMed=estBandWidth(ptPoly);
+    return {status:'ok',fillFrac:areaPt/(PW*PH),fillPoly:poly,areaPt,R,engine:'vector-hd',lenPt:bm.L,wPt:bm.W,clLenPt:cl?estPolyLen(cl):null,autoCenter:center,wMedPt:wMed,lenAWPt:wMed>0?areaPt/wMed:null};
   }
   return {status:'leak'};
 }
@@ -3513,8 +3630,8 @@ function viewEstMeasure(app){
   const ink=app.querySelector('#eink'),labels=app.querySelector('#elabels'),hint=app.querySelector('#evHint'),ehires=app.querySelector('#ehires');
   const sub=app.querySelector('#evSub'),totBtn=app.querySelector('#evTot'),vbar=app.querySelector('#evbar');
   let baseW=viewer.clientWidth||360, baseH=baseW*asp;
-  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true, tempTie=false, tempTieRun=null, runGroup=null, fillTarget=null, fillStep='pour', fillGroupId=null, fillLeadId=null, fillTemp=[], editRun=null, editTool='add', editR=14, editCv=null, editGW=0, editGH=0, editGroupCol='#000', editPainting=false; // temp: flat normalized pts being placed
-  EVW={get scale(){return scale;},nc:(nx,ny)=>{const r=viewer.getBoundingClientRect();return [r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];}};
+  let scale=1,tx=0,ty=0, mode='view', temp=[], estKind=estDefaultKind(), showCal=true, tempTie=false, tempTieRun=null, runGroup=null, tempTaps=[], tempPieces=[], tempArc=[], tempIds=[], tapSeq=0, snapChain=Promise.resolve(), snapGen=0, fillTarget=null, fillStep='pour', fillGroupId=null, fillLeadId=null, fillTemp=[], editRun=null, editTool='add', editR=14, editCv=null, editGW=0, editGH=0, editGroupCol='#000', editPainting=false; // temp: flat normalized pts being placed
+  EVW={get scale(){return scale;},get state(){return {mode,temp:temp.slice(),taps:tempTaps.slice(),tie:tempTie,arc:tempArc.slice()};},nc:(nx,ny)=>{const r=viewer.getBoundingClientRect();return [r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];}};
   const dotR=()=>Math.max(0.6,4200/(scale*baseW));   // ~4px on screen at any zoom
   const apply=()=>{stage.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;drawLabels();
     const r=dotR().toFixed(2);ink.querySelectorAll('.esc').forEach(c=>c.setAttribute('r',r));scheduleHiresE();};
@@ -3555,9 +3672,12 @@ function viewEstMeasure(app){
     if(estHasEdges(r)){let dd='';const L=r.edgeL,R=r.edgeR;
       for(let i=0;i<L.length;i+=2){const [x,y]=toPx(L[i],L[i+1]);dd+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}
       for(let i=R.length-2;i>=0;i-=2){const [x,y]=toPx(R[i],R[i+1]);dd+='L'+x.toFixed(1)+','+y.toFixed(1);}
-      dd+='Z';return `<path d="${dd}" fill="${col}" fill-opacity="0.3" stroke="none" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;}
-    const sw=estEffFrac(r,d)*1000;if(sw<=0)return '';
-    return `<path d="${ptsPath(r.pts)}" fill="none" stroke="${col}" stroke-opacity="0.3" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;}
+      dd+='Z';return `<path class="eband" d="${dd}" fill="${col}" stroke="none" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;}
+    const sw=r.widthMode==='manual'||estSegW(r)||r.widthFrac?estEffFrac(r,d)*1000:0;if(!(sw>0))return '';
+    const segw=estSegW(r);
+    if(segw&&segw.some(w=>Math.abs(w-segw[0])>segw[0]*0.03)){let o='';for(let i=0;i+3<r.pts.length;i+=2){const [x1,y1]=toPx(r.pts[i],r.pts[i+1]),[x2,y2]=toPx(r.pts[i+2],r.pts[i+3]);
+        o+=`<path class="eband" d="M${x1.toFixed(1)},${y1.toFixed(1)}L${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="${col}" stroke-width="${(segw[i/2]*1000).toFixed(2)}" stroke-linecap="butt" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;}return o;}
+    return `<path class="eband" d="${ptsPath(r.pts)}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linecap="butt" stroke-linejoin="round" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;}
   function dot(x,y,col,id){return `<circle class="esc" cx="${x}" cy="${y}" r="${dotR().toFixed(2)}" fill="#fff" stroke="${col}" stroke-width="2.2" vector-effect="non-scaling-stroke" data-run="${id}" style="cursor:pointer;pointer-events:auto"/>`;}
   function lineSvg(arr,col,id,temp,tieStart){
     let s=`<path d="${ptsPath(arr)}" fill="none" stroke="${col}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${temp?' stroke-dasharray="6 4"':` data-run="${id}" style="cursor:pointer;pointer-events:auto"`}/>`;
@@ -3566,16 +3686,20 @@ function viewEstMeasure(app){
     return s;}
   function renderInk(){
     let h='';const rs=estRunsOf(d.id);
-    // fills of one run share a single 0.3-opacity group, so overlapping pours read as ONE flat shade
-    const fillG={},fo=[];
-    rs.forEach(r=>{if(r.widthMode==='fill'&&r.fillPoly&&r.fillPoly.length>=6){const g=estGroupOf(r);if(!fillG[g]){fillG[g]=[];fo.push(g);}fillG[g].push(r);}});
-    fo.forEach(g=>{let a='';fillG[g].forEach(r=>{if(mode==='filledit'&&r.id===editRun)return;const col=estKindOf(r).color;let dd='';for(let i=0;i<r.fillPoly.length;i+=2){const [x,y]=toPx(r.fillPoly[i],r.fillPoly[i+1]);dd+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}dd+='Z';
-      a+=`<path d="${dd}" fill="${col}" stroke="none" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;});
-      h+=`<g opacity="0.3">${a}</g>`;});
+    // ALL area of one run (its fills and drawn bands) shares a single 0.3-opacity layer, so pours,
+    // branches and tie-ins read as ONE flat shade with no darker overlaps
+    const areaG={},ao=[];rs.forEach(r=>{const g=estGroupOf(r);if(!areaG[g]){areaG[g]=[];ao.push(g);}areaG[g].push(r);});
+    ao.forEach(g=>{let a='';areaG[g].forEach(r=>{const col=estKindOf(r).color;
+      if(r.widthMode==='fill'){if(!r.fillPoly||r.fillPoly.length<6||(mode==='filledit'&&r.id===editRun))return;let dd='';for(let i=0;i<r.fillPoly.length;i+=2){const [x,y]=toPx(r.fillPoly[i],r.fillPoly[i+1]);dd+=(i?'L':'M')+x.toFixed(1)+','+y.toFixed(1);}dd+='Z';
+        a+=`<path class="efill" d="${dd}" fill="${col}" stroke="none" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;}
+      else a+=bandSvg(r,col);});
+      if(a)h+=`<g class="erun" opacity="0.3">${a}</g>`;});
     // strokes (centerlines for fills, bands+lines for drawn runs) at full opacity on top
     rs.forEach(r=>{const col=estKindOf(r).color;
-      if(r.widthMode==='fill'){if(r.center&&r.center.length)r.center.forEach(cp=>{h+=`<path d="${ptsPath(cp.pts)}" fill="none" stroke="${col}" stroke-width="${cp.isMain?2.6:2}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${cp.isMain?'':' stroke-dasharray="7 4"'} data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;});}
-      else h+=bandSvg(r,col)+lineSvg(r.pts,col,r.id,false,r.tieStart);});
+      if(r.widthMode==='fill'){
+        if(r.center&&r.center.length)r.center.forEach(cp=>{h+=`<path d="${ptsPath(cp.pts)}" fill="none" stroke="${col}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;});
+        else if(!estGroupTraced(r)&&r.autoCenter&&r.autoCenter.length>=4)h+=`<path d="${ptsPath(r.autoCenter)}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;}
+      else h+=lineSvg(r.pts,col,r.id,false,r.tieStart);});
     if(d.cal&&showCal&&!d.cal.preset){const [ax,ay]=toPx(d.cal.a[0],d.cal.a[1]),[bx,by]=toPx(d.cal.b[0],d.cal.b[1]);
       h+=`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="var(--warn)" stroke-width="3" stroke-dasharray="8 5" vector-effect="non-scaling-stroke"/>`;
       h+=`<circle class="esc" cx="${ax}" cy="${ay}" r="${dotR().toFixed(2)}" fill="#fff" stroke="var(--warn)" stroke-width="2.4" vector-effect="non-scaling-stroke"/><circle class="esc" cx="${bx}" cy="${by}" r="${dotR().toFixed(2)}" fill="#fff" stroke="var(--warn)" stroke-width="2.4" vector-effect="non-scaling-stroke"/>`;}
@@ -3593,7 +3717,7 @@ function viewEstMeasure(app){
       h+=`<div class="elabel elabel-cal" style="left:${nx*baseW}px;top:${ny*baseH}px;transform:translate(-50%,-50%) scale(${1/scale})">${I.ruler} Scale ${esc(ftIn(d.cal.ft))}</div>`;}
     labels.innerHTML=h;}
 
-  function refresh(){renderInk();drawLabels();updateChrome();}
+  function refresh(){if(!viewer.isConnected)return;renderInk();drawLabels();updateChrome();}   // async work may finish after you leave the view
   function updateChrome(){
     sub.textContent=d.cal?('Scale set · '+estRunsOf(d.id).length+' run'+(estRunsOf(d.id).length!==1?'s':'')):'No scale yet — set one first';
     let L=0;estRunsOf(d.id).forEach(r=>{L+=estRunLenFt(r,d);});const A=estUnionAreaFt(d,estRunsOf(d.id));
@@ -3629,7 +3753,7 @@ function viewEstMeasure(app){
       if(!fillTarget){fillChooser();return;}
       let flabel,fcol;
       if(fillTarget.mode==='new'){flabel='new '+DUCT_KINDS[fillTarget.kind].short+' run';fcol=DUCT_KINDS[fillTarget.kind].color;}
-      else{const m=estRunMain(rsF,fillTarget.group);flabel=(m&&m.label)||'run';fcol=m?estKindOf(m).color:'var(--fg)';}
+      else{const m=estRunMain(rsF,fillTarget.group);flabel=((m&&m.label)||'run')+(fillTarget.role==='fill'?'':' · tap');fcol=m?estKindOf(m).color:'var(--fg)';}
       if(fillStep==='trace'){
         const np=fillTemp.length/2;
         hint.innerHTML=`${I.pen}<span>Tap the <b>start</b>, any bends, then the <b>end</b> of ${esc(flabel)}${np?' · '+np+' pt'+(np!==1?'s':''):''}</span>`;
@@ -3640,24 +3764,24 @@ function viewEstMeasure(app){
         vbar.querySelector('#eFillBack').onclick=()=>{fillStep='pour';refresh();};
         vbar.querySelector('#eFillLine').onclick=()=>fillLineDone();
       }else{
-        hint.innerHTML=`${I.fill}<span>Filling <b>${esc(flabel)}</b> · tap inside the duct, then <b>Measure line</b></span>`;
+        hint.innerHTML=`${I.fill}<span>Filling <b>${esc(flabel)}</b> · tap inside each piece — sq ft and linear ft are measured automatically</span>`;
         vbar.innerHTML=`<div class="estrun"><button class="btn" id="eFillWhat" style="justify-content:flex-start"><i class="estdot" style="background:${fcol};margin-right:8px"></i>${esc(flabel)} · change</button>
-          <div class="drawbar"><button class="btn block" id="eFillLineStart"${fillGroupId?'':' disabled style="opacity:.5"'}>${I.pen} Measure line</button>
+          <div class="drawbar"><button class="btn block" id="eFillLineStart"${(fillGroupId||fillTarget.mode==='add')?'':' disabled style="opacity:.5"'}>${I.pen} Trace line</button>
           <button class="btn primary done" id="eFillDone">${I.check} Finish</button></div></div>`;
         vbar.querySelector('#eFillWhat').onclick=()=>fillChooser();
-        vbar.querySelector('#eFillLineStart').onclick=()=>{if(!fillGroupId){toast('Fill an area first');return;}fillStep='trace';refresh();};
+        vbar.querySelector('#eFillLineStart').onclick=()=>{if(!(fillGroupId||fillTarget.mode==='add')){toast('Fill an area first');return;}fillStep='trace';refresh();};
         vbar.querySelector('#eFillDone').onclick=()=>fillFinish();
       }
     }else if(mode==='filledit'){
       const r=S.estruns.find(x=>x.id===editRun);const lab=r?(estGroupLabel(estRunsOf(d.id),r)||'fill'):'fill';
-      hint.innerHTML=`${I.fill}<span>${editTool==='add'?'Paint':'Erase'} <b>${esc(lab)}</b> fill · drag on the drawing · ${editR<10?'small':editR<24?'medium':'large'} brush</span>`;
+      hint.innerHTML=`${I.fill}<span>${editTool==='add'?'Paint':'Erase'} <b>${esc(lab)}</b> fill · drag on the drawing · brush ${(Math.round(editBrushIn()*2)/2)}″</span>`;
       vbar.innerHTML=`<div class="estrun"><div class="seg" id="efTool" style="max-width:220px"><button type="button" data-t="add"${editTool==='add'?' class="on"':''}>Paint</button><button type="button" data-t="erase"${editTool==='erase'?' class="on"':''}>Erase</button></div>
         <div class="drawbar"><button class="dt" id="efMinus" title="Smaller brush">−</button><button class="dt" id="efPlus" title="Bigger brush">+</button>
         <button class="btn block" id="efCancel">${I.x} Cancel</button>
         <button class="btn primary done" id="efDone">${I.check} Done</button></div></div>`;
       vbar.querySelectorAll('#efTool [data-t]').forEach(b=>b.onclick=()=>{editTool=b.dataset.t;renderBar();});
-      vbar.querySelector('#efMinus').onclick=()=>{editR=Math.max(3,Math.round(editR/1.3));renderBar();};
-      vbar.querySelector('#efPlus').onclick=()=>{editR=Math.min(400,Math.round(editR*1.3));renderBar();};
+      vbar.querySelector('#efMinus').onclick=()=>{editR=Math.max(2,Math.round(editR/1.3));renderBar();};
+      vbar.querySelector('#efPlus').onclick=()=>{editR=Math.min(2000,Math.max(editR+1,Math.round(editR*1.3)));renderBar();};
       vbar.querySelector('#efCancel').onclick=()=>editCancel();
       vbar.querySelector('#efDone').onclick=()=>editDone();
     }else{
@@ -3670,7 +3794,7 @@ function viewEstMeasure(app){
         <button class="btn block" id="eFinish">${I.check} Finish</button>
         <button class="btn primary done" id="eDone"${temp.length>=4?'':' disabled style="opacity:.5"'}>${I.plus} Add run</button></div></div>`;
       vbar.querySelectorAll('.estkinds [data-k]').forEach(b=>b.onclick=()=>{estKind=b.dataset.k;try{localStorage.setItem('ductpro-est-kind',estKind);}catch(e){}renderBar();renderInk();});
-      vbar.querySelector('#eUndo').onclick=()=>{temp=temp.slice(0,-2);refresh();};
+      vbar.querySelector('#eUndo').onclick=()=>{undoTap();refresh();};
       vbar.querySelector('#eFinish').onclick=()=>addRun(true);
       vbar.querySelector('#eDone').onclick=()=>addRun(false);
     }
@@ -3697,7 +3821,7 @@ function viewEstMeasure(app){
       el.innerHTML=`<div class="cl-subhead" style="margin:0 0 6px">Found on this sheet</div><div class="scchips">${list.map(x=>`<button type="button" class="chip on" data-dpp="${x.p}" data-dl="${esc(x.l)}">${esc(x.l)}</button>`).join('')}</div>`;
       el.classList.remove('cl-note');el.querySelectorAll('[data-dpp]').forEach(b=>b.onclick=()=>pick(b.dataset.dl,+b.dataset.dpp));});
   }
-  function startRun(parent){mode='run';temp=[];tempTie=false;tempTieRun=null;runGroup=parent||null;refresh();}
+  function startRun(parent){mode='run';temp=[];tempTaps=[];tempPieces=[];tempArc=[];tempIds=[];snapGen++;tempTie=false;tempTieRun=null;runGroup=parent||null;refresh();}
   function startFill(){fillChooser();}
   function fillChooser(){
     const rs=estRunsOf(d.id);const mains=rs.filter(estIsMain);let fk=estKind;
@@ -3707,17 +3831,23 @@ function viewEstMeasure(app){
       <div class="estkinds" id="fcKind">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${k===fk?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
       <button type="button" class="btn primary block" id="fcNew" style="margin-top:10px">${I.fill} Fill a new run</button>
       ${mains.length?`<div class="cl-subhead" style="margin-top:18px">Add fill to an existing run</div>
-        <div class="stack" id="fcList" style="margin-top:4px">${mains.map(m=>`<button type="button" class="row" data-g="${estGroupOf(m)}"><span class="thumb" style="background:${estKindOf(m).color}22;color:${estKindOf(m).color}">${I.fill}</span><span class="grow"><h3>${esc(m.label||'Run')}</h3><span class="meta">${estKindOf(m).label}</span></span><span class="chev">${I.chev}</span></button>`).join('')}</div>`:''}`;
+        <div class="stack" id="fcList" style="margin-top:4px">${mains.map(m=>`<div class="row fcrow"><span class="thumb" style="background:${estKindOf(m).color}22;color:${estKindOf(m).color}">${I.fill}</span><span class="grow"><h3>${esc(m.label||'Run')}</h3><span class="meta">${estKindOf(m).label}</span></span>
+          <button type="button" class="btn fcbtn" data-g="${estGroupOf(m)}" data-role="fill">Continue run</button><button type="button" class="btn fcbtn" data-g="${estGroupOf(m)}" data-role="branch">${I.plus} Add tap</button></div>`).join('')}</div>
+        <p class="cl-note" style="font-size:12.5px;margin-top:6px">“Add tap” counts toward branch load; “Continue run” adds more of the same main.</p>`:''}`;
     const ctl=sheetShell({title:'Fill — what are you measuring?',bodyNode:body});
     body.querySelectorAll('#fcKind [data-k]').forEach(b=>b.onclick=()=>{fk=b.dataset.k;body.querySelectorAll('#fcKind [data-k]').forEach(x=>x.classList.toggle('on',x.dataset.k===fk));});
     body.querySelector('#fcNew').onclick=()=>{estKind=fk;try{localStorage.setItem('ductpro-est-kind',fk);}catch(e){}fillTarget={mode:'new',kind:fk,group:null};fillStep='pour';fillGroupId=null;fillLeadId=null;fillTemp=[];ctl.close();mode='fill';refresh();estImage(d).catch(()=>{});};
-    body.querySelectorAll('#fcList [data-g]').forEach(b=>b.onclick=()=>{const g=b.dataset.g,m=estRunMain(rs,g);fillTarget={mode:'add',group:g,kind:m?m.kind:'mps'};fillStep='pour';fillGroupId=null;fillLeadId=null;fillTemp=[];ctl.close();mode='fill';refresh();estImage(d).catch(()=>{});});
+    body.querySelectorAll('#fcList [data-g]').forEach(b=>b.onclick=()=>{const g=b.dataset.g,m=estRunMain(rs,g);fillTarget={mode:'add',group:g,kind:m?m.kind:'mps',role:b.dataset.role==='fill'?'fill':'branch'};fillStep='pour';fillGroupId=null;fillLeadId=null;fillTemp=[];ctl.close();mode='fill';refresh();estImage(d).catch(()=>{});});
     ctl.scrim.addEventListener('click',e=>{if(e.target===ctl.scrim&&!fillTarget){mode='view';refresh();}});
   }
   async function doFill(cx,cy){
     if(!fillTarget){fillChooser();return;}
     if(fillStep==='trace'){fillAddPoint(cx,cy);return;}
     const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap inside the drawing');return;}
+    {const W=d.w||1,H=d.h||1,X=nx*W,Y=ny*H;   // already filled? don't pour the same piece twice (it would double its linear feet)
+      const dup=estRunsOf(d.id).find(r=>{if(r.widthMode!=='fill'||!r.fillPoly||r.fillPoly.length<6)return false;const fp=r.fillPoly;let c=false;
+        for(let i=0,j=fp.length-2;i<fp.length;j=i,i+=2){const xi=fp[i]*W,yi=fp[i+1]*H,xj=fp[j]*W,yj=fp[j+1]*H;if(((yi>Y)!==(yj>Y))&&(X<(xj-xi)*(Y-yi)/((yj-yi)||1e-12)+xi))c=!c;}return c;});
+      if(dup){toast('Already filled — part of '+(estGroupLabel(estRunsOf(d.id),dup)||'a run'));return;}}
     hint.innerHTML=`${I.info}<span>Filling…</span>`;
     try{const res=await estFillProbe(d,nx,ny);
       if(res.status==='onLine'){toast('Tap in the open space inside the duct');renderBar();return;}
@@ -3725,37 +3855,55 @@ function viewEstMeasure(app){
       const rs=estRunsOf(d.id);const id=uid();let groupId,role,kind,label='';
       if(!fillGroupId){
         if(fillTarget.mode==='new'){kind=fillTarget.kind;groupId=id;role='main';label=estAutoLabel(rs,kind);}
-        else{const m=estRunMain(rs,fillTarget.group);kind=m?m.kind:(fillTarget.kind||'mps');groupId=fillTarget.group;role='branch';}
+        else{const m=estRunMain(rs,fillTarget.group);kind=m?m.kind:(fillTarget.kind||'mps');groupId=fillTarget.group;role=fillTarget.role||'branch';}
         fillGroupId=groupId;fillLeadId=id;
       }else{const m=estRunMain(rs,fillGroupId);kind=m?m.kind:(fillTarget.kind||'mps');groupId=fillGroupId;role='fill';}
-      const run={id,estId:d.estId,drawId:d.id,kind,widthMode:'fill',fillFrac:res.fillFrac,fillPoly:res.fillPoly,center:[],pts:[+nx.toFixed(5),+ny.toFixed(5)],groupId,role,label,createdAt:now()};
+      const run={id,estId:d.estId,drawId:d.id,kind,widthMode:'fill',fillFrac:res.fillFrac,fillPoly:res.fillPoly,center:[],autoCenter:res.autoCenter||[],pts:[+nx.toFixed(5),+ny.toFixed(5)],groupId,role,label,createdAt:now()};
       S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));refresh();
-      {const a=estAreaFt(run,d);toast((a<100?ft1(a):Math.round(a))+' sq ft filled'+(role==='main'?(' · '+label):'')+' · tap more pieces or Measure line');}
+      {const a=estAreaFt(run,d),lf=estRunLenFt(run,d),wi=estFillWidthFt(run,d)*12;toast((role==='main'?label+' · ':'')+(a<100?ft1(a):Math.round(a))+' sq ft · '+ft1(lf)+' lf'+(wi>0?' · '+(Math.round(wi*2)/2)+'" wide':''));}
     }catch(e){console.warn(e);toast('Fill failed — try again');renderBar();}}
-  function fillAddPoint(cx,cy){const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap on the drawing');return;}fillTemp.push(+nx.toFixed(5),+ny.toFixed(5));refresh();}
+  function fillAddPoint(cx,cy){let {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap on the drawing');return;}
+    const sp=estSnapToCenter(d,fillGroupId||(fillTarget&&fillTarget.group),nx,ny);if(sp){nx=sp[0];ny=sp[1];}
+    fillTemp.push(+nx.toFixed(6),+ny.toFixed(6));refresh();}
   function fillLineDone(){ if(fillTemp.length<4){toast('Tap a start and an end');return;}
-    const lead=S.estruns.find(x=>x.id===fillLeadId);
-    if(lead){lead.center=[{pts:fillTemp.slice(),isMain:true}];pPut('estruns',lead).catch(()=>{});}
+    const grp=fillGroupId||(fillTarget&&fillTarget.group);
+    const lead=S.estruns.find(x=>x.id===fillLeadId)||estRunsOf(d.id).find(x=>x.widthMode==='fill'&&estGroupOf(x)===grp);
+    if(lead){estRunsOf(d.id).forEach(x=>{if(x!==lead&&x.widthMode==='fill'&&estGroupOf(x)===grp&&x.center&&x.center.length){x.center=[];pPut('estruns',x).catch(()=>{});}});   // one traced line per run
+      lead.center=[{pts:fillTemp.slice(),isMain:true}];pPut('estruns',lead).catch(()=>{});}
     const lf=lead?estRunLenFt(lead,d):0;fillFinish();toast('Line measured · '+ft1(lf)+' lf'); }
   function fillFinish(){mode='view';fillTarget=null;fillStep='pour';fillGroupId=null;fillLeadId=null;fillTemp=[];refresh();}
-  function startFillEdit(id){const r=S.estruns.find(x=>x.id===id);if(!r||r.widthMode!=='fill'){toast('Only a fill can be painted');return;}
-    editRun=id;editTool='add';editGW=1200;editGH=Math.max(1,Math.round(editGW*asp));editGroupCol=estKindOf(r).color;editR=Math.round(editGW*0.012);
+  // paint/erase editor: a grid over just this piece (+margin) at up to 8 px/pt, so edits keep the fill's precision
+  let editBB=null,editRpt=1;
+  function startFillEdit(id){const r=S.estruns.find(x=>x.id===id);if(!r||r.widthMode!=='fill'||!r.fillPoly||r.fillPoly.length<6){toast('Only a fill can be painted');return;}
+    const fp=r.fillPoly;let x0=1,y0=1,x1=0,y1=0;for(let i=0;i<fp.length;i+=2){x0=Math.min(x0,fp[i]);x1=Math.max(x1,fp[i]);y0=Math.min(y0,fp[i+1]);y1=Math.max(y1,fp[i+1]);}
+    const PW=d.pw||((d.w||1200)),PH=d.ph||((d.h||900)),wPt=estFillGeom(r,d).w*PW/(d.w||1)||12,mPt=Math.max(80,3*wPt);
+    x0=Math.max(0,x0-mPt/PW);x1=Math.min(1,x1+mPt/PW);y0=Math.max(0,y0-mPt/PH);y1=Math.min(1,y1+mPt/PH);editBB=[x0,y0,x1,y1];
+    const bwPt=(x1-x0)*PW,bhPt=(y1-y0)*PH;editRpt=Math.min(8,2400/Math.max(bwPt,bhPt));
+    editGW=Math.max(8,Math.ceil(bwPt*editRpt));editGH=Math.max(8,Math.ceil(bhPt*editRpt));
+    editRun=id;editTool='add';editGroupCol=estKindOf(r).color;editR=Math.max(3,Math.round(0.35*wPt*editRpt));
     editCv=document.createElement('canvas');editCv.width=editGW;editCv.height=editGH;editCv.id='efedit';
-    const g=editCv.getContext('2d');g.fillStyle=editGroupCol;
-    if(r.fillPoly&&r.fillPoly.length>=6){g.beginPath();for(let i=0;i<r.fillPoly.length;i+=2){const x=r.fillPoly[i]*editGW,y=r.fillPoly[i+1]*editGH;i?g.lineTo(x,y):g.moveTo(x,y);}g.closePath();g.fill();}
-    editCv.style.cssText='position:absolute;left:0;top:0;opacity:0.5;pointer-events:none';editCv.style.width=baseW+'px';editCv.style.height=baseH+'px';
-    stage.insertBefore(editCv,ink);mode='filledit';refresh();toast('Paint to add, Erase to remove — pinch/FIT to frame first');}
-  function editPaint(cx,cy){if(!editCv)return;const {nx,ny}=toNorm(cx,cy);const gx=nx*editGW,gy=ny*editGH;const g=editCv.getContext('2d');
+    const g=editCv.getContext('2d');g.fillStyle=editGroupCol;g.beginPath();
+    for(let i=0;i<fp.length;i+=2){const x=(fp[i]-x0)/(x1-x0)*editGW,y=(fp[i+1]-y0)/(y1-y0)*editGH;i?g.lineTo(x,y):g.moveTo(x,y);}g.closePath();g.fill();
+    editCv.style.cssText='position:absolute;opacity:0.5;pointer-events:none';
+    editCv.style.left=(x0*baseW)+'px';editCv.style.top=(y0*baseH)+'px';editCv.style.width=((x1-x0)*baseW)+'px';editCv.style.height=((y1-y0)*baseH)+'px';
+    stage.insertBefore(editCv,ink);mode='filledit';refresh();toast('Paint to add, Erase to remove — zoom in close for precise edges');}
+  function editBrushIn(){const PW=d.pw||(d.w||1);const ftPerPt=estFpp(d)*(d.w||1)/PW;return 2*editR/editRpt*ftPerPt*12;}
+  function editPaint(cx,cy){if(!editCv||!editBB)return;const {nx,ny}=toNorm(cx,cy);const B=editBB;
+    const gx=(nx-B[0])/(B[2]-B[0])*editGW,gy=(ny-B[1])/(B[3]-B[1])*editGH;const g=editCv.getContext('2d');
     if(editTool==='erase'){g.save();g.globalCompositeOperation='destination-out';g.beginPath();g.arc(gx,gy,editR,0,7);g.fill();g.restore();}
     else{g.globalCompositeOperation='source-over';g.fillStyle=editGroupCol;g.beginPath();g.arc(gx,gy,editR,0,7);g.fill();}}
-  function editCleanup(){if(editCv&&editCv.parentNode)editCv.parentNode.removeChild(editCv);editCv=null;editRun=null;editPainting=false;}
+  function editCleanup(){if(editCv&&editCv.parentNode)editCv.parentNode.removeChild(editCv);editCv=null;editRun=null;editPainting=false;editBB=null;}
   function editCancel(){editCleanup();mode='view';refresh();}
-  function editDone(){const r=S.estruns.find(x=>x.id===editRun);
-    if(editCv&&r){const g=editCv.getContext('2d');const dta=g.getImageData(0,0,editGW,editGH).data;
+  function editDone(){const r=S.estruns.find(x=>x.id===editRun),B=editBB;
+    if(editCv&&r&&B){const g=editCv.getContext('2d');const dta=g.getImageData(0,0,editGW,editGH).data;
       let count=0,minx=editGW,miny=editGH,maxx=0,maxy=0;const mask=new Uint8Array(editGW*editGH);
       for(let pq=0,i=0;pq<mask.length;pq++,i+=4){if(dta[i+3]>=128){mask[pq]=1;count++;const x=pq%editGW,y=(pq/editGW)|0;if(x<minx)minx=x;if(x>maxx)maxx=x;if(y<miny)miny=y;if(y>maxy)maxy=y;}}
       if(count<9){S.estruns=S.estruns.filter(x=>x.id!==editRun);pDel('estruns',editRun).catch(()=>{});toast('Fill erased');}
-      else{const c=estMaskContour({mask,W:editGW,H:editGH,minx,miny,maxx,maxy});if(c.length>=3){const poly=[];c.forEach(pt=>poly.push(+(pt[0]/editGW).toFixed(5),+(pt[1]/editGH).toFixed(5)));r.fillPoly=poly;}r.fillFrac=count/(editGW*editGH);pPut('estruns',r).catch(()=>{});toast(Math.round(estAreaFt(r,d))+' sq ft');}}
+      else{const raw=estTraceMask(mask,editGW,editGH,minx,miny,maxx,maxy);const c=estSimplify(raw.map(q=>[q[0]+0.5,q[1]+0.5]),0.7);
+        const sx=(B[2]-B[0])/editGW,sy=(B[3]-B[1])/editGH;
+        if(c.length>=3){const poly=[];c.forEach(pt=>poly.push(+(B[0]+pt[0]*sx).toFixed(6),+(B[1]+pt[1]*sy).toFixed(6)));r.fillPoly=poly;
+          const Wd=d.w||1,Hd=d.h||1,PP=[];for(let i=0;i<poly.length;i+=2)PP.push([poly[i]*Wd,poly[i+1]*Hd]);const wv=estBandWidth(PP),cl=estBandCenterline(PP,wv);r.autoCenter=cl?[].concat(...cl.map(q=>[+(q[0]/Wd).toFixed(6),+(q[1]/Hd).toFixed(6)])):[];}
+        r.fillFrac=count*sx*sy;pPut('estruns',r).catch(()=>{});const a=estAreaFt(r,d);toast((a<100?ft1(a):Math.round(a))+' sq ft · '+ft1(estRunLenFt(r,d))+' lf');}}
     editCleanup();mode='view';refresh();}
   function snapPoint(cx,cy){const thr=16;let best=null,bd=thr,bestRun=null;const r=viewer.getBoundingClientRect();
     const sc=(nx,ny)=>[r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];
@@ -3774,12 +3922,40 @@ function viewEstMeasure(app){
       const L2=((bx-ax)**2+(by-ay)**2)||1,t=Math.max(0,Math.min(1,((cx-ax)*(bx-ax)+(cy-ay)*(by-ay))/L2));
       const px=ax+(bx-ax)*t,py=ay+(by-ay)*t,dd=Math.hypot(cx-px,cy-py);if(dd<bd){bd=dd;best=run.id;}}});
     return best;}
+  function undoTap(){const c=tempTaps.pop()||1;tempIds.pop();tempPieces.length=Math.min(tempPieces.length,tempTaps.length);tempArc.length=Math.min(tempArc.length,tempTaps.length);temp.splice(Math.max(0,temp.length-2*c),2*c);}
   function addPoint(cx,cy){
-    if(mode==='run'&&temp.length===0){const sp=snapPoint(cx,cy);if(sp){cx=sp.x;cy=sp.y;tempTie=true;tempTieRun=sp.runId;}}
+    let tied=false;
+    if(mode==='run'&&temp.length===0){const sp=snapPoint(cx,cy);if(sp){cx=sp.x;cy=sp.y;tempTie=true;tempTieRun=sp.runId;tied=true;}}
     const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap on the drawing');return;}
-    temp.push(+nx.toFixed(5),+ny.toFixed(5));
-    if(mode==='cal'&&temp.length===4)askLength();
-    else refresh();}
+    temp.push(+nx.toFixed(6),+ny.toFixed(6));
+    if(mode==='cal'){if(temp.length===4)askLength();else refresh();return;}
+    const tid=++tapSeq;tempTaps.push(1);tempIds.push(tid);refresh();
+    if(mode==='run'&&!tied){const buf={pts:temp,taps:tempTaps,pieces:tempPieces,arc:tempArc,ids:tempIds};
+      snapChain=snapChain.then(()=>snapRunTap(buf,tid,nx,ny)).catch(()=>{});}}
+  // move run tap k onto the centreline of the duct piece under it; an elbow contributes its whole arc
+  async function snapRunTap(buf,tid,nx,ny){
+    const r=await estFillProbe(d,nx,ny);const k=buf.ids.indexOf(tid);if(k<0)return;
+    const temp=buf.pts,tempTaps=buf.taps,tempPieces=buf.pieces,tempArc=buf.arc;   // shadow: edit the buffer this tap belongs to
+    if(!r||r.status!=='ok'||!r.autoCenter||r.autoCenter.length<4)return;
+    const W=d.w||1,H=d.h||1,C=[];for(let i=0;i<r.autoCenter.length;i+=2)C.push([r.autoCenter[i],r.autoCenter[i+1]]);
+    const len=estPolyLen(C.map(p=>[p[0]*W,p[1]*H])),chord=Math.hypot((C[C.length-1][0]-C[0][0])*W,(C[C.length-1][1]-C[0][1])*H);
+    let start=0;for(let j=0;j<k;j++)start+=tempTaps[j];
+    const curved=len>chord*1.03;
+    if(curved&&k>0&&tempPieces[k-1]===r&&tempArc[k-1]){temp.splice(start*2,tempTaps[k]*2);tempTaps[k]=0;tempPieces[k]=r;tempArc[k]=true;if(viewer.isConnected){renderInk();renderBar();}return;}   // arc already in the run
+    tempPieces[k]=r;
+    let pts;
+    tempArc[k]=curved&&k>0;
+    if(curved&&k>0){   // elbow: insert its centreline arc, oriented from the previous point
+      const px=temp[(start-1)*2],py=temp[(start-1)*2+1],d0=Math.hypot((C[0][0]-px)*W,(C[0][1]-py)*H),d1=Math.hypot((C[C.length-1][0]-px)*W,(C[C.length-1][1]-py)*H);
+      pts=(d1<d0?C.slice().reverse():C);}
+    else{let best=null,bd=Infinity;const X=nx*W,Y=ny*H;   // straight: nearest point on the midline (ends snap to the joint)
+      for(let i=0;i+1<C.length;i++){const a=[C[i][0]*W,C[i][1]*H],b=[C[i+1][0]*W,C[i+1][1]*H],ex=b[0]-a[0],ey=b[1]-a[1],L2=ex*ex+ey*ey||1e-12;
+        let t=((X-a[0])*ex+(Y-a[1])*ey)/L2;t=Math.max(0,Math.min(1,t));const q=[a[0]+ex*t,a[1]+ey*t],dd=Math.hypot(X-q[0],Y-q[1]);if(dd<bd){bd=dd;best=q;}}
+      const w=(r.wMedPt||0)*W/(d.pw||W),e0=[C[0][0]*W,C[0][1]*H],e1=[C[C.length-1][0]*W,C[C.length-1][1]*H];
+      if(Math.hypot(best[0]-e0[0],best[1]-e0[1])<w*0.6)best=e0;else if(Math.hypot(best[0]-e1[0],best[1]-e1[1])<w*0.6)best=e1;
+      pts=[[best[0]/W,best[1]/H]];}
+    const flat=[];pts.forEach(p=>flat.push(+p[0].toFixed(6),+p[1].toFixed(6)));
+    temp.splice(start*2,tempTaps[k]*2,...flat);tempTaps[k]=pts.length;if(viewer.isConnected){renderInk();renderBar();}}
   function askLength(){
     const body=document.createElement('div');
     body.innerHTML=`<p class="cl-note">How long is the line you just drew?</p>
@@ -3796,22 +3972,31 @@ function viewEstMeasure(app){
       ctl.close();mode='view';temp=[];refresh();toast('Scale set');};
   }
   async function addRun(exit){
-    if(temp.length<4){if(exit){mode='view';temp=[];tempTie=false;tempTieRun=null;runGroup=null;refresh();}else toast('Tap at least two points');return;}
-    const id=uid();const pts=temp.slice();const rsA=estRunsOf(d.id);
+    if(temp.length<4){if(exit){mode='view';temp=[];tempTaps=[];tempPieces=[];tempArc=[];tempIds=[];tempTie=false;tempTieRun=null;runGroup=null;refresh();}else toast('Tap at least two points');return;}
+    const buf=temp,myTie=tempTie,myTieRun=tempTieRun;
+    temp=[];tempTaps=[];tempPieces=[];tempArc=[];tempIds=[];tempTie=false;tempTieRun=null;   // new taps start the next piece right away
+    if(exit)mode='view';refresh();
+    await snapChain;                                  // let this run's own snaps finish (they edit buf)
+    if(buf.length<4)return;
+    const id=uid();const pts=buf.slice();const rsA=estRunsOf(d.id);
     let groupId,role,label='';
-    if(tempTie&&tempTieRun){groupId=tempTieRun;role='branch';}        // tapped onto an existing run -> branch of it
+    if(myTie&&myTieRun){groupId=myTieRun;role='branch';}        // tapped onto an existing run -> branch of it
     else if(runGroup){groupId=runGroup;role='branch';}               // same measuring session -> branch of the current run
     else{groupId=id;role='main';label=estAutoLabel(rsA,estKind);}    // first piece -> the main run
     if(!runGroup)runGroup=groupId;                                    // lock this session to one run until Finish
-    const run={id,estId:d.estId,drawId:d.id,pts,kind:estKind,widthMode:'auto',edgeL:null,edgeR:null,widthFrac:0,manualWidthFt:0,tieStart:role==='branch'?true:tempTie,groupId,role,label,createdAt:now()};
-    temp=[];tempTie=false;tempTieRun=null;if(exit){mode='view';runGroup=null;}   // Add run stays on the same run; Finish ends it
-    hint.innerHTML=`${I.info}<span>Reading width…</span>`;renderInk();
-    try{const img=await estImage(d);const e=estDetectEdges(pts,img,estMaxPx(d,img));
-      if(e){run.edgeL=e.edgeL;run.edgeR=e.edgeR;}
-      else{const w=estDetectWidthFrac(pts,img);if(w&&w.frac>0)run.widthFrac=w.frac;else{run.widthMode='manual';run.manualWidthFt=1;toast('Couldn’t read the width — set it by hand');}}
+    const run={id,estId:d.estId,drawId:d.id,pts,kind:estKind,widthMode:'auto',edgeL:null,edgeR:null,widthFrac:0,manualWidthFt:0,tieStart:role==='branch'?true:myTie,groupId,role,label,createdAt:now()};
+    if(exit){runGroup=null;}   // Add run stays on the same run; Finish ends it
+    S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));   // on the plan right away (branches can tie to it)
+    refresh();hint.innerHTML=`${I.info}<span>Reading width…</span>`;
+    try{const sw=await estRunWidthsHD(d,pts);
+      if(sw){run.segW=sw.map(w=>+w.toFixed(7));run.edgeL=null;run.edgeR=null;}
+      else{const img=await estImage(d);const e=estDetectEdges(pts,img,estMaxPx(d,img));
+        if(e){run.edgeL=e.edgeL;run.edgeR=e.edgeR;}
+        else{const w=estDetectWidthFrac(pts,img);if(w&&w.frac>0)run.widthFrac=w.frac;else{run.widthMode='manual';run.manualWidthFt=1;toast('Couldn’t read the width — set it by hand');}}}
     }catch(e){console.warn(e);run.widthMode='manual';run.manualWidthFt=1;}
-    S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));
-    refresh();toast((role==='branch'?'Branch':run.label)+' · '+ft1(estLenFt(run.pts,d))+' lf added');
+    if(!S.estruns.includes(run))return;   // undone while measuring
+    pPut('estruns',run).catch(()=>toast('Not saved — check connection'));
+    refresh();{const wi=estWidthFt(run,d)*12;toast((role==='branch'?'Branch':run.label)+' · '+ft1(estLenFt(run.pts,d))+' lf'+(wi>0?' · '+(Math.round(wi*2)/2)+'″ wide':'')+' added');}
   }
   function runSheet(id){
     const r=S.estruns.find(x=>x.id===id);if(!r)return;
@@ -3822,9 +4007,10 @@ function viewEstMeasure(app){
       const glabel=gmain.label||'Run';const isBranch=cur.role==='branch'||(!cur.role&&cur.tieStart&&!isFill);
       const part=isFill?'Fill':(isBranch?'Branch':'Main run');
       body.innerHTML=`<div class="cl-stat"><div class="cl-statrow"><i class="estdot" style="background:${estKindOf(cur).color}"></i><span><b>${esc(glabel)}</b> · ${part} · ${estKindOf(cur).label}${isFill
-          ?` · linear <b>${ft1(estRunLenFt(cur,d))} ft</b>${cur.centerBranches?` · <b>${cur.centerBranches} branch${cur.centerBranches!==1?'es':''}</b>`:''} · <b>${Math.round(estAreaFt(cur,d))} sq ft</b>`
+          ?(()=>{const a=estAreaFt(cur,d),wi=estFillWidthFt(cur,d)*12;const tr=cur.center&&cur.center.length;return ` · ${tr?'traced line':'linear'} <b>${ft1(tr?estCenterLenFt(cur,d):estFillGeom(cur,d).len*estFpp(d))} ft</b>${wi>0?` · width <b>${Math.round(wi*2)/2}″</b>`:''} · <b>${a<100?ft1(a):Math.round(a)} sq ft</b>`;})()
           :` · linear <b>${ft1(estLenFt(cur.pts,d))} ft</b> · width <b>${ftIn(estWidthFt(cur,d))}</b> · <b>${Math.round(estAreaFt(cur,d))} sq ft</b>`}</span></div>
-        <div class="cl-statrow"><span>${isFill?'Linear footage measured from the duct centerline (follows elbows); area poured inside the outline.':('Width read '+(cur.widthMode==='auto'?'automatically from the drawing':'by hand')+'.')}</span></div></div>
+        <div class="cl-statrow"><span>${isFill?((cur.center&&cur.center.length)?'Your traced line is used as this run’s linear footage.':(estGroupTraced(cur)?'This run’s linear footage comes from its traced line.':'Area and centreline length are measured from the drawing’s lines (length = area ÷ width).')):('Width read '+(cur.widthMode==='auto'?'automatically from the drawing':'by hand')+'.')}</span></div></div>
+        ${isFill&&cur.center&&cur.center.length?`<button type="button" class="btn" id="rClearTrace" style="width:100%;margin-top:10px">Use measured length instead of the traced line</button>`:''}
         <div class="cl-subhead">Duct type</div>
         <div class="estkinds" id="rKind">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${(cur.kind||'mps')===k?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
         <div class="field" style="margin-top:12px"><label>Run name</label><input class="inp" id="rLabel" value="${esc(glabel)}" placeholder="e.g. LPS 1"></div>
@@ -3840,9 +4026,10 @@ function viewEstMeasure(app){
       body.querySelectorAll('#rKind [data-k]').forEach(b=>b.onclick=()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.kind=b.dataset.k;pPut('estruns',c).catch(()=>{});draw();refresh();});
       body.querySelector('#rLabel').onchange=ev=>{const rsL=estRunsOf(d.id);const cc=S.estruns.find(x=>x.id===id);const m=estRunMain(rsL,estGroupOf(cc))||cc;if(!m)return;m.label=ev.target.value.trim();pPut('estruns',m).catch(()=>{});refresh();};
       {const ef=body.querySelector('#rEditFill');if(ef)ef.onclick=()=>{ctl.close();startFillEdit(id);};}
+      {const ct=body.querySelector('#rClearTrace');if(ct)ct.onclick=()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.center=[];pPut('estruns',c).catch(()=>{});draw();refresh();toast('Using measured length');};}
       body.querySelectorAll('[data-w]').forEach(b=>b.onclick=async()=>{const c=S.estruns.find(x=>x.id===id);if(!c||c.widthMode==='fill')return;
         if(b.dataset.w==='manual'){c.widthMode='manual';if(!c.manualWidthFt)c.manualWidthFt=estWidthFt(c,d)||1;}
-        else{c.widthMode='auto';try{const img=await estImage(d);const e=estDetectEdges(c.pts,img,estMaxPx(d,img));if(e){c.edgeL=e.edgeL;c.edgeR=e.edgeR;}else{const w=estDetectWidthFrac(c.pts,img);if(w)c.widthFrac=w.frac;}}catch(e){}}
+        else{c.widthMode='auto';try{const sw=await estRunWidthsHD(d,c.pts);if(sw){c.segW=sw.map(w=>+w.toFixed(7));c.edgeL=null;c.edgeR=null;}else{const img=await estImage(d);const e=estDetectEdges(c.pts,img,estMaxPx(d,img));if(e){c.edgeL=e.edgeL;c.edgeR=e.edgeR;}else{const w=estDetectWidthFrac(c.pts,img);if(w)c.widthFrac=w.frac;}}}catch(e){}}
         pPut("estruns",c).catch(()=>{});draw();refresh();});
       const wi=body.querySelector('#rWidth');if(wi)wi.onchange=ev=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;const ft=parseFeet(ev.target.value);if(ft&&ft>0){c.manualWidthFt=ft;pPut('estruns',c).catch(()=>{});draw();refresh();}else{toast('Enter a width');}};
       {const bb=body.querySelector('#rBranch');if(bb)bb.onclick=()=>{const c=S.estruns.find(x=>x.id===id);ctl.close();if(c&&c.kind)estKind=c.kind;startRun(estGroupOf(c));toast('Tap on the main to start the branch');};}
@@ -3890,7 +4077,7 @@ function viewEstMeasure(app){
   totBtn.onclick=runsListSheet;
   app.querySelector('#evCalT').onclick=()=>{showCal=!showCal;refresh();};
   function undoLast(){
-    if(mode!=='view'&&temp.length){temp=temp.slice(0,-2);refresh();return;}
+    if(mode!=='view'&&temp.length){if(mode==='run')undoTap();else temp=temp.slice(0,-2);refresh();return;}
     const rs=estRunsOf(d.id);if(!rs.length){toast('Nothing to undo');return;}
     const last=rs[rs.length-1];S.estruns=S.estruns.filter(x=>x.id!==last.id);pDel('estruns',last.id).catch(()=>{});
     refresh();toast('Removed last '+(last.widthMode==='fill'?'fill':'run'));}
