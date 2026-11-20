@@ -64,6 +64,9 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   **Measure line** and lay down a continuous line — tap the start, any bends, then the end — which is
   exactly your line (no auto-guessing). You establish the main by measuring it first, then add taps as
   their own fills. Filling each duct separately also lets you measure ducts stacked on each other.
+  When a wall or grid line crosses a duct and cuts it into pieces, tap each piece into the same run: the pieces
+  are recognized as one duct (they share a full-width cut), measured across together for the duct width, and
+  each piece's linear footage is its area ÷ that width, so cut elbows read their true size and length.
   Open a fill from its run editor to **Edit fill area** — Paint to add or Erase to remove, with an
   adjustable brush size — to fine-tune the square footage.
   Deleting a run segment offers **Delete this branch/fill** or **Delete

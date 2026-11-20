@@ -891,7 +891,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 22:13';
+const BUILD='Nov 19 22:48';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2991,7 +2991,9 @@ const EST_GEOM=new WeakMap();
 function estFillGeom(r,d){const fp=r.fillPoly;if(!fp||fp.length<6)return {area:0,w:0,len:0};
   const key=fp.length+':'+fp[0]+':'+fp[1]+':'+fp[fp.length-1]+':'+(d.w||1)+'x'+(d.h||1);const c=EST_GEOM.get(r);if(c&&c.key===key)return c;
   const W=d.w||1,H=d.h||1,P=[];for(let i=0;i<fp.length;i+=2)P.push([fp[i]*W,fp[i+1]*H]);
-  const bm=estBandMetrics(P),w=estBandWidth(P)||bm.W,g={key,area:bm.A,w,len:w>0?bm.A/w:bm.L};EST_GEOM.set(r,g);return g;}
+  const bm=estBandMetrics(P);let w=estBandWidth(P)||bm.W;
+  if(w>0&&bm.A/w<2*w){const wi=estInscribedDiam(P);if(wi>0)w=wi;}   // short piece (e.g. a duct chunk): the largest inscribed circle is the duct width
+  const g={key,area:bm.A,w,len:w>0?bm.A/w:bm.L};EST_GEOM.set(r,g);return g;}
 // does another fill in this run carry a traced (manual) line? then that line is the run's LF
 function estGroupTraced(r){const g=estGroupOf(r);return S.estruns.some(x=>x!==r&&x.widthMode==='fill'&&estGroupOf(x)===g&&x.center&&x.center.length);}
 // a run's linear footage: drawn length for runs; for fills, the traced line if there is one,
@@ -2999,8 +3001,60 @@ function estGroupTraced(r){const g=estGroupOf(r);return S.estruns.some(x=>x!==r&
 function estRunLenFt(r,d){ if(r.widthMode!=='fill')return estLenFt(r.pts,d);
   if(r.center&&r.center.length)return estCenterLenFt(r,d);
   if(estGroupTraced(r))return 0;
-  return estFillGeom(r,d).len*estFpp(d); }
-function estFillWidthFt(r,d){return estFillGeom(r,d).w*estFpp(d);}
+  return estFillPieceLen(r,d)*estFpp(d); }
+// length of one fill piece (plan px). A crossing wall/grid line can cut a duct into chunks; a chunk cut ACROSS
+// the duct can look like a thin band lying the wrong way. It is recognised by sharing a full duct-width edge
+// with a wider neighbour of the same run (a branch tap only shares an opening as wide as itself), and then its
+// length is area ÷ that duct width.
+function estSharedLen(Pa,Pb,eps){let L=0;const dist=(x,y)=>{let m=Infinity;for(let j=0;j<Pb.length;j++){const a=Pb[j],b=Pb[(j+1)%Pb.length],ex=b[0]-a[0],ey=b[1]-a[1],l2=ex*ex+ey*ey||1e-12;
+    let t=((x-a[0])*ex+(y-a[1])*ey)/l2;t=t<0?0:t>1?1:t;const dx=x-a[0]-ex*t,dy=y-a[1]-ey*t,dd=dx*dx+dy*dy;if(dd<m)m=dd;}return Math.sqrt(m);};
+  for(let i=0;i<Pa.length;i++){const a=Pa[i],b=Pa[(i+1)%Pa.length],el=Math.hypot(b[0]-a[0],b[1]-a[1]);const n=Math.max(1,Math.min(400,Math.ceil(el/eps)));
+    for(let k=0;k<n;k++){const t=(k+0.5)/n;if(dist(a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t)<=eps)L+=el/n;}}
+  return L;}
+// Chunks of ONE duct cut apart by crossing wall/grid lines. Pieces of a run that share a cut at least ~as long as the
+// shorter piece is long belong together (a branch tap only shares an opening as wide as itself and is longer than
+// that). The duct width is then measured across the merged outline with the cut edges ignored, and each chunk's
+// length is its area ÷ that width.
+const EST_CUTC=new Map();
+function estCutInfo(r,d){const gid=estGroupOf(r);const ps=S.estruns.filter(o=>o.drawId===r.drawId&&o.widthMode==='fill'&&estGroupOf(o)===gid&&o.fillPoly&&o.fillPoly.length>=6);
+  if(ps.length<2)return null;
+  const key=gid+'|'+(d.w||1)+'x'+(d.h||1)+'|'+ps.map(o=>o.id+':'+estFillGeom(o,d).key).join(',');let c=EST_CUTC.get(r.drawId+gid);
+  if(!c||c.key!==key){c={key,by:estCutCompute(ps,d)};EST_CUTC.set(r.drawId+gid,c);}
+  return c.by[r.id]||null;}
+function estCutCompute(ps,d){const W=d.w||1,H=d.h||1,pt=d.pw?W/d.pw:1,eps=0.8*pt;
+  const Ps=ps.map(o=>{const f=o.fillPoly,P=[];for(let i=0;i<f.length;i+=2)P.push([f[i]*W,f[i+1]*H]);return P;});
+  const G=ps.map(o=>estFillGeom(o,d));
+  const bbs=Ps.map(P=>{let x0=1e18,y0=1e18,x1=-1e18,y1=-1e18;for(const q of P){x0=Math.min(x0,q[0]);x1=Math.max(x1,q[0]);y0=Math.min(y0,q[1]);y1=Math.max(y1,q[1]);}return [x0-3*eps,y0-3*eps,x1+3*eps,y1+3*eps];});
+  const touch=(a,b)=>!(bbs[a][0]>bbs[b][2]||bbs[b][0]>bbs[a][2]||bbs[a][1]>bbs[b][3]||bbs[b][1]>bbs[a][3]);
+  const n=ps.length,par=ps.map((_,i)=>i),find=i=>par[i]===i?i:(par[i]=find(par[i])),nb=ps.map(()=>[]);
+  for(let a=0;a<n;a++)for(let b=a+1;b<n;b++){if(!touch(a,b))continue;
+    const sl=(estSharedLen(Ps[a],Ps[b],eps)+estSharedLen(Ps[b],Ps[a],eps))/2;if(sl<=2*eps)continue;nb[a].push(b);nb[b].push(a);
+    if(sl>=0.85*Math.min(G[a].len,G[b].len))par[find(a)]=find(b);}
+  const cl={};for(let i=0;i<n;i++)(cl[find(i)]=cl[find(i)]||[]).push(i);
+  const out={};
+  for(const k in cl){const m=cl[k];if(m.length<2)continue;
+    // wall pieces: boundary sub-segments of the cluster's chunks that are not on a cut/opening shared with another piece
+    const segs=[];
+    for(const i of m){const P=Ps[i];let A=0;for(let t=0;t<P.length;t++){const p=P[t],q=P[(t+1)%P.length];A+=p[0]*q[1]-q[0]*p[1];}const sg=A>0?1:-1;
+      for(let t=0;t<P.length;t++){const p=P[t],q=P[(t+1)%P.length],el=Math.hypot(q[0]-p[0],q[1]-p[1]);if(el<1e-9)continue;const ns=Math.max(1,Math.min(60,Math.ceil(el/(3*eps))));
+        for(let u=0;u<ns;u++){const a=[p[0]+(q[0]-p[0])*u/ns,p[1]+(q[1]-p[1])*u/ns],b=[p[0]+(q[0]-p[0])*(u+1)/ns,p[1]+(q[1]-p[1])*(u+1)/ns],mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;
+          let cut=false;for(const j of nb[i]){if(estPtSegDist(Ps[j],mx,my)<=1.5*eps){cut=true;break;}}
+          if(!cut)segs.push({a,b,i,sg,l:el/ns});}}}
+    const per=segs.reduce((s,g)=>s+g.l,0);if(!(per>0))continue;const N=160,ch=[];let acc=0,nx=0;
+    for(let si=0;si<segs.length;si++){const g=segs[si];acc+=g.l;while(nx<N&&per*(nx+0.5)/N<=acc){nx++;
+      const L=g.l||1,dx=(g.b[0]-g.a[0])/L,dy=(g.b[1]-g.a[1])/L,ox=(g.a[0]+g.b[0])/2,oy=(g.a[1]+g.b[1])/2,vx=-g.sg*dy,vy=g.sg*dx;let best=Infinity;
+      for(let sj=0;sj<segs.length;sj++){if(sj===si)continue;const h=segs[sj],ex=h.b[0]-h.a[0],ey=h.b[1]-h.a[1],den=vx*ey-vy*ex;if(Math.abs(den)<1e-12)continue;
+        const tt=((h.a[0]-ox)*ey-(h.a[1]-oy)*ex)/den,uu=((h.a[0]-ox)*vy-(h.a[1]-oy)*vx)/den;if(tt>eps&&uu>=-1e-6&&uu<=1+1e-6&&tt<best)best=tt;}
+      if(isFinite(best))ch.push(best);}}
+    if(ch.length<8)continue;ch.sort((a,b)=>a-b);const w=ch[ch.length>>1];
+    for(const i of m)out[ps[i].id]={w,n:m.length};}
+  return out;}
+function estPtSegDist(P,x,y){let m=Infinity;for(let j=0;j<P.length;j++){const a=P[j],b=P[(j+1)%P.length],ex=b[0]-a[0],ey=b[1]-a[1],l2=ex*ex+ey*ey||1e-12;
+  let t=((x-a[0])*ex+(y-a[1])*ey)/l2;t=t<0?0:t>1?1:t;const dx=x-a[0]-ex*t,dy=y-a[1]-ey*t,dd=dx*dx+dy*dy;if(dd<m)m=dd;}return Math.sqrt(m);}
+// a fill piece's duct width (plan px): the cut-cluster width for a chunk, else its own
+function estPieceW(r,d){const ci=estCutInfo(r,d);return ci&&ci.w>0?ci.w:estFillGeom(r,d).w;}
+function estFillPieceLen(r,d){const g=estFillGeom(r,d),w=estPieceW(r,d);return w>0?g.area/w:g.len;}
+function estFillWidthFt(r,d){return estPieceW(r,d)*estFpp(d);}
 // snap a normalized point onto the centreline of the run piece it falls in (and onto its end if close)
 function estSnapToCenter(d,groupId,nx,ny){if(!groupId)return null;const W=d.w||1,H=d.h||1,X=nx*W,Y=ny*H;
   const inPoly=(fp)=>{let c=false;for(let i=0,j=fp.length-2;i<fp.length;j=i,i+=2){const xi=fp[i]*W,yi=fp[i+1]*H,xj=fp[j]*W,yj=fp[j+1]*H;if(((yi>Y)!==(yj>Y))&&(X<(xj-xi)*(Y-yi)/((yj-yi)||1e-12)+xi))c=!c;}return c;};
@@ -3392,6 +3446,14 @@ function estBandWidth(P){const n=P.length;if(n<3)return 0;let A=0;for(let i=0;i<
       const tt=((a[0]-ox)*ey-(a[1]-oy)*ex)/den,u=((a[0]-ox)*ny-(a[1]-oy)*nx)/den;if(tt>1e-6&&u>=0&&u<=1&&tt<best)best=tt;}
     if(isFinite(best))ch.push(best);}
   if(!ch.length)return 0;ch.sort((a,b)=>a-b);return ch[ch.length>>1];}
+// diameter of the largest circle that fits inside a polygon (grid search + local refinement)
+function estInscribedDiam(P){const n=P.length;if(n<3)return 0;let x0=1e18,y0=1e18,x1=-1e18,y1=-1e18;for(const p of P){x0=Math.min(x0,p[0]);x1=Math.max(x1,p[0]);y0=Math.min(y0,p[1]);y1=Math.max(y1,p[1]);}
+  const inside=(x,y)=>{let c=false;for(let i=0,j=n-1;i<n;j=i++){const a=P[i],b=P[j];if(((a[1]>y)!==(b[1]>y))&&(x<(b[0]-a[0])*(y-a[1])/((b[1]-a[1])||1e-12)+a[0]))c=!c;}return c;};
+  const dist=(x,y)=>{let m=Infinity;for(let i=0;i<n;i++){const a=P[i],b=P[(i+1)%n],ex=b[0]-a[0],ey=b[1]-a[1],l2=ex*ex+ey*ey||1e-12;let t=((x-a[0])*ex+(y-a[1])*ey)/l2;t=t<0?0:t>1?1:t;const dx=x-a[0]-ex*t,dy=y-a[1]-ey*t;m=Math.min(m,dx*dx+dy*dy);}return Math.sqrt(m);};
+  const N=48,sx=(x1-x0)/N,sy=(y1-y0)/N;let best=0,bx=0,by=0;
+  for(let i=0;i<=N;i++)for(let j=0;j<=N;j++){const x=x0+sx*i,y=y0+sy*j;if(!inside(x,y))continue;const dd=dist(x,y);if(dd>best){best=dd;bx=x;by=y;}}
+  let st=Math.max(sx,sy);for(let it=0;it<30&&st>1e-6;it++){let moved=false;for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]){const x=bx+dx*st,y=by+dy*st;if(!inside(x,y))continue;const dd=dist(x,y);if(dd>best){best=dd;bx=x;by=y;moved=true;}}if(!moved)st/=2;}
+  return 2*best;}
 const estPolyLen=Q=>{let L=0;for(let i=1;i<Q.length;i++)L+=Math.hypot(Q[i][0]-Q[i-1][0],Q[i][1]-Q[i-1][1]);return L;};
 // width of the duct under each segment of a drawn run (page points), from the piece the segment runs through
 async function estRunWidthsHD(d,pts){const pg=await estPdfPage(d);if(!pg)return null;const PW=pg.getViewport({scale:1}).width;const out=[];
@@ -4028,7 +4090,7 @@ function viewEstMeasure(app){
       const glabel=gmain.label||'Run';const isBranch=cur.role==='branch'||(!cur.role&&cur.tieStart&&!isFill);
       const part=isFill?'Fill':(isBranch?'Branch':'Main run');
       body.innerHTML=`<div class="cl-stat"><div class="cl-statrow"><i class="estdot" style="background:${estKindOf(cur).color}"></i><span><b>${esc(glabel)}</b> · ${part} · ${estKindOf(cur).label}${isFill
-          ?(()=>{const a=estAreaFt(cur,d),wi=estFillWidthFt(cur,d)*12;const tr=cur.center&&cur.center.length;return ` · ${tr?'traced line':'linear'} <b>${ft1(tr?estCenterLenFt(cur,d):estFillGeom(cur,d).len*estFpp(d))} ft</b>${wi>0?` · width <b>${Math.round(wi*2)/2}″</b>`:''} · <b>${a<100?ft1(a):Math.round(a)} sq ft</b>`;})()
+          ?(()=>{const a=estAreaFt(cur,d),wi=estFillWidthFt(cur,d)*12;const tr=cur.center&&cur.center.length;return ` · ${tr?'traced line':'linear'} <b>${ft1(tr?estCenterLenFt(cur,d):estFillPieceLen(cur,d)*estFpp(d))} ft</b>${wi>0?` · width <b>${Math.round(wi*2)/2}″</b>`:''} · <b>${a<100?ft1(a):Math.round(a)} sq ft</b>`;})()
           :` · linear <b>${ft1(estLenFt(cur.pts,d))} ft</b> · width <b>${ftIn(estWidthFt(cur,d))}</b> · <b>${Math.round(estAreaFt(cur,d))} sq ft</b>`}</span></div>
         <div class="cl-statrow"><span>${isFill?((cur.center&&cur.center.length)?'Your traced line is used as this run’s linear footage.':(estGroupTraced(cur)?'This run’s linear footage comes from its traced line.':'Area and centreline length are measured from the drawing’s lines (length = area ÷ width).')):('Width read '+(cur.widthMode==='auto'?'automatically from the drawing':'by hand')+'.')}</span></div></div>
         ${isFill&&cur.center&&cur.center.length?`<button type="button" class="btn" id="rClearTrace" style="width:100%;margin-top:10px">Use measured length instead of the traced line</button>`:''}
