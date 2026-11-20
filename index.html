@@ -208,6 +208,13 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 :root{--mk-exhaust:#7c3aed;--mk-access:#0891b2;--mk-note:#db2777}
 #ink{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
 #eink,#elabels{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+/* the plan zooms with a CSS transform, which non-scaling-stroke ignores: size lines in plan units from the zoom (--u = plan units per screen px) */
+#eink [vector-effect][stroke-width="2.2"]{vector-effect:none;stroke-width:calc(2.2px * var(--u,1))}
+#eink [vector-effect][stroke-width="2.4"]{vector-effect:none;stroke-width:calc(2.4px * var(--u,1))}
+#eink [vector-effect][stroke-width="2.6"]{vector-effect:none;stroke-width:calc(2.6px * var(--u,1))}
+#eink [vector-effect][stroke-width="3"]{vector-effect:none;stroke-width:calc(3px * var(--u,1))}
+#eink [vector-effect][stroke-dasharray="6 4"]{stroke-dasharray:calc(6px * var(--u,1)) calc(4px * var(--u,1))}
+#eink [vector-effect][stroke-dasharray="8 5"]{stroke-dasharray:calc(8px * var(--u,1)) calc(5px * var(--u,1))}
 #mklayer{position:absolute;left:0;top:0}
 .hide-markups #ink,.hide-markups #mklayer{display:none}
 .mk{position:absolute;transform:translate(-50%,-50%);transform-origin:center center;
@@ -891,7 +898,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 22:48';
+const BUILD='Nov 19 22:59';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -3717,7 +3724,7 @@ function viewEstMeasure(app){
   EVW={get scale(){return scale;},get state(){return {mode,temp:temp.slice(),taps:tempTaps.slice(),tie:tempTie,arc:tempArc.slice()};},nc:(nx,ny)=>{const r=viewer.getBoundingClientRect();return [r.left+tx+nx*scale*baseW,r.top+ty+ny*scale*baseH];}};
   const dotR=()=>Math.max(0.6,4200/(scale*baseW));   // ~4px on screen at any zoom
   const apply=()=>{stage.style.transform=`translate(${tx}px,${ty}px) scale(${scale})`;drawLabels();
-    const r=dotR().toFixed(2);ink.querySelectorAll('.esc').forEach(c=>c.setAttribute('r',r));scheduleHiresE();};
+    const r=dotR().toFixed(2);ink.querySelectorAll('.esc').forEach(c=>c.setAttribute('r',r));ink.style.setProperty('--u',(1000/(scale*(baseW||1000))).toFixed(5));scheduleHiresE();};
   function setBase(){baseW=viewer.clientWidth||360;baseH=baseW*asp;stage.style.width=baseW+'px';stage.style.height=baseH+'px';
     const img=app.querySelector('#eplan');img.style.width=baseW+'px';img.style.height=baseH+'px';
     ink.style.width=baseW+'px';ink.style.height=baseH+'px';labels.style.width=baseW+'px';labels.style.height=baseH+'px';}
