@@ -898,7 +898,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 22:59';
+const BUILD='Nov 19 23:16';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -3473,6 +3473,19 @@ async function estRunWidthsHD(d,pts){const pg=await estPdfPage(d);if(!pg)return 
   return out.map(w=>(w>0?w:med)/PW);}
 // fill at normalized (nx,ny) -> {status:'ok', fillFrac, fillPoly, areaPt} | {status:'onLine'|'leak'}
 const ESTPROBE={};
+// a tap right on a line is nudged into the open space beside it, which may already be filled:
+// the existing fill that a new pour mostly covers (so the same piece is never counted twice), else null
+function estFillOverlap(d,fp){const bb=f=>{let x0=1,y0=1,x1=0,y1=0;for(let i=0;i<f.length;i+=2){x0=Math.min(x0,f[i]);x1=Math.max(x1,f[i]);y0=Math.min(y0,f[i+1]);y1=Math.max(y1,f[i+1]);}return [x0,y0,x1,y1];};
+  const A=bb(fp),aw=A[2]-A[0],ah=A[3]-A[1];
+  const olds=estRunsOf(d.id).filter(r=>r.widthMode==='fill'&&r.fillPoly&&r.fillPoly.length>=6).map(r=>({r,b:bb(r.fillPoly)})).filter(o=>!(o.b[0]>A[2]||o.b[2]<A[0]||o.b[1]>A[3]||o.b[3]<A[1]));
+  if(!olds.length)return null;
+  const tol=Math.max(aw,ah)*0.04;   // same outline (bounding box within 4%)
+  for(const o of olds)if(Math.abs(o.b[0]-A[0])<=tol&&Math.abs(o.b[1]-A[1])<=tol&&Math.abs(o.b[2]-A[2])<=tol&&Math.abs(o.b[3]-A[3])<=tol)return o.r;
+  const G=24,cnt=new Map();let n=0;   // or most of the new pour already lies inside one fill
+  for(let i=0;i<G;i++)for(let j=0;j<G;j++){const px=A[0]+aw*(i+0.5)/G,py=A[1]+ah*(j+0.5)/G;if(!estPtInPolyN(fp,px,py))continue;n++;
+    const o=olds.find(o=>px>=o.b[0]&&px<=o.b[2]&&py>=o.b[1]&&py<=o.b[3]&&estPtInPolyN(o.r.fillPoly,px,py));if(o)cnt.set(o.r,(cnt.get(o.r)||0)+1);}
+  for(const [r,c] of cnt)if(n>=4&&c/n>0.5)return r;
+  return null;}
 function estPtInPolyN(fp,nx,ny){let c=false;for(let i=0,j=fp.length-2;i<fp.length;j=i,i+=2){const xi=fp[i],yi=fp[i+1],xj=fp[j],yj=fp[j+1];if(((yi>ny)!==(yj>ny))&&(nx<(xj-xi)*(ny-yi)/((yj-yi)||1e-12)+xi))c=!c;}return c;}
 async function estFillProbe(d,nx,ny){
   const cache=ESTPROBE[d.id]||(ESTPROBE[d.id]=[]);
@@ -3942,6 +3955,7 @@ function viewEstMeasure(app){
     try{const res=await estFillProbe(d,nx,ny);
       if(res.status==='onLine'){toast('Tap in the open space inside the duct');renderBar();return;}
       if(res.status!=='ok'||!res.fillPoly){toast('That space isn’t closed off — pour inside a closed duct, or draw the run instead');renderBar();return;}
+      {const dup=estFillOverlap(d,res.fillPoly);if(dup){toast('Already filled — part of '+(estGroupLabel(estRunsOf(d.id),dup)||'a run'));renderBar();return;}}
       const rs=estRunsOf(d.id);const id=uid();let groupId,role,kind,label='';
       if(!fillGroupId){
         if(fillTarget.mode==='new'){kind=fillTarget.kind;groupId=id;role='main';label=estAutoLabel(rs,kind);}
