@@ -45,9 +45,13 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   (filterable by group, copyable).
 - **Estimate** (low-key link in the home top bar): a measuring takeoff tool. Create an estimate
   (number + job name), upload drawings, then **set a scale** (tap two points and type the real
-  length). **Measure run**: tap along a duct run following its bends — the length is exact because
-  you draw it, and the app reads sideways out to the bold lines to get the width, giving linear feet
-  and area. The line you drew shows as a crisp centerline with end dots (your linear measurement)
+  length). **Measure run**: tap along a duct run following its bends (one tap at each turn is enough,
+  even for a run across the whole sheet). The app then measures straight across the duct every 2 pt
+  along the line, finds the duct's walls (long lines running alongside it, so tags, crossing walls,
+  boxes and ducts drawn over it are looked past, and stretches where the walls are hidden take the
+  size on either side), centers your line on the duct, and reads every size along it — a reducer in
+  the middle of a segment splits into its sizes, each with its own width factor. Linear feet and
+  area follow from that. The line you drew shows as a crisp centerline with end dots (your linear measurement)
   and the detected width as a translucent band out to the bold lines (the area); width can be
   overridden by hand. Runs are colored by duct type — medium-pressure supply orange, low-pressure
   supply yellow, return green, exhaust purple — chosen while measuring or in the run sheet, with a

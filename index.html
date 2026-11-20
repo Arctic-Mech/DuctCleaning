@@ -898,7 +898,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 23:16';
+const BUILD='Nov 20 07:27';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2930,7 +2930,10 @@ function estFactorFor(kind,widthIn,s){s=s||estSettings();let f=({mps:s.fMps,lps:
 // a run split into pieces with their own width: [{lf, sf, win (width in inches, nearest ½")}]
 function estRunParts(r,d){const rIn=w=>Math.round(w*24)/2;
   if(r.widthMode==='fill')return [{lf:estRunLenFt(r,d),sf:estAreaFt(r,d),win:rIn(estFillWidthFt(r,d))}];
-  const sw=estSegW(r);if(sw){const L=estSegLensFt(r,d);return sw.map((w,i)=>{const wf=w*(d.w||1)*estFpp(d);return {lf:L[i],sf:L[i]*wf,win:rIn(wf)};});}
+  const sw=estSegW(r);if(sw){const L=estSegLensFt(r,d),k=(d.w||1)*estFpp(d);
+    if(Array.isArray(r.wProf)&&r.wProf.length===sw.length)   // width profile: each size along a segment is its own piece (reducers)
+      return [].concat(...r.wProf.map((pr,i)=>(pr&&pr.length?pr:[[1,sw[i]]]).map(q=>({lf:L[i]*q[0],sf:L[i]*q[0]*q[1]*k,win:rIn(q[1]*k)}))));
+    return sw.map((w,i)=>{const wf=w*k;return {lf:L[i],sf:L[i]*wf,win:rIn(wf)};});}
   return [{lf:estLenFt(r.pts,d),sf:estAreaFt(r,d),win:rIn(estWidthFt(r,d))}];}
 // factor-weighted totals for an estimate: kL / kA = effective multipliers on lf and sf labor
 function estFactored(estId){const s=estSettings();let L=0,fL=0,A=0,fA=0;
@@ -3463,14 +3466,194 @@ function estInscribedDiam(P){const n=P.length;if(n<3)return 0;let x0=1e18,y0=1e1
   return 2*best;}
 const estPolyLen=Q=>{let L=0;for(let i=1;i<Q.length;i++)L+=Math.hypot(Q[i][0]-Q[i-1][0],Q[i][1]-Q[i-1][1]);return L;};
 // width of the duct under each segment of a drawn run (page points), from the piece the segment runs through
-async function estRunWidthsHD(d,pts){const pg=await estPdfPage(d);if(!pg)return null;const PW=pg.getViewport({scale:1}).width;const out=[];
-  for(let i=0;i+3<pts.length;i+=2){let w=0;
-    for(const t of [0.5,0.35,0.65,0.2,0.8]){const nx=pts[i]+(pts[i+2]-pts[i])*t,ny=pts[i+1]+(pts[i+3]-pts[i+1])*t;
-      let r;try{r=await estFillProbe(d,nx,ny);}catch(e){r=null;}
-      if(r&&r.status==='ok'&&r.wMedPt>0&&r.wMedPt<100){w=r.wMedPt;break;}}
-    out.push(w);}
-  const ok=out.filter(w=>w>0);if(!ok.length)return null;const med=ok.slice().sort((a,b)=>a-b)[ok.length>>1];
-  return out.map(w=>(w>0?w:med)/PW);}
+async function estRunWidthsHD(d,pts){const r=await estRunWallsHD(d,pts,{walls:true});if(!r)return null;return r.segs.map(sg=>sg&&sg.wMean>0?sg.wMean/r.PW:0);}
+// ---- drawn runs: duct walls found by measuring straight across the duct at many points ----
+// Every ~2 pt along each segment a ray goes out to each side, perpendicular to the segment, to the centre of the first
+// wall stroke. The width at a spot is the most common width nearby (a local mode), so a crossing wall, a tag, a damper
+// box or another duct passing over can't pull it off; stretches with no consistent walls (e.g. where another duct is
+// drawn over this one) take the width from either side. Works on a whole run of any length.
+// Returns {segs:[{L, s:[], w:[], c:[], known:[]}], R} in page points, or null.
+async function estRunWallsHD(d,ptsN,opt){
+  opt=opt||{};const pg=await estPdfPage(d);if(!pg)return null;const vp=pg.getViewport({scale:1}),PW=vp.width,PH=vp.height;
+  const P=[];for(let i=0;i+1<ptsN.length;i+=2)P.push([ptsN[i]*PW,ptsN[i+1]*PH]);if(P.length<2)return null;
+  let ftPerPt=0;{const f=estFpp(d);if(f&&d.w)ftPerPt=f*d.w/PW;}
+  const MAXH=ftPerPt>0?Math.max(30,Math.min(240,6/ftPerPt)):90;      // look up to 6 ft each side (a 12 ft wide duct)
+  const STEP=opt.step||2,R=8,CH=600,BUDGET=12e6;   // 8 px/pt so thin gray lines stay solid
+  const segs=[];
+  // consecutive segments share one upright window while it fits the pixel budget; a segment too long for that
+  // gets its own strips, turned so it runs along the strip (cheap at any angle)
+  const bbOf=i=>{const A=P[i],B=P[i+1];return [Math.min(A[0],B[0])-MAXH-2,Math.min(A[1],B[1])-MAXH-2,Math.max(A[0],B[0])+MAXH+2,Math.max(A[1],B[1])+MAXH+2];};
+  const area=b=>(b[2]-b[0])*(b[3]-b[1])*R*R;const groups=[];let gp=null;
+  for(let i=0;i+1<P.length;i++){const bb=bbOf(i),Ls=Math.hypot(P[i+1][0]-P[i][0],P[i+1][1]-P[i][1]);
+    if(Ls>=40){gp=null;groups.push({bb,segs:[i],win:false});continue;}   // longer segment: strips
+    if(gp&&gp.win){const u=[Math.min(gp.bb[0],bb[0]),Math.min(gp.bb[1],bb[1]),Math.max(gp.bb[2],bb[2]),Math.max(gp.bb[3],bb[3])];if(area(u)<=BUDGET){gp.bb=u;gp.segs.push(i);continue;}}
+    gp={bb,segs:[i],win:area(bb)<=BUDGET};groups.push(gp);}
+  const put=(sg,k,s,dl,dr)=>{sg.s[k]=s;sg.dl[k]=dl;sg.dr[k]=dr;if(dl!=null&&dr!=null){sg.w[k]=dl+dr;sg.c[k]=(dl-dr)/2;}else{sg.w[k]=null;sg.c[k]=null;}};
+  for(const gr of groups){
+    let win=null,bb=null;
+    if(gr.win){bb=[Math.max(0,gr.bb[0]),Math.max(0,gr.bb[1]),Math.min(PW,gr.bb[2]),Math.min(PH,gr.bb[3])];win=await estRenderWindow(pg,bb[0],bb[1],bb[2]-bb[0],bb[3]-bb[1],R);}
+    for(const i of gr.segs){const A=P[i],B=P[i+1],L=Math.hypot(B[0]-A[0],B[1]-A[1]);
+      const sg={L,s:[],w:[],c:[],dl:[],dr:[]};segs[i]=sg;if(L<1e-6)continue;
+      const ux=(B[0]-A[0])/L,uy=(B[1]-A[1])/L,nx=-uy,ny=ux;
+      const n=Math.max(2,Math.min(1500,Math.round(L/STEP)));
+      if(win){
+        const dark=(x,y)=>{const ix=Math.floor(x),iy=Math.floor(y);if(ix<0||iy<0||ix>=win.W||iy>=win.H)return 2;return win.L[iy*win.W+ix]<EST_WALL?1:0;};
+        const ray=(x,y,vx,vy)=>{const tmax=MAXH*R;for(let t=0.5;t<tmax;t+=0.5){const dk=dark(x+vx*t,y+vy*t);if(dk===2)return null;
+            if(dk===1){const t0=Math.max(0,t-2);const c=estStrokeCenter(win,x+vx*t0,y+vy*t0,vx,vy);return (t0+(c!=null?c:2))/R;}}return null;};
+        for(let k=0;k<=n;k++){const s=L*k/n,x=(A[0]+ux*s-bb[0])*R,y=(A[1]+uy*s-bb[1])*R;
+          let dl=null,dr=null;if(!dark(x,y)){dl=ray(x,y,nx,ny);dr=ray(x,y,-nx,-ny);}put(sg,k,s,dl,dr);}
+      }else{
+        const Kp=Math.round(Math.min(80,Math.max(20,L/2))*R);   // walls: lines that run on for this far each way
+        for(let c0=0;;c0+=CH){const c1=Math.min(L,c0+CH),e0=Math.max(0,c0-80),e1=Math.min(L,c1+80);   // overlap so the wall test sees past chunk ends
+          const strip=await estRenderStrip(pg,A,ux,uy,opt.walls?e0:c0,opt.walls?e1:c1,MAXH,R);const base=opt.walls?e0:c0;if(opt.walls)estStripPrep(strip);
+          for(let k=0;k<=n;k++){const s=L*k/n;if(s<c0||(s>=c1&&c1<L))continue;const col=strip.m+(s-base)*R;
+            if(opt.walls){const cl=estStripWall(strip,col,1,Kp),cr=estStripWall(strip,col,-1,Kp);sg.cl=sg.cl||[];sg.cr=sg.cr||[];sg.cl[k]=cl;sg.cr[k]=cr;put(sg,k,s,cl?cl[0]:null,cr?cr[0]:null);}else put(sg,k,s,estStripRay(strip,col,1),estStripRay(strip,col,-1));}
+          if(c1>=L)break;}
+      }}
+  }
+  // something drawn over the duct (another duct, a box) can put a long line inside it; the duct's own wall still runs on
+  // behind it. Where the wall offset on a side is nearer than the offset that holds over the stretch around it, and a
+  // line is still there at that offset, that line is the wall. (A real size change ends the old wall, so it is left.)
+  for(const sg of segs){if(!sg||!sg.cl)continue;const N=sg.s.length;
+    for(const side of ['l','r']){const C=side==='l'?sg.cl:sg.cr,cur=C.map(c=>c?c[0]:null);
+      for(let pass=0;pass<3;pass++){
+        const runs=[];let rr=null;   // stretches of (nearly) the same wall offset
+        for(let k=0;k<N;k++){const v=cur[k];if(v==null)continue;if(rr&&Math.abs(v-rr.last)<=0.5){rr.ks.push(k);rr.last=v;}else{rr={v,last:v,ks:[k]};runs.push(rr);}}
+        runs.forEach(ru=>{const vs=ru.ks.map(k=>cur[k]).sort((x,y)=>x-y);ru.v=vs[vs.length>>1];});
+        let changed=false;
+        runs.forEach((ru,j)=>{const nb=[];for(let q=j-1;q>=0;q--)if(runs[q].ks.length>=3){nb.push(runs[q]);break;}for(let q=j+1;q<runs.length;q++)if(runs[q].ks.length>=3){nb.push(runs[q]);break;}
+          for(const o of nb){const ov=cur[o.ks[0]>ru.ks[0]?o.ks[0]:o.ks[o.ks.length-1]];   /* the neighbour's wall right where it meets this stretch */
+            if(!(ov>ru.v+1)||o.ks.length<Math.max(15,ru.ks.length))continue;/* only a stretch at least as long can correct it */const hits=ru.ks.map(k=>(C[k]||[]).find(c=>Math.abs(c-ov)<=0.6));
+            if(hits.filter(h=>h!=null).length>=0.7*ru.ks.length){ru.ks.forEach((k,i)=>{if(hits[i]!=null){cur[k]=hits[i];changed=true;}});break;}}});
+        if(!changed)break;}
+      cur.forEach((v,k)=>{if(side==='l')sg.dl[k]=v;else sg.dr[k]=v;});}
+    for(let k=0;k<N;k++){const dl=sg.dl[k],dr=sg.dr[k];if(dl!=null&&dr!=null){sg.w[k]=dl+dr;sg.c[k]=(dl-dr)/2;}else{sg.w[k]=null;sg.c[k]=null;}}}
+  // local mode of the width (and the matching centre offset) at every sample
+  for(const sg of segs){if(!sg||!sg.s.length)continue;const N=sg.s.length,K=12;sg.lw=new Array(N).fill(null);sg.lc=new Array(N).fill(null);
+    for(let k=0;k<N;k++){const a=Math.max(0,k-K),b=Math.min(N-1,k+K);const vals=[];for(let j=a;j<=b;j++)if(sg.w[j]!=null)vals.push(j);
+      if(vals.length<Math.max(4,0.35*(b-a+1)))continue;
+      let best=null;for(const j of vals){const v=sg.w[j],tol=Math.max(0.02*v,0.6);let cnt=0;for(const q of vals)if(Math.abs(sg.w[q]-v)<=tol)cnt++;if(!best||cnt>best.cnt)best={v,cnt,tol};}
+      if(best.cnt<Math.max(4,0.5*vals.length))continue;
+      const inl=vals.filter(q=>Math.abs(sg.w[q]-best.v)<=best.tol);const ws=inl.map(q=>sg.w[q]).sort((x,y)=>x-y),cs=inl.map(q=>sg.c[q]).sort((x,y)=>x-y);
+      sg.lw[k]=ws[ws.length>>1];sg.lc[k]=cs[cs.length>>1];}
+    sg.known=sg.lw.filter(v=>v!=null).length/N;}
+  // fill gaps from either side (within the segment, then across the run)
+  const all=[];segs.forEach((sg,i)=>{if(sg&&sg.s)sg.s.forEach((s,k)=>all.push({i,k}));});
+  const val=e=>segs[e.i].lw[e.k];
+  if(!all.some(e=>val(e)!=null))return null;
+  {let last=-1;for(let q=0;q<all.length;q++){if(val(all[q])!=null){if(last>=0&&q-last>1){const a=all[last],b=all[q];
+        for(let m=last+1;m<q;m++){const f=(m-last)/(q-last),e=all[m];segs[e.i].lw[e.k]=val(a)*(1-f)+val(b)*f;segs[e.i].lc[e.k]=segs[e.i].lc[e.k]!=null?segs[e.i].lc[e.k]:null;}}
+        last=q;}}
+    const first=all.findIndex(e=>val(e)!=null);for(let m=0;m<first;m++)segs[all[m].i].lw[all[m].k]=val(all[first]);
+    let lastK=-1;for(let q=all.length-1;q>=0;q--)if(val(all[q])!=null){lastK=q;break;}for(let m=lastK+1;m<all.length;m++)segs[all[m].i].lw[all[m].k]=val(all[lastK]);}
+  // per segment: misalignment (slope of the centre offset), mean perpendicular width, centred line
+  for(const sg of segs){if(!sg||!sg.s.length)continue;
+    const pts=[];sg.s.forEach((s,k)=>{if(sg.lc[k]!=null)pts.push([s,sg.lc[k]]);});
+    let a=0,m=0;
+    if(pts.length>=4){let use=pts;   // line through the centres, refit without outliers (a stretch with something drawn over the duct)
+      for(let it=0;it<3;it++){const n=use.length,sx=use.reduce((t,p)=>t+p[0],0)/n,sy=use.reduce((t,p)=>t+p[1],0)/n;let sxx=0,sxy=0;use.forEach(p=>{sxx+=(p[0]-sx)**2;sxy+=(p[0]-sx)*(p[1]-sy);});
+        m=sxx>0?sxy/sxx:0;a=sy-m*sx;const res=pts.map(p=>Math.abs(p[1]-(a+m*p[0])));const sr=res.slice().sort((x,y)=>x-y),mad=sr[sr.length>>1];
+        const nxt=pts.filter((p,i)=>res[i]<=Math.max(0.75,2.5*mad));if(nxt.length<Math.max(4,0.3*pts.length)||nxt.length===use.length)break;use=nxt;}}
+    else if(pts.length){a=pts.reduce((t,p)=>t+p[1],0)/pts.length;}
+    const cos=1/Math.sqrt(1+m*m);sg.cosT=cos;sg.a=a;sg.m=m;
+    let area=0;for(let k=1;k<sg.s.length;k++)area+=(sg.lw[k]+sg.lw[k-1])/2*(sg.s[k]-sg.s[k-1]);sg.area=area*cos;sg.wMean=sg.L>0?sg.area/sg.L:0;}
+  return {segs,P,PW,PH,MAXH};
+}
+// render a strip of the page along a segment, turned so the segment runs left→right through the middle row:
+// x = margin + (s − s0)·R, y = middle + (offset along the left normal)·R. Text is left out (it is never a wall).
+async function estRenderStrip(pg,A,ux,uy,s0,s1,half,R){
+  const m=Math.round(4*R),cw=Math.max(2,Math.ceil((s1-s0)*R+2*m)),ch=Math.max(2,Math.ceil(2*half*R)),mid=ch/2;
+  const c=document.createElement('canvas');c.width=cw;c.height=ch;
+  const g=c.getContext('2d',{alpha:false,willReadFrequently:true});g.fillStyle='#fff';g.fillRect(0,0,cw,ch);
+  g.fillText=g.strokeText=function(){};
+  const ox=(A[0]+ux*s0)*R,oy=(A[1]+uy*s0)*R;   // strip origin in viewport px
+  // viewport px -> strip px: rotate by −θ about the origin, then move it to (m, mid)
+  await pg.render({canvasContext:g,viewport:pg.getViewport({scale:R}),transform:[ux,-uy,uy,ux,m-(ux*ox+uy*oy),mid-(-uy*ox+ux*oy)]}).promise;
+  const dt=g.getImageData(0,0,cw,ch).data,N=cw*ch,L=new Uint8Array(N);
+  for(let p=0,i=0;p<N;p++,i+=4)L[p]=(dt[i]*77+dt[i+1]*151+dt[i+2]*28)>>8;
+  c.width=c.height=1;
+  return {L,W:cw,H:ch,R,m,mid};}
+// wall test support: dark pixels widened ±3 rows (so a line a hair off the strip's axis still counts), summed along x
+function estStripPrep(st){const {L,W,H}=st,N=W*H,B=new Uint8Array(N);for(let i=0;i<N;i++)B[i]=L[i]<EST_WALL?1:0;
+  const D=new Uint8Array(N),r=3;
+  for(let x=0;x<W;x++){let cnt=0;for(let y=0;y<Math.min(H,r);y++)cnt+=B[y*W+x];
+    for(let y=0;y<H;y++){if(y+r<H)cnt+=B[(y+r)*W+x];if(y-r-1>=0)cnt-=B[(y-r-1)*W+x];D[y*W+x]=cnt>0?1:0;}}
+  const P=new Uint16Array((W+1)*H);for(let y=0;y<H;y++){let acc=0;const o=y*(W+1);for(let x=0;x<W;x++){acc+=D[y*W+x];P[o+x+1]=acc;}}
+  st.P=P;}
+// distance (pt) from the strip's axis at column col to the duct wall on one side (dir +1 down / −1 up): the first line
+// that runs on along the duct for most of ±K px. A tag, a crossing duct or a damper box inside the duct is short, so the
+// search looks past it; a branch opening in the wall is a short gap, so the wall is still found there. null if none.
+function estStripWall(st,col,dir,K){const {W,H,R,mid,P,L}=st;const x=Math.round(col),a=Math.max(0,x-K),b=Math.min(W,x+K+1),n=b-a;if(n<K)return null;
+  const y0=Math.round(mid),out=[];
+  for(let t=1;out.length<3;t++){const y=y0+dir*t;if(y<0||y>=H)break;const o=y*(W+1);if((P[o+b]-P[o+a])/n<0.6)continue;
+    // the line's centre: darkness profile across the next rows, averaged along the window
+    const prof=[];for(let k=0;k<=16;k++){const yy=y+dir*k;if(yy<0||yy>=H){prof.push(0);continue;}let ds=0,c=0;for(let xx=a;xx<b;xx+=3){const v=248-L[yy*W+xx];if(v>0)ds+=v;c++;}prof.push(ds/c);}
+    let pk=0,ip=0;for(let k=0;k<=8;k++)if(prof[k]>pk){pk=prof[k];ip=k;}if(pk<=0)break;
+    let ia=ip,ib=ip;while(ia>0&&prof[ia-1]>=0.5*pk)ia--;while(ib<16&&prof[ib+1]>=0.5*pk)ib++;
+    let sw=0,sk=0;for(let k=ia;k<=ib;k++){sw+=prof[k];sk+=prof[k]*k;}const kc=sk/sw;
+    out.push(((y0+dir*(t+kc)+0.5)-mid)*dir/R);
+    // step past this line before looking for the next one
+    let tt=t+Math.ceil(kc)+1;for(;;tt++){const yy=y0+dir*tt;if(yy<0||yy>=H)break;const oo=yy*(W+1);if((P[oo+b]-P[oo+a])/n<0.3)break;}t=tt;}
+  return out.length?out:null;}
+// distance (pt) from the strip's middle row at column col to the centre of the first wall stroke, going up (dir=−1)
+// or down (dir=+1); null if the spot is on a line or no wall is found within the strip
+function estStripRay(st,col,dir){const {L,W,H,R,mid}=st;const x=Math.round(col);if(x<0||x>=W)return null;
+  const y0=Math.round(mid);if(L[y0*W+x]<EST_WALL)return null;
+  for(let t=1;;t++){const y=y0+dir*t;if(y<0||y>=H)return null;
+    if(L[y*W+x]<EST_WALL){const t0=Math.max(0,t-2);const c=estStrokeCenter(st,x+0.5,y0+dir*t0+0.5,0,dir);return (t0+(c!=null?c:2))/R;}}}
+// centre a drawn run on its duct: shift each segment onto the walls' midline, re-joining at the bends
+function estCentreRun(res,maxShiftFrac){const {segs,P,PW,PH}=res;const n=P.length;if(n<2)return null;
+  const lines=[];for(let i=0;i+1<n;i++){const sg=segs[i],A=P[i],B=P[i+1];const L=Math.hypot(B[0]-A[0],B[1]-A[1]);
+    if(!sg||!(L>0)||sg.known<0.4){lines.push(null);continue;}
+    const ux=(B[0]-A[0])/L,uy=(B[1]-A[1])/L,nx=-uy,ny=ux,w=sg.wMean||0;const o0=sg.a,o1=sg.a+sg.m*L;
+    if(Math.abs(o0)>w*(maxShiftFrac||0.5)||Math.abs(o1)>w*(maxShiftFrac||0.5)){lines.push(null);continue;}
+    lines.push({A:[A[0]+nx*o0,A[1]+ny*o0],B:[B[0]+nx*o1,B[1]+ny*o1]});}
+  const out=P.map(p=>p.slice());
+  const inter=(l1,l2)=>{const d1=[l1.B[0]-l1.A[0],l1.B[1]-l1.A[1]],d2=[l2.B[0]-l2.A[0],l2.B[1]-l2.A[1]],den=d1[0]*d2[1]-d1[1]*d2[0];
+    const L1=Math.hypot(...d1),L2=Math.hypot(...d2);if(Math.abs(den)<Math.sin(8*Math.PI/180)*L1*L2)return null;
+    const t=((l2.A[0]-l1.A[0])*d2[1]-(l2.A[1]-l1.A[1])*d2[0])/den;return [l1.A[0]+d1[0]*t,l1.A[1]+d1[1]*t];};
+  for(let v=0;v<n;v++){const lp=v>0?lines[v-1]:null,ln=v<n-1?lines[v]:null;
+    if(lp&&ln){const x=inter(lp,ln);out[v]=x&&Math.hypot(x[0]-P[v][0],x[1]-P[v][1])<(segs[v].wMean||30)*1.5?x:[(lp.B[0]+ln.A[0])/2,(lp.B[1]+ln.A[1])/2];}
+    else if(ln)out[v]=ln.A;else if(lp)out[v]=lp.B;}
+  return out.map(p=>[p[0]/PW,p[1]/PH]);}
+// everything a drawn run stores from the wall sampler: centred points, per-segment mean width, width profile, outline
+async function estMeasureRun(d,ptsN,centre){
+  // pass 1 (first line each way) lines the run up on its duct; pass 2 (on the lined-up run) finds the walls proper:
+  // lines that run on along the duct, looking past tags, crossing ducts and boxes inside it
+  let pts=ptsN;
+  if(centre){const r1=await estRunWallsHD(d,ptsN);if(r1){const c=estCentreRun(r1,0.5);if(c)pts=[].concat(...c).map(v=>+v.toFixed(6));}}
+  let r=await estRunWallsHD(d,pts,{walls:true});if(!r)return null;
+  if(centre){const c=estCentreRun(r,0.5);   // once more on the cleaner walls (pass 1 can be pulled by something drawn over the duct)
+    if(c){const flat=[].concat(...c).map(v=>+v.toFixed(6));if(flat.some((v,i)=>Math.abs(v-pts[i])*(i%2?r.PH:r.PW)>0.3)){const r3=await estRunWallsHD(d,flat,{walls:true});if(r3){r=r3;pts=flat;}}}}
+  const PW=r.PW,PH=r.PH,segW=[],prof=[],L=[],R=[];
+  r.segs.forEach((sg,i)=>{if(!sg||!sg.s.length){segW.push(0);prof.push([]);return;}
+    segW.push(+(sg.wMean/PW).toFixed(7));
+    // runs of (nearly) constant width along the segment: [fraction of the segment, width/PW]
+    const pr=[];let a=0,acc=sg.lw[0],n=1;
+    for(let k=1;k<sg.s.length;k++){const v=sg.lw[k],m=acc/n;if(Math.abs(v-m)<=Math.max(0.02*m,0.6)){acc+=v;n++;}else{pr.push([(sg.s[k]-sg.s[a])/sg.L,m]);a=k;acc=v;n=1;}}
+    pr.push([(sg.L-sg.s[a])/sg.L,acc/n]);
+    for(let ch=true;ch&&pr.length>1;){ch=false;   // a piece shorter than its own width is a transition: give it to the closer size beside it
+      let k=-1,mn=Infinity;pr.forEach((q,j)=>{const len=q[0]*sg.L;if(len<q[1]&&len<mn){mn=len;k=j;}});
+      if(k>=0){const q=pr[k],pv=pr[k-1],nx=pr[k+1];const t=!nx||(pv&&Math.abs(pv[1]-q[1])<=Math.abs(nx[1]-q[1]))?pv:nx;
+        t[0]+=q[0];pr.splice(k,1);ch=true;}}   // the size keeps its own width (the segment's mean width still carries the exact area)
+    const scale=1;   // keep the profile's area equal to the segment's
+    prof.push(pr.filter(q=>q[0]>1e-4).map(q=>[+q[0].toFixed(4),+((q[1]*scale)/PW).toFixed(7)]));
+    // outline: walls either side of the (centred) line, every ~4 pt, trimmed back from the bends
+    const A=r.P[i],B=r.P[i+1],ux=(B[0]-A[0])/sg.L,uy=(B[1]-A[1])/sg.L,nx=-uy,ny=ux,last=r.segs.length-1;
+    const step=Math.max(1,Math.round(4/((sg.s[1]-sg.s[0])||2)));
+    for(let k=0;k<sg.s.length;k++){if(k%step&&k!==sg.s.length-1)continue;const s=sg.s[k],w=sg.lw[k],c=sg.lc[k]!=null?sg.lc[k]:0;
+      if((i>0&&s<w/2)||(i<last&&sg.L-s<w/2))continue;
+      const x=A[0]+ux*s,y=A[1]+uy*s;L.push([x+nx*(c+w/2),y+ny*(c+w/2)]);R.push([x+nx*(c-w/2),y+ny*(c-w/2)]);}});
+  if(!segW.some(w=>w>0))return null;
+  const med=segW.filter(w=>w>0).sort((x,y)=>x-y);const m0=med[med.length>>1];segW.forEach((w,i)=>{if(!(w>0)){segW[i]=m0;prof[i]=[[1,m0]];}});
+  const flatN=Q=>[].concat(...estSimplify(Q,0.15).map(p=>[+(p[0]/PW).toFixed(6),+(p[1]/PH).toFixed(6)]));
+  return {pts,segW,wProf:prof,edgeL:L.length>=2?flatN(L):null,edgeR:R.length>=2?flatN(R):null};}
+// the duct sizes along a drawn run, longest first ("60″ · 42″"), from its measured pieces
+function estRunSizes(r,d){const by={};estRunParts(r,d).forEach(p=>{if(p.win>0)by[p.win]=(by[p.win]||0)+p.lf;});
+  return Object.keys(by).sort((a,b)=>by[b]-by[a]).filter(k=>by[k]>=0.5).map(k=>k+'″').join(' · ');}
+// is a probed piece a clean duct piece (band-shaped, lying along the duct)? Only then may a tap snap to its centreline:
+// a chunk cut out by crossing walls or tags can lie crosswise or be irregular, and snapping to it kinks the run.
+function estCleanPiece(r){return !!(r&&r.wMedPt>0&&r.wPt>0&&Math.abs(r.wPt-r.wMedPt)<=0.06*r.wMedPt&&(r.lenAWPt||0)>=1.0*r.wMedPt);}
 // fill at normalized (nx,ny) -> {status:'ok', fillFrac, fillPoly, areaPt} | {status:'onLine'|'leak'}
 const ESTPROBE={};
 // a tap right on a line is nudged into the open space beside it, which may already be filled:
@@ -4040,7 +4223,7 @@ function viewEstMeasure(app){
   async function snapRunTap(buf,tid,nx,ny){
     const r=await estFillProbe(d,nx,ny);const k=buf.ids.indexOf(tid);if(k<0)return;
     const temp=buf.pts,tempTaps=buf.taps,tempPieces=buf.pieces,tempArc=buf.arc;   // shadow: edit the buffer this tap belongs to
-    if(!r||r.status!=='ok'||!r.autoCenter||r.autoCenter.length<4)return;
+    if(!r||r.status!=='ok'||!r.autoCenter||r.autoCenter.length<4||!estCleanPiece(r))return;
     const W=d.w||1,H=d.h||1,C=[];for(let i=0;i<r.autoCenter.length;i+=2)C.push([r.autoCenter[i],r.autoCenter[i+1]]);
     const len=estPolyLen(C.map(p=>[p[0]*W,p[1]*H])),chord=Math.hypot((C[C.length-1][0]-C[0][0])*W,(C[C.length-1][1]-C[0][1])*H);
     let start=0;for(let j=0;j<k;j++)start+=tempTaps[j];
@@ -4056,7 +4239,7 @@ function viewEstMeasure(app){
       for(let i=0;i+1<C.length;i++){const a=[C[i][0]*W,C[i][1]*H],b=[C[i+1][0]*W,C[i+1][1]*H],ex=b[0]-a[0],ey=b[1]-a[1],L2=ex*ex+ey*ey||1e-12;
         let t=((X-a[0])*ex+(Y-a[1])*ey)/L2;t=Math.max(0,Math.min(1,t));const q=[a[0]+ex*t,a[1]+ey*t],dd=Math.hypot(X-q[0],Y-q[1]);if(dd<bd){bd=dd;best=q;}}
       const w=(r.wMedPt||0)*W/(d.pw||W),e0=[C[0][0]*W,C[0][1]*H],e1=[C[C.length-1][0]*W,C[C.length-1][1]*H];
-      if(Math.hypot(best[0]-e0[0],best[1]-e0[1])<w*0.6)best=e0;else if(Math.hypot(best[0]-e1[0],best[1]-e1[1])<w*0.6)best=e1;
+      if(Math.hypot(best[0]-e0[0],best[1]-e0[1])<w*0.25)best=e0;else if(Math.hypot(best[0]-e1[0],best[1]-e1[1])<w*0.25)best=e1;   // only a tap right at a piece's end goes to it (on a long run a piece often ends at a crossing wall)
       pts=[[best[0]/W,best[1]/H]];}
     const flat=[];pts.forEach(p=>flat.push(+p[0].toFixed(6),+p[1].toFixed(6)));
     temp.splice(start*2,tempTaps[k]*2,...flat);tempTaps[k]=pts.length;if(viewer.isConnected){renderInk();renderBar();}}
@@ -4077,30 +4260,31 @@ function viewEstMeasure(app){
   }
   async function addRun(exit){
     if(temp.length<4){if(exit){mode='view';temp=[];tempTaps=[];tempPieces=[];tempArc=[];tempIds=[];tempTie=false;tempTieRun=null;runGroup=null;refresh();}else toast('Tap at least two points');return;}
-    const buf=temp,myTie=tempTie,myTieRun=tempTieRun;
+    const buf=temp,myTie=tempTie,myTieRun=tempTieRun,myKind=estKind;
+    // which run this piece belongs to is decided now, at the tap — Finish right after must not split it off
+    const id=uid();let groupId,role,label='';
+    if(myTie&&myTieRun){groupId=myTieRun;role='branch';}        // tapped onto an existing run -> branch of it
+    else if(runGroup){groupId=runGroup;role='branch';}               // same measuring session -> branch of the current run
+    else{groupId=id;role='main';}                                    // first piece -> the main run
+    if(!runGroup)runGroup=groupId;                                    // lock this session to one run until Finish
     temp=[];tempTaps=[];tempPieces=[];tempArc=[];tempIds=[];tempTie=false;tempTieRun=null;   // new taps start the next piece right away
     if(exit)mode='view';refresh();
     await snapChain;                                  // let this run's own snaps finish (they edit buf)
     if(buf.length<4)return;
-    const id=uid();const pts=buf.slice();const rsA=estRunsOf(d.id);
-    let groupId,role,label='';
-    if(myTie&&myTieRun){groupId=myTieRun;role='branch';}        // tapped onto an existing run -> branch of it
-    else if(runGroup){groupId=runGroup;role='branch';}               // same measuring session -> branch of the current run
-    else{groupId=id;role='main';label=estAutoLabel(rsA,estKind);}    // first piece -> the main run
-    if(!runGroup)runGroup=groupId;                                    // lock this session to one run until Finish
-    const run={id,estId:d.estId,drawId:d.id,pts,kind:estKind,widthMode:'auto',edgeL:null,edgeR:null,widthFrac:0,manualWidthFt:0,tieStart:role==='branch'?true:myTie,groupId,role,label,createdAt:now()};
+    const pts=buf.slice();if(role==='main')label=estAutoLabel(estRunsOf(d.id),myKind);
+    const run={id,estId:d.estId,drawId:d.id,pts,kind:myKind,widthMode:'auto',edgeL:null,edgeR:null,widthFrac:0,manualWidthFt:0,tieStart:role==='branch'?true:myTie,groupId,role,label,createdAt:now()};
     if(exit){runGroup=null;}   // Add run stays on the same run; Finish ends it
     S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));   // on the plan right away (branches can tie to it)
     refresh();hint.innerHTML=`${I.info}<span>Reading width…</span>`;
-    try{const sw=await estRunWidthsHD(d,pts);
-      if(sw){run.segW=sw.map(w=>+w.toFixed(7));run.edgeL=null;run.edgeR=null;}
+    try{const m=await estMeasureRun(d,pts,true);
+      if(m){if(m.pts.length===run.pts.length){const keep=run.tieStart?run.pts.slice(0,2):null;run.pts=m.pts;if(keep){run.pts[0]=keep[0];run.pts[1]=keep[1];}}run.segW=m.segW;run.wProf=m.wProf;run.edgeL=m.edgeL;run.edgeR=m.edgeR;}
       else{const img=await estImage(d);const e=estDetectEdges(pts,img,estMaxPx(d,img));
         if(e){run.edgeL=e.edgeL;run.edgeR=e.edgeR;}
         else{const w=estDetectWidthFrac(pts,img);if(w&&w.frac>0)run.widthFrac=w.frac;else{run.widthMode='manual';run.manualWidthFt=1;toast('Couldn’t read the width — set it by hand');}}}
     }catch(e){console.warn(e);run.widthMode='manual';run.manualWidthFt=1;}
     if(!S.estruns.includes(run))return;   // undone while measuring
     pPut('estruns',run).catch(()=>toast('Not saved — check connection'));
-    refresh();{const wi=estWidthFt(run,d)*12;toast((role==='branch'?'Branch':run.label)+' · '+ft1(estLenFt(run.pts,d))+' lf'+(wi>0?' · '+(Math.round(wi*2)/2)+'″ wide':'')+' added');}
+    refresh();{const sz=run.widthMode==='manual'?ftIn(estWidthFt(run,d)):estRunSizes(run,d),a=estAreaFt(run,d);toast((role==='branch'?'Branch':run.label)+' · '+ft1(estLenFt(run.pts,d))+' lf'+(a>0?' · '+(a<100?ft1(a):Math.round(a))+' sq ft':'')+(sz?' · '+sz:'')+' added');}
   }
   function runSheet(id){
     const r=S.estruns.find(x=>x.id===id);if(!r)return;
@@ -4112,7 +4296,7 @@ function viewEstMeasure(app){
       const part=isFill?'Fill':(isBranch?'Branch':'Main run');
       body.innerHTML=`<div class="cl-stat"><div class="cl-statrow"><i class="estdot" style="background:${estKindOf(cur).color}"></i><span><b>${esc(glabel)}</b> · ${part} · ${estKindOf(cur).label}${isFill
           ?(()=>{const a=estAreaFt(cur,d),wi=estFillWidthFt(cur,d)*12;const tr=cur.center&&cur.center.length;return ` · ${tr?'traced line':'linear'} <b>${ft1(tr?estCenterLenFt(cur,d):estFillPieceLen(cur,d)*estFpp(d))} ft</b>${wi>0?` · width <b>${Math.round(wi*2)/2}″</b>`:''} · <b>${a<100?ft1(a):Math.round(a)} sq ft</b>`;})()
-          :` · linear <b>${ft1(estLenFt(cur.pts,d))} ft</b> · width <b>${ftIn(estWidthFt(cur,d))}</b> · <b>${Math.round(estAreaFt(cur,d))} sq ft</b>`}</span></div>
+          :` · linear <b>${ft1(estLenFt(cur.pts,d))} ft</b> · width <b>${cur.widthMode==='manual'?ftIn(estWidthFt(cur,d)):(estRunSizes(cur,d)||ftIn(estWidthFt(cur,d)))}</b> · <b>${Math.round(estAreaFt(cur,d))} sq ft</b>`}</span></div>
         <div class="cl-statrow"><span>${isFill?((cur.center&&cur.center.length)?'Your traced line is used as this run’s linear footage.':(estGroupTraced(cur)?'This run’s linear footage comes from its traced line.':'Area and centreline length are measured from the drawing’s lines (length = area ÷ width).')):('Width read '+(cur.widthMode==='auto'?'automatically from the drawing':'by hand')+'.')}</span></div></div>
         ${isFill&&cur.center&&cur.center.length?`<button type="button" class="btn" id="rClearTrace" style="width:100%;margin-top:10px">Use measured length instead of the traced line</button>`:''}
         <div class="cl-subhead">Duct type</div>
@@ -4133,7 +4317,7 @@ function viewEstMeasure(app){
       {const ct=body.querySelector('#rClearTrace');if(ct)ct.onclick=()=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;c.center=[];pPut('estruns',c).catch(()=>{});draw();refresh();toast('Using measured length');};}
       body.querySelectorAll('[data-w]').forEach(b=>b.onclick=async()=>{const c=S.estruns.find(x=>x.id===id);if(!c||c.widthMode==='fill')return;
         if(b.dataset.w==='manual'){c.widthMode='manual';if(!c.manualWidthFt)c.manualWidthFt=estWidthFt(c,d)||1;}
-        else{c.widthMode='auto';try{const sw=await estRunWidthsHD(d,c.pts);if(sw){c.segW=sw.map(w=>+w.toFixed(7));c.edgeL=null;c.edgeR=null;}else{const img=await estImage(d);const e=estDetectEdges(c.pts,img,estMaxPx(d,img));if(e){c.edgeL=e.edgeL;c.edgeR=e.edgeR;}else{const w=estDetectWidthFrac(c.pts,img);if(w)c.widthFrac=w.frac;}}}catch(e){}}
+        else{c.widthMode='auto';try{const m=await estMeasureRun(d,c.pts,false);if(m){c.segW=m.segW;c.wProf=m.wProf;c.edgeL=m.edgeL;c.edgeR=m.edgeR;}else{const img=await estImage(d);const e=estDetectEdges(c.pts,img,estMaxPx(d,img));if(e){c.edgeL=e.edgeL;c.edgeR=e.edgeR;}else{const w=estDetectWidthFrac(c.pts,img);if(w)c.widthFrac=w.frac;}}}catch(e){}}
         pPut("estruns",c).catch(()=>{});draw();refresh();});
       const wi=body.querySelector('#rWidth');if(wi)wi.onchange=ev=>{const c=S.estruns.find(x=>x.id===id);if(!c)return;const ft=parseFeet(ev.target.value);if(ft&&ft>0){c.manualWidthFt=ft;pPut('estruns',c).catch(()=>{});draw();refresh();}else{toast('Enter a width');}};
       {const bb=body.querySelector('#rBranch');if(bb)bb.onclick=()=>{const c=S.estruns.find(x=>x.id===id);ctl.close();if(c&&c.kind)estKind=c.kind;startRun(estGroupOf(c));toast('Tap on the main to start the branch');};}
