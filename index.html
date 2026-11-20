@@ -432,6 +432,9 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .elabel i{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:0}
 .estrun{display:flex;flex-direction:column;gap:8px;width:100%}
 .estkinds{display:flex;gap:6px}
+.scchips{display:flex;flex-wrap:wrap;gap:6px}
+.scchips .chip{border:1.5px solid var(--line);background:var(--surface-2);color:var(--fg);border-radius:999px;padding:7px 11px;font:600 13px var(--font-body);cursor:pointer}
+.scchips .chip.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--accent)}
 .estkinds button{flex:1;min-width:0;border:1.5px solid var(--line);background:var(--surface-2);color:var(--muted);
   border-radius:999px;padding:8px 4px;font:700 12px var(--font-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .estkinds button.on{border-color:var(--kc);color:#fff;background:var(--kc)}
@@ -885,7 +888,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 19 15:33';
+const BUILD='Nov 19 16:36';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -3066,6 +3069,23 @@ function estSimplify(pts,eps){if(pts.length<4)return pts;const keep=new Array(pt
     for(let i=a+1;i<b;i++){const [px,py]=pts[i];const d=Math.abs((px-ax)*dy-(py-ay)*dx)/L;if(d>dm){dm=d;idx=i;}}
     if(dm>eps&&idx>0){keep[idx]=true;st.push([a,idx],[idx,b]);}}
   const out=[];for(let i=0;i<pts.length;i++)if(keep[i])out.push(pts[i]);return out;}
+// ---- drawing scale: exact from the sheet's size in points (1 in = 72 pt) ----
+const EST_SCALES=[
+  {g:'Architectural',l:'1/16" = 1\'-0"',p:72/16},{g:'Architectural',l:'3/32" = 1\'-0"',p:72*3/32},{g:'Architectural',l:'1/8" = 1\'-0"',p:72/8},
+  {g:'Architectural',l:'3/16" = 1\'-0"',p:72*3/16},{g:'Architectural',l:'1/4" = 1\'-0"',p:72/4},{g:'Architectural',l:'3/8" = 1\'-0"',p:72*3/8},
+  {g:'Architectural',l:'1/2" = 1\'-0"',p:72/2},{g:'Architectural',l:'3/4" = 1\'-0"',p:72*3/4},{g:'Architectural',l:'1" = 1\'-0"',p:72},{g:'Architectural',l:'1 1/2" = 1\'-0"',p:108},
+  {g:'Engineering',l:'1" = 10\'',p:7.2},{g:'Engineering',l:'1" = 20\'',p:3.6},{g:'Engineering',l:'1" = 30\'',p:2.4},{g:'Engineering',l:'1" = 40\'',p:1.8},
+  {g:'Engineering',l:'1" = 50\'',p:1.44},{g:'Engineering',l:'1" = 60\'',p:1.2},{g:'Engineering',l:'1" = 100\'',p:0.72}];
+// read the sheet's own scale notes ("1/8" = 1'-0"", "1" = 20'", "1:50") from the PDF text
+async function estDetectScales(d){try{const pg=await estPdfPage(d);if(!pg)return [];const tc=await pg.getTextContent();
+  const txt=tc.items.map(i=>i.str).join(' ').replace(/[“”″]/g,'"').replace(/[‘’′]/g,"'");const out=[],seen={};
+  const add=(l,p)=>{if(!(p>0))return;const k=p.toFixed(4);if(seen[k])return;seen[k]=1;out.push({l,p});};
+  const fr=v=>{v=v.trim();let m=v.match(/^(\d+)\s+(\d+)\/(\d+)$/);if(m)return +m[1]+m[2]/m[3];m=v.match(/^(\d+)\/(\d+)$/);if(m)return m[1]/m[2];return parseFloat(v);};
+  let m;const ra=/(\d+\s+\d+\/\d+|\d+\/\d+|\d+(?:\.\d+)?)\s*"\s*=\s*1\s*'\s*-?\s*0?\s*"?/g;
+  while((m=ra.exec(txt)))add(m[1].trim()+'" = 1\'-0"',fr(m[1])*72);
+  const re=/1\s*"\s*=\s*(\d+(?:\.\d+)?)\s*'(?!\s*-)/g;while((m=re.exec(txt)))add('1" = '+m[1]+"'",72/parseFloat(m[1]));
+  return out;}catch(e){return [];}}
+function estScaleLabel(d){return d&&d.cal?(d.cal.preset||('Scale '+ftIn(d.cal.ft))):'';}
 // ---- medial-axis skeleton of a filled region -> centerline (linear footage + branch detection) ----
 function estZhangSuen(g,gw,gh){const idx=(x,y)=>y*gw+x;
   const P=(x,y)=>[g[idx(x,y-1)],g[idx(x+1,y-1)],g[idx(x+1,y)],g[idx(x+1,y+1)],g[idx(x,y+1)],g[idx(x-1,y+1)],g[idx(x-1,y)],g[idx(x-1,y-1)]];
@@ -3145,19 +3165,182 @@ function estFillAt(img,nx,ny,maxPx){
   const poly=[];c.forEach(pt=>poly.push(+(pt[0]/img.W).toFixed(5),+(pt[1]/img.H).toFixed(5)));
   return {fillFrac:r.count/(img.W*img.H),fillPoly:poly};
 }
+// ===== high-resolution, vector-exact fill engine =====
+// Renders a local window of the PDF page at ~8 px/pt (so even 0.24pt walls are solid pixels),
+// floods from the tap, fills holes (labels/text inside a duct are still duct), then pushes each
+// outline edge out to the CENTER of its wall stroke — where the drawing's vector edge actually is.
+const ESTPDF={};   // drawId -> Promise<pdf.js page|null>
+function estPdfPage(d){
+  if(!(d.id in ESTPDF))ESTPDF[d.id]=(async()=>{if(!d.pdfChunks&&!d.pdfKey)return null;const bytes=await loadDrawingPdfBytes(d);if(!bytes)return null;
+    const pdf=await pdfjsLib.getDocument({data:bytes}).promise;return pdf.getPage((d.pageIndex||0)+1);})().catch(e=>{console.warn('pdf page',e);return null;});
+  return ESTPDF[d.id];
+}
+// render page-point window [x0,y0,w,h] at R px/pt -> {L (luminance), W, H, R, x0, y0}
+async function estRenderWindow(pg,x0,y0,w,h,R){
+  const cw=Math.max(2,Math.ceil(w*R)),ch=Math.max(2,Math.ceil(h*R));
+  const c=document.createElement('canvas');c.width=cw;c.height=ch;
+  const g=c.getContext('2d',{alpha:false,willReadFrequently:true});g.fillStyle='#fff';g.fillRect(0,0,cw,ch);
+  g.fillText=g.strokeText=function(){};   // text (room names, size labels) is never a duct wall: leave it out of the measuring render
+  await pg.render({canvasContext:g,viewport:pg.getViewport({scale:R}),transform:[1,0,0,1,-x0*R,-y0*R]}).promise;
+  const dt=g.getImageData(0,0,cw,ch).data,N=cw*ch,L=new Uint8Array(N);
+  for(let p=0,i=0;p<N;p++,i+=4)L[p]=(dt[i]*77+dt[i+1]*151+dt[i+2]*28)>>8;
+  c.width=c.height=1;
+  return {L,W:cw,H:ch,R,x0,y0};
+}
+const EST_WALL=160;   // luminance below this is a wall (black / gray duct lines); light-gray background (≈192) is not
+// flood from window px (sx,sy); returns mask (holes filled) + bbox + which window sides it touched
+function estFloodWin(win,sx,sy){
+  const {L,W,H}=win,T=EST_WALL;let s=-1;sx=Math.floor(sx);sy=Math.floor(sy);
+  for(let rr=0;rr<=6&&s<0;rr++)for(let dy=-rr;dy<=rr&&s<0;dy++)for(let dx=-rr;dx<=rr;dx++){
+    if(Math.max(Math.abs(dx),Math.abs(dy))!==rr)continue;const x=sx+dx,y=sy+dy;
+    if(x>=0&&y>=0&&x<W&&y<H&&L[y*W+x]>=T){s=y*W+x;break;}}
+  if(s<0)return {onLine:true};
+  const mask=new Uint8Array(W*H);mask[s]=1;const st=[s];let minx=W,miny=H,maxx=0,maxy=0,count=0;const touch={l:0,r:0,t:0,b:0};
+  while(st.length){const p=st.pop(),x=p%W,y=(p-x)/W;count++;
+    if(x<minx)minx=x;if(x>maxx)maxx=x;if(y<miny)miny=y;if(y>maxy)maxy=y;
+    if(x===0)touch.l=1;if(x===W-1)touch.r=1;if(y===0)touch.t=1;if(y===H-1)touch.b=1;
+    if(x>0&&!mask[p-1]&&L[p-1]>=T){mask[p-1]=1;st.push(p-1);}
+    if(x<W-1&&!mask[p+1]&&L[p+1]>=T){mask[p+1]=1;st.push(p+1);}
+    if(y>0&&!mask[p-W]&&L[p-W]>=T){mask[p-W]=1;st.push(p-W);}
+    if(y<H-1&&!mask[p+W]&&L[p+W]>=T){mask[p+W]=1;st.push(p+W);}}
+  // fill holes: anything inside the bbox not reachable from outside is part of the region (labels, text, dashes)
+  const bw=maxx-minx+3,bh=maxy-miny+3,ext=new Uint8Array(bw*bh),q=[];
+  const inM=(bx,by)=>{const x=bx+minx-1,y=by+miny-1;return x>=minx&&x<=maxx&&y>=miny&&y<=maxy&&mask[y*W+x];};
+  for(let bx=0;bx<bw;bx++){q.push(bx,bx+(bh-1)*bw);}for(let by=0;by<bh;by++){q.push(by*bw,by*bw+bw-1);}
+  for(const i of q)ext[i]=1;
+  while(q.length){const i=q.pop(),bx=i%bw,by=(i-bx)/bw;
+    const nb=[[bx-1,by],[bx+1,by],[bx,by-1],[bx,by+1]];
+    for(const [nx,ny] of nb){if(nx<0||ny<0||nx>=bw||ny>=bh)continue;const j=ny*bw+nx;if(ext[j]||inM(nx,ny))continue;ext[j]=1;q.push(j);}}
+  for(let y=miny;y<=maxy;y++)for(let x=minx;x<=maxx;x++){const p=y*W+x;if(!mask[p]&&!ext[(y-miny+1)*bw+(x-minx+1)]){mask[p]=1;count++;}}
+  return {mask,minx,miny,maxx,maxy,count,touch};
+}
+// raw Moore-neighbour outline of the mask (pixel coords)
+function estTraceMask(mask,W,H,minx,miny,maxx,maxy){
+  const at=(x,y)=>x<0||y<0||x>=W||y>=H?0:mask[y*W+x];let sx=-1,sy=-1;
+  outer:for(let y=miny;y<=maxy;y++)for(let x=minx;x<=maxx;x++)if(mask[y*W+x]){sx=x;sy=y;break outer;}
+  if(sx<0)return [];
+  const dirs=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+  const pts=[];let cx=sx,cy=sy,bd=6,guard=0,mx=(W+H)*16,first=true,sd=-1;
+  do{pts.push([cx,cy]);let f=false;
+    for(let k=0;k<8;k++){const dd=(bd+k)%8,nx=cx+dirs[dd][0],ny=cy+dirs[dd][1];if(at(nx,ny)){if(first){sd=dd;first=false;}cx=nx;cy=ny;bd=(dd+5)&7;f=true;break;}}
+    if(!f)break;if(++guard>mx)break;}while(!(cx===sx&&cy===sy&&pts.length>2));
+  return pts;
+}
+// bilinear luminance at continuous window px (pixel i covers [i,i+1))
+function estLumAt(win,x,y){const {L,W,H}=win;const fx=x-0.5,fy=y-0.5;let ix=Math.floor(fx),iy=Math.floor(fy);const ax=fx-ix,ay=fy-iy;
+  const g=(i,j)=>{i=i<0?0:i>=W?W-1:i;j=j<0?0:j>=H?H-1:j;return L[j*W+i];};
+  return (g(ix,iy)*(1-ax)+g(ix+1,iy)*ax)*(1-ay)+(g(ix,iy+1)*(1-ax)+g(ix+1,iy+1)*ax)*ay;}
+// distance from (x,y) along unit normal (nx,ny) to the centre of the first wall stroke, or null
+function estStrokeCenter(win,x,y,nx,ny){
+  // profile of darkness along the outward normal; the wall is the first stroke. Its centre is the midpoint of the
+  // span where darkness stays >= 80% of that stroke's own level (interpolated), so a different stroke fused right
+  // behind it (underline, adjacent duct, insulation line) is not averaged in.
+  const st=0.25,N=49,w=new Float32Array(N);
+  for(let k=0;k<N;k++){const t=k*st;w[k]=Math.max(0,248-estLumAt(win,x+nx*t,y+ny*t));}
+  let k0=-1;for(let k=0;k<N;k++)if(w[k]>24){k0=k;break;}
+  if(k0<0)return null;
+  let pk=0;for(let k=k0;k<Math.min(N,k0+7);k++)if(w[k]>pk)pk=w[k];
+  if(pk<60)return null;
+  const thr=0.8*pk;let ia=-1,ib=-1;
+  for(let k=k0;k<N;k++)if(w[k]>=thr){ia=k;break;}
+  if(ia<0)return null;
+  for(let k=ia+1;k<N;k++)if(w[k]<thr){ib=k;break;}
+  if(ib<0)ib=N-1;
+  const ta=ia>0?((ia-1)+(thr-w[ia-1])/((w[ia]-w[ia-1])||1))*st:ia*st;
+  const tb=((ib-1)+(w[ib-1]-thr)/((w[ib-1]-w[ib])||1))*st;
+  return (ta+tb)/2;
+}
+// outline -> polygon whose edges sit on the wall-stroke centres (sub-pixel), in window px
+function estOutlinePoly(win,fl){
+  const raw=estTraceMask(fl.mask,win.W,win.H,fl.minx,fl.miny,fl.maxx,fl.maxy);if(raw.length<3)return null;
+  let pts=estSimplify(raw.map(p=>[p[0]+0.5,p[1]+0.5]),0.7);
+  if(pts.length>2&&pts[0][0]===pts[pts.length-1][0]&&pts[0][1]===pts[pts.length-1][1])pts=pts.slice(0,-1);
+  if(pts.length<3)return null;
+  let A=0;for(let i=0;i<pts.length;i++){const p=pts[i],q=pts[(i+1)%pts.length];A+=p[0]*q[1]-q[0]*p[1];}
+  const sgn=A>0?1:-1;   // y-down coords: outward normal of edge d is sgn*(d.y,-d.x)
+  const n=pts.length,offs=new Array(n),nrm=new Array(n);
+  for(let i=0;i<n;i++){const p=pts[i],q=pts[(i+1)%n];let dx=q[0]-p[0],dy=q[1]-p[1];const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
+    const ox=sgn*dy,oy=-sgn*dx;nrm[i]=[ox,oy];
+    const k=Math.max(3,Math.min(25,Math.floor(len/3))),ds=[];
+    for(let j=0;j<k;j++){const t=len<6?0.5:(0.15+0.7*(j+0.5)/k);const sx=p[0]+(q[0]-p[0])*t,sy=p[1]+(q[1]-p[1])*t;
+      const c=estStrokeCenter(win,sx,sy,ox,oy);if(c!=null)ds.push(c);}
+    ds.sort((a,b)=>a-b);offs[i]=ds.length?ds[Math.floor((ds.length-1)*0.25)]:1.0;}   // low percentile: a stroke touching the wall can only push it outward
+  const out=[];
+  for(let i=0;i<n;i++){const a=(i-1+n)%n,b=i;const P=pts[i];
+    const pa=[P[0]+nrm[a][0]*offs[a],P[1]+nrm[a][1]*offs[a]],pb=[P[0]+nrm[b][0]*offs[b],P[1]+nrm[b][1]*offs[b]];
+    const da=[pts[i][0]-pts[a][0],pts[i][1]-pts[a][1]],db=[pts[(i+1)%n][0]-pts[i][0],pts[(i+1)%n][1]-pts[i][1]];
+    const cr=da[0]*db[1]-da[1]*db[0];let V;
+    if(Math.abs(cr)<1e-9*Math.hypot(...da)*Math.hypot(...db)||Math.abs(cr)<1e-6)V=[(pa[0]+pb[0])/2,(pa[1]+pb[1])/2];
+    else{const t=((pb[0]-pa[0])*db[1]-(pb[1]-pa[1])*db[0])/cr;V=[pa[0]+da[0]*t,pa[1]+da[1]*t];
+      const lim=4*Math.max(offs[a],offs[b],1);if(Math.hypot(V[0]-P[0],V[1]-P[1])>lim)V=[(pa[0]+pb[0])/2,(pa[1]+pb[1])/2];}
+    out.push(V);}
+  let A2=0;for(let i=0;i<out.length;i++){const p=out[i],q=out[(i+1)%out.length];A2+=p[0]*q[1]-q[0]*p[1];}
+  return {poly:out,areaPx:Math.abs(A2)/2};
+}
+// fill at normalized (nx,ny) -> {status:'ok', fillFrac, fillPoly, areaPt} | {status:'onLine'|'leak'}
+async function estFillProbe(d,nx,ny){
+  const pg=await estPdfPage(d);
+  if(!pg){const img=await estImage(d);const r=estFillAt(img,nx,ny,Math.round(img.W*img.H*0.06));   // image-only drawing: old raster path
+    if(r.onLine)return {status:'onLine'};if(r.leak||!r.fillPoly)return {status:'leak'};return {status:'ok',fillFrac:r.fillFrac,fillPoly:r.fillPoly,engine:'raster'};}
+  const vp=pg.getViewport({scale:1}),PW=vp.width,PH=vp.height,px=nx*PW,py=ny*PH;
+  let x0=Math.max(0,px-110),x1=Math.min(PW,px+110),y0=Math.max(0,py-110),y1=Math.min(PH,py+110);
+  const MAXA=24e6,MAXS=15000;
+  for(let it=0;it<9;it++){
+    let R=8;const w=x1-x0,h=y1-y0;
+    R=Math.min(R,MAXS/w,MAXS/h,Math.sqrt(MAXA/(w*h)));
+    if(R<3)return {status:'leak'};
+    const win=await estRenderWindow(pg,x0,y0,w,h,R);
+    const fl=estFloodWin(win,(px-x0)*R,(py-y0)*R);
+    if(fl.onLine)return {status:'onLine'};
+    const grow=[];
+    if(fl.touch.l){if(x0<=0.01)return {status:'leak'};grow.push('l');}
+    if(fl.touch.r){if(x1>=PW-0.01)return {status:'leak'};grow.push('r');}
+    if(fl.touch.t){if(y0<=0.01)return {status:'leak'};grow.push('t');}
+    if(fl.touch.b){if(y1>=PH-0.01)return {status:'leak'};grow.push('b');}
+    if(grow.length){const gw=Math.max(150,w),gh=Math.max(150,h);
+      if(grow.includes('l'))x0=Math.max(0,x0-gw);if(grow.includes('r'))x1=Math.min(PW,x1+gw);
+      if(grow.includes('t'))y0=Math.max(0,y0-gh);if(grow.includes('b'))y1=Math.min(PH,y1+gh);continue;}
+    const op=estOutlinePoly(win,fl);if(!op)return {status:'leak'};
+    const areaPt=op.areaPx/(R*R);
+    const poly=[];op.poly.forEach(p=>poly.push(+((x0+p[0]/R)/PW).toFixed(6),+((y0+p[1]/R)/PH).toFixed(6)));
+    return {status:'ok',fillFrac:areaPt/(PW*PH),fillPoly:poly,areaPt,R,engine:'vector-hd'};
+  }
+  return {status:'leak'};
+}
 // total area of a drawing's runs as a UNION (rasterized), so tie-ins/overlaps are not double counted
-function estUnionAreaFt(d,runs){ if(!runs.length||!estFpp(d))return 0;
-  const cw=1600,ch=Math.max(1,Math.round(1600*((d.h||1)/(d.w||1))));
-  const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;const g=cv.getContext('2d');g.fillStyle='#000';g.strokeStyle='#000';g.lineCap='butt';g.lineJoin='round';
-  runs.forEach(r=>{
-    if(r.widthMode==='fill'&&r.fillPoly&&r.fillPoly.length>=6){g.beginPath();for(let i=0;i<r.fillPoly.length;i+=2){const x=r.fillPoly[i]*cw,y=r.fillPoly[i+1]*ch;i?g.lineTo(x,y):g.moveTo(x,y);}g.closePath();g.fill();return;}
-    if(estHasEdges(r)){g.beginPath();const L=r.edgeL,R=r.edgeR;for(let i=0;i<L.length;i+=2){const x=L[i]*cw,y=L[i+1]*ch;i?g.lineTo(x,y):g.moveTo(x,y);}for(let i=R.length-2;i>=0;i-=2)g.lineTo(R[i]*cw,R[i+1]*ch);g.closePath();g.fill();return;}
-    const sw=estEffFrac(r,d)*cw;if(sw<=0||r.pts.length<4)return;g.lineWidth=sw;
-    g.beginPath();for(let i=0;i<r.pts.length;i+=2){const x=r.pts[i]*cw,y=r.pts[i+1]*ch;i?g.lineTo(x,y):g.moveTo(x,y);}g.stroke();});
-  const dta=g.getImageData(0,0,cw,ch).data;let n=0;for(let i=3;i<dta.length;i+=4)if(dta[i]>=128)n++;
-  const raster=(n/(cw*ch))*(d.w*d.h)*estFpp(d)*estFpp(d);
-  let sum=0;runs.forEach(r=>sum+=estAreaFt(r,d));        // the union can never exceed the plain sum
-  return Math.min(raster,sum);
+// a run's outline in plan px: {poly:[[x,y]...]} or {line:[[x,y]...],w} (uniform-width band)
+function estRunShape(r,d){const W=d.w||1,H=d.h||1;
+  if(r.widthMode==='fill'){if(!r.fillPoly||r.fillPoly.length<6)return null;const P=[];for(let i=0;i<r.fillPoly.length;i+=2)P.push([r.fillPoly[i]*W,r.fillPoly[i+1]*H]);return {poly:P};}
+  if(estHasEdges(r)){const P=[];for(let i=0;i<r.edgeL.length;i+=2)P.push([r.edgeL[i]*W,r.edgeL[i+1]*H]);for(let i=r.edgeR.length-2;i>=0;i-=2)P.push([r.edgeR[i]*W,r.edgeR[i+1]*H]);return {poly:P};}
+  const w=estEffFrac(r,d)*W;if(!(w>0)||!r.pts||r.pts.length<4)return null;const P=[];for(let i=0;i<r.pts.length;i+=2)P.push([r.pts[i]*W,r.pts[i+1]*H]);return {line:P,w};}
+function estShapeBBox(sh){const P=sh.poly||sh.line,m=sh.w?sh.w/2:0;let x0=1e18,y0=1e18,x1=-1e18,y1=-1e18;
+  for(const p of P){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1];}return [x0-m,y0-m,x1+m,y1+m];}
+function estDrawShape(g,sh,sc,ox,oy){g.beginPath();
+  if(sh.poly){sh.poly.forEach((p,i)=>{const x=(p[0]-ox)*sc,y=(p[1]-oy)*sc;i?g.lineTo(x,y):g.moveTo(x,y);});g.closePath();g.fill();}
+  else{g.lineWidth=sh.w*sc;sh.line.forEach((p,i)=>{const x=(p[0]-ox)*sc,y=(p[1]-oy)*sc;i?g.lineTo(x,y):g.moveTo(x,y);});g.stroke();}}
+// total sq ft of a drawing's runs as a UNION, so tie-ins / overlapping pours are never double counted.
+// Exact per-run areas are summed; overlap is measured with a fine raster only where outlines actually meet,
+// as (sum of individual rasters − combined raster), so raster edge bias cancels out.
+function estUnionAreaFt(d,runs){const fpp=estFpp(d);if(!runs.length||!fpp)return 0;
+  const it=[];runs.forEach(r=>{const a=estAreaFt(r,d),sh=estRunShape(r,d);if(a>0&&sh)it.push({a,sh,bb:estShapeBBox(sh)});});
+  const n=it.length,par=it.map((_,i)=>i),find=i=>par[i]===i?i:(par[i]=find(par[i]));
+  for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){const A=it[i].bb,B=it[j].bb;if(A[0]<=B[2]&&B[0]<=A[2]&&A[1]<=B[3]&&B[1]<=A[3])par[find(i)]=find(j);}
+  const groups={};it.forEach((x,i)=>{(groups[find(i)]=groups[find(i)]||[]).push(x);});
+  let total=0;
+  for(const k in groups){const g=groups[k];const sum=g.reduce((s,x)=>s+x.a,0);
+    if(g.length===1){total+=sum;continue;}
+    let x0=1e18,y0=1e18,x1=-1e18,y1=-1e18;g.forEach(x=>{x0=Math.min(x0,x.bb[0]);y0=Math.min(y0,x.bb[1]);x1=Math.max(x1,x.bb[2]);y1=Math.max(y1,x.bb[3]);});
+    const bw=Math.max(1e-6,x1-x0),bh=Math.max(1e-6,y1-y0);
+    let sc=fpp/0.02;sc=Math.min(sc,Math.sqrt(6e6/(bw*bh)),8000/bw,8000/bh);   // ~0.02 ft per raster px, capped
+    const cw=Math.max(2,Math.ceil(bw*sc)+2),ch=Math.max(2,Math.ceil(bh*sc)+2);
+    const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;const c=cv.getContext('2d',{willReadFrequently:true});
+    c.fillStyle='#000';c.strokeStyle='#000';c.lineCap='butt';c.lineJoin='round';
+    const count=()=>{const dt=c.getImageData(0,0,cw,ch).data;let m=0;for(let i=3;i<dt.length;i+=4)if(dt[i]>=128)m++;return m;};
+    let indiv=0;for(const x of g){c.clearRect(0,0,cw,ch);estDrawShape(c,x.sh,sc,x0-1/sc,y0-1/sc);indiv+=count();}
+    c.clearRect(0,0,cw,ch);g.forEach(x=>estDrawShape(c,x.sh,sc,x0-1/sc,y0-1/sc));const uni=count();
+    const ftPerPx=fpp/sc;const overlap=Math.max(0,(indiv-uni)*ftPerPx*ftPerPx);
+    total+=Math.max(0,Math.min(sum,sum-overlap));cv.width=cv.height=1;}
+  return total;
 }
 
 
@@ -3393,7 +3576,7 @@ function viewEstMeasure(app){
     rs.forEach(r=>{const col=estKindOf(r).color;
       if(r.widthMode==='fill'){if(r.center&&r.center.length)r.center.forEach(cp=>{h+=`<path d="${ptsPath(cp.pts)}" fill="none" stroke="${col}" stroke-width="${cp.isMain?2.6:2}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${cp.isMain?'':' stroke-dasharray="7 4"'} data-run="${r.id}" style="cursor:pointer;pointer-events:auto"/>`;});}
       else h+=bandSvg(r,col)+lineSvg(r.pts,col,r.id,false,r.tieStart);});
-    if(d.cal&&showCal){const [ax,ay]=toPx(d.cal.a[0],d.cal.a[1]),[bx,by]=toPx(d.cal.b[0],d.cal.b[1]);
+    if(d.cal&&showCal&&!d.cal.preset){const [ax,ay]=toPx(d.cal.a[0],d.cal.a[1]),[bx,by]=toPx(d.cal.b[0],d.cal.b[1]);
       h+=`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="var(--warn)" stroke-width="3" stroke-dasharray="8 5" vector-effect="non-scaling-stroke"/>`;
       h+=`<circle class="esc" cx="${ax}" cy="${ay}" r="${dotR().toFixed(2)}" fill="#fff" stroke="var(--warn)" stroke-width="2.4" vector-effect="non-scaling-stroke"/><circle class="esc" cx="${bx}" cy="${by}" r="${dotR().toFixed(2)}" fill="#fff" stroke="var(--warn)" stroke-width="2.4" vector-effect="non-scaling-stroke"/>`;}
     const tcol=mode==='cal'?'var(--warn)':DUCT_KINDS[estKind].color;
@@ -3406,7 +3589,7 @@ function viewEstMeasure(app){
   }
   function drawLabels(){
     let h='';
-    if(d.cal&&showCal){const nx=(d.cal.a[0]+d.cal.b[0])/2,ny=(d.cal.a[1]+d.cal.b[1])/2;
+    if(d.cal&&showCal&&!d.cal.preset){const nx=(d.cal.a[0]+d.cal.b[0])/2,ny=(d.cal.a[1]+d.cal.b[1])/2;
       h+=`<div class="elabel elabel-cal" style="left:${nx*baseW}px;top:${ny*baseH}px;transform:translate(-50%,-50%) scale(${1/scale})">${I.ruler} Scale ${esc(ftIn(d.cal.ft))}</div>`;}
     labels.innerHTML=h;}
 
@@ -3422,7 +3605,7 @@ function viewEstMeasure(app){
     else app.querySelector('#evLegend').hidden=true;
     const uu=app.querySelector('#evUndo');if(uu)uu.hidden=!estRunsOf(d.id).length;
     const ct=app.querySelector('#evCalT');if(d.cal){ct.hidden=false;ct.classList.toggle('on',showCal);
-      ct.innerHTML=`${showCal?I.eye:I.eyeoff}<span>Scale ${esc(ftIn(d.cal.ft))}</span>`;}else ct.hidden=true;
+      ct.innerHTML=`${d.cal.preset?I.ruler:(showCal?I.eye:I.eyeoff)}<span>${esc(estScaleLabel(d))}</span>`;}else ct.hidden=true;
     renderBar();
   }
   function renderBar(){
@@ -3432,7 +3615,7 @@ function viewEstMeasure(app){
       vbar.innerHTML=`<button class="btn" id="eCal">${I.ruler} ${d.cal?'Scale':'Set scale'}</button>
         <button class="btn primary block" id="eRun"${d.cal?'':' disabled style="opacity:.5"'}>${I.pen} Measure run</button>
         <button class="btn" id="eFill"${d.cal?'':' disabled style="opacity:.5"'}>${I.fill} Fill</button>`;
-      vbar.querySelector('#eCal').onclick=startCal;
+      vbar.querySelector('#eCal').onclick=scaleSheet;
       vbar.querySelector('#eRun').onclick=()=>{if(!d.cal){toast('Set the scale first');return;}startRun();};
       vbar.querySelector('#eFill').onclick=()=>{if(!d.cal){toast('Set the scale first');return;}startFill();};
     }else if(mode==='cal'){
@@ -3493,6 +3676,27 @@ function viewEstMeasure(app){
     }
   }
   function startCal(){mode='cal';temp=[];refresh();}
+  async function applyPreset(label,ptPerFt){if(!d.pw){toast('Use "Measure a known length" for this drawing');return;}
+    d.cal={a:[0,0.5],b:[1,0.5],ft:d.pw/ptPerFt,preset:label};await pPut('estdrawings',d).catch(()=>toast('Not saved — check connection'));
+    refresh();toast('Scale set · '+label);}
+  function scaleSheet(){
+    const body=document.createElement('div');const inW=d.pw?(d.pw/72):0,inH=d.ph?(d.ph/72):0;
+    const grp=g=>EST_SCALES.filter(x=>x.g===g).map(x=>`<button type="button" class="chip" data-pp="${x.p}" data-l="${esc(x.l)}">${esc(x.l)}</button>`).join('');
+    body.innerHTML=`${d.cal?`<div class="cl-stat"><div class="cl-statrow">${I.ruler}<span>Current: <b>${esc(estScaleLabel(d))}</b></span></div></div>`:''}
+      <div id="scDet" class="cl-note" style="margin-top:10px">Looking for the scale printed on this sheet…</div>
+      ${d.pw?`<div class="cl-subhead" style="margin-top:14px">Drawing scale</div><div class="scchips">${grp('Architectural')}</div>
+      <div class="scchips" style="margin-top:6px">${grp('Engineering')}</div>
+      <p class="cl-note" style="margin-top:8px;font-size:12.5px">Exact from the sheet size (${inW.toFixed(1)} × ${inH.toFixed(1)} in). Only valid if the PDF is full size — if it was printed reduced, measure a known length instead.</p>`:''}
+      <button type="button" class="btn block" id="scMeasure" style="margin-top:12px">${I.ruler} Measure a known length</button>`;
+    const ctl=sheetShell({title:'Set scale',bodyNode:body});
+    const pick=(l,p)=>{ctl.close();applyPreset(l,p);};
+    body.querySelectorAll('[data-pp]').forEach(b=>b.onclick=()=>pick(b.dataset.l,+b.dataset.pp));
+    body.querySelector('#scMeasure').onclick=()=>{ctl.close();startCal();};
+    estDetectScales(d).then(list=>{const el=body.querySelector('#scDet');if(!el)return;
+      if(!list.length||!d.pw){el.textContent=d.pw?'No scale note found on this sheet — pick one below or measure a known length.':'This drawing has no vector page size — measure a known length.';return;}
+      el.innerHTML=`<div class="cl-subhead" style="margin:0 0 6px">Found on this sheet</div><div class="scchips">${list.map(x=>`<button type="button" class="chip on" data-dpp="${x.p}" data-dl="${esc(x.l)}">${esc(x.l)}</button>`).join('')}</div>`;
+      el.classList.remove('cl-note');el.querySelectorAll('[data-dpp]').forEach(b=>b.onclick=()=>pick(b.dataset.dl,+b.dataset.dpp));});
+  }
   function startRun(parent){mode='run';temp=[];tempTie=false;tempTieRun=null;runGroup=parent||null;refresh();}
   function startFill(){fillChooser();}
   function fillChooser(){
@@ -3515,9 +3719,9 @@ function viewEstMeasure(app){
     if(fillStep==='trace'){fillAddPoint(cx,cy);return;}
     const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap inside the drawing');return;}
     hint.innerHTML=`${I.info}<span>Filling…</span>`;
-    try{const img=await estImage(d);const res=estFillAt(img,nx,ny,Math.round(img.W*img.H*0.06));
-      if(res.onLine){toast('Tap in the open space inside the duct');renderBar();return;}
-      if(res.leak||!res.fillPoly){toast('That space isn’t closed off — draw the run instead');renderBar();return;}
+    try{const res=await estFillProbe(d,nx,ny);
+      if(res.status==='onLine'){toast('Tap in the open space inside the duct');renderBar();return;}
+      if(res.status!=='ok'||!res.fillPoly){toast('That space isn’t closed off — pour inside a closed duct, or draw the run instead');renderBar();return;}
       const rs=estRunsOf(d.id);const id=uid();let groupId,role,kind,label='';
       if(!fillGroupId){
         if(fillTarget.mode==='new'){kind=fillTarget.kind;groupId=id;role='main';label=estAutoLabel(rs,kind);}
@@ -3526,7 +3730,7 @@ function viewEstMeasure(app){
       }else{const m=estRunMain(rs,fillGroupId);kind=m?m.kind:(fillTarget.kind||'mps');groupId=fillGroupId;role='fill';}
       const run={id,estId:d.estId,drawId:d.id,kind,widthMode:'fill',fillFrac:res.fillFrac,fillPoly:res.fillPoly,center:[],pts:[+nx.toFixed(5),+ny.toFixed(5)],groupId,role,label,createdAt:now()};
       S.estruns.push(run);pPut('estruns',run).catch(()=>toast('Not saved — check connection'));refresh();
-      toast(Math.round(estAreaFt(run,d))+' sq ft filled'+(role==='main'?(' · '+label):'')+' · now Measure line');
+      {const a=estAreaFt(run,d);toast((a<100?ft1(a):Math.round(a))+' sq ft filled'+(role==='main'?(' · '+label):'')+' · tap more pieces or Measure line');}
     }catch(e){console.warn(e);toast('Fill failed — try again');renderBar();}}
   function fillAddPoint(cx,cy){const {nx,ny}=toNorm(cx,cy);if(nx<0||nx>1||ny<0||ny>1){toast('Tap on the drawing');return;}fillTemp.push(+nx.toFixed(5),+ny.toFixed(5));refresh();}
   function fillLineDone(){ if(fillTemp.length<4){toast('Tap a start and an end');return;}
