@@ -924,7 +924,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 02:28';
+const BUILD='Nov 21 02:29';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2840,7 +2840,7 @@ function reportEditor(r,isNew){
     <div class="field" style="margin-bottom:4px"><label>After pictures</label><div class="photogrid" id="afterGrid"></div></div>`;
 
   const foot=document.createElement('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
-  const delBtn=document.createElement('button');delBtn.className='btn danger';delBtn.innerHTML=I.trash;
+  const delBtn=document.createElement('button');delBtn.className='btn danger';delBtn.innerHTML=I.trash;delBtn.setAttribute('aria-label','Delete report');
   const saveBtn=document.createElement('button');saveBtn.className='btn primary block';saveBtn.textContent=isNew?'Save report':'Save changes';
   if(!isNew)foot.appendChild(delBtn);foot.appendChild(saveBtn);
 
@@ -2861,7 +2861,7 @@ function reportEditor(r,isNew){
     const top=document.createElement('div');top.style.display='flex';top.style.gap='8px';top.style.width='100%';
     const it=document.createElement('input');it.className='inp';it.placeholder='Surveyed item (e.g. Return Duct)';it.value=eq.item;it.setAttribute('list','eqSuggest');it.autocomplete='off';
     it.oninput=()=>w.equipment[i].item=it.value;
-    const del=document.createElement('button');del.className='del';del.innerHTML=I.trash;
+    const del=document.createElement('button');del.className='del';del.innerHTML=I.trash;del.setAttribute('aria-label','Remove this item');
     del.onclick=()=>{w.equipment.splice(i,1);if(!w.equipment.length)w.equipment.push({item:'',notes:''});renderEq();};
     top.append(it,del);
     const nt=document.createElement('textarea');nt.className='inp';nt.placeholder='Notes';nt.style.minHeight='60px';nt.value=eq.notes;
@@ -4929,7 +4929,7 @@ function viewEstMeasure(app){
       if(fillStep==='trace'){
         const np=fillTemp.length/2;
         hint.innerHTML=`${I.pen}<span>Tap the <b>start</b>, any bends, then the <b>end</b> of ${esc(flabel)}${np?' · '+np+' pt'+(np!==1?'s':''):''}</span>`;
-        vbar.innerHTML=`<div class="estrun"><div class="drawbar"><button class="dt" id="eFillUndo"${fillTemp.length?'':' disabled style="opacity:.4"'}>${I.undo}</button>
+        vbar.innerHTML=`<div class="estrun"><div class="drawbar"><button class="dt" id="eFillUndo" aria-label="Undo last fill"${fillTemp.length?'':' disabled style="opacity:.4"'}>${I.undo}</button>
           <button class="btn block" id="eFillBack">${I.fill} More fill</button>
           <button class="btn primary done" id="eFillLine"${fillTemp.length>=4?'':' disabled style="opacity:.5"'}>${I.check} Done line</button></div></div>`;
         vbar.querySelector('#eFillUndo').onclick=()=>{fillTemp=fillTemp.slice(0,-2);refresh();};
@@ -4962,7 +4962,7 @@ function viewEstMeasure(app){
       const lead=curRun?`Adding to <b>${esc(curRun.label||'this run')}</b>`:'Tap along the duct';
       hint.innerHTML=`${I.pen}<span>${lead} · <b>Add run</b> keeps the same run, <b>Finish</b> ends it${nv?' · '+nv+' pt'+(nv!==1?'s':''):''}${matchMedia('(pointer:fine)').matches?' <span style="opacity:.7">(Enter · Esc · ⌫)</span>':''}</span>`;
       vbar.innerHTML=`<div class="estrun"><div class="estkinds">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${k===estKind?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
-        <div class="drawbar"><button class="dt" id="eUndo"${temp.length?'':' disabled style="opacity:.4"'}>${I.undo}</button>
+        <div class="drawbar"><button class="dt" id="eUndo" aria-label="Remove last tap"${temp.length?'':' disabled style="opacity:.4"'}>${I.undo}</button>
         <button class="btn block" id="eFinish">${I.check} Finish</button>
         <button class="btn primary done" id="eDone"${temp.length>=4?'':' disabled style="opacity:.5"'}>${I.plus} Add run</button></div></div>`;
       vbar.querySelectorAll('.estkinds [data-k]').forEach(b=>b.onclick=()=>{estKind=b.dataset.k;try{localStorage.setItem('ductpro-est-kind',estKind);}catch(e){}renderBar();renderInk();});
