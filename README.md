@@ -46,7 +46,9 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
 - **Estimate** (low-key link in the home top bar): a measuring takeoff tool. Create an estimate
   (number + job name), upload drawings, then **set a scale** (tap two points and type the real
   length). **Measure run**: tap along a duct run following its bends (one tap at each turn is enough,
-  even for a run across the whole sheet). The app then measures straight across the duct every 2 pt
+  even for a run across the whole sheet). On a CAD (vector) drawing two taps are enough — one at
+  the start and one at the end, near the middle of the duct: the app finds the duct's own path between
+  them through its elbows, offsets and dampers (if it can't, it says so; add a tap at each turn). The app then measures straight across the duct every 2 pt
   along the line, finds the duct's walls (long lines running alongside it, so tags, crossing walls,
   boxes and ducts drawn over it are looked past, and stretches where the walls are hidden take the
   size on either side), centers your line on the duct, and reads every size along it — a reducer in
