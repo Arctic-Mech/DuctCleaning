@@ -901,7 +901,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 00:10';
+const BUILD='Nov 21 00:13';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -1839,7 +1839,7 @@ function viewDrawing(app){
       vbar.innerHTML=`<button class="btn" id="mkBtn">${I.markup} Markup</button>
         <button class="btn primary block" id="addReport">${I.pin} Place report</button>`;
       vbar.querySelector('#mkBtn').onclick=()=>ensureUser().then(markupSheet);
-      vbar.querySelector('#addReport').onclick=()=>{setMode('place','report');toast('Tap the spot on the plan');};
+      vbar.querySelector('#addReport').onclick=()=>{setMode('place','report');};   // the placing bar already says what to do
     }else if(mode==='place'){
       const what={report:'a report',exhaust:'an exhaust',access:'a cleaning access',note:'a note'}[placeKind];
       hint(I.pin+`<span>Tap the plan to place ${what}</span>`,true);
@@ -2736,7 +2736,7 @@ function reportPreview(r){
   body.innerHTML=`
     <div class="pv-head">
       <span class="pill ${r.status==='Completed'?'good':'warn'}"><span class="dot"></span>${esc(r.status)}</span>
-      <span class="pv-type">${esc(typeLabel(r))}</span>
+      ${r.type?`<span class="pv-type">${esc(typeLabel(r))}</span>`:'<span class="pv-type" style="color:var(--muted);font-weight:500">No type set</span>'}
     </div>
     <dl class="kv pv-kv">
       ${r.revisit?`<dt>Re-visit</dt><dd>${esc(r.revisit)}</dd>`:''}
@@ -2764,7 +2764,8 @@ function reportEditor(r,isNew){
   // working copy
   const w=JSON.parse(JSON.stringify(r));
   const body=document.createElement('div');
-  body.innerHTML=`
+  const prev=isNew?S.reports.filter(x=>x.jobId===r.jobId&&x.id!==r.id&&!x.draft&&(x.type||x.area||(x.equipment||[]).some(e=>e.item||e.notes))).sort((a,b)=>(b.updatedAt||b.createdAt||0)-(a.updatedAt||a.createdAt||0))[0]:null;
+  body.innerHTML=`${prev?`<button type="button" class="addrow" id="copyPrev" style="margin:0 0 16px">${I.copy} Copy details from report #${prev.num}${prev.drawId!==r.drawId?' ('+esc((S.drawings.find(x=>x.id===prev.drawId)||{}).name||'other plan')+')':''}</button>`:''}
     <div class="field"><label>Type</label>
       <select class="inp" id="r_type">
         <option value="" ${!w.type?'selected':''}>Select type…</option>
@@ -2819,6 +2820,10 @@ function reportEditor(r,isNew){
   });}
   renderEq();
   body.querySelector('#addEq').onclick=()=>{w.equipment.push({item:'',notes:''});renderEq();};
+  // a new report next to similar ones: take the last report's type, re-visit, equipment and area (not status or photos)
+  {const cp=body.querySelector('#copyPrev');if(cp)cp.onclick=()=>{typeSel.value=prev.type||'';typeOther.value=prev.typeOther||'';typeOther.hidden=typeSel.value!=='Other';
+    body.querySelector('#r_revisit').value=prev.revisit||'';const eq=(prev.equipment||[]).filter(e=>e.item||e.notes).map(e=>({item:e.item||'',notes:e.notes||''}));w.equipment=eq.length?eq:[{item:'',notes:''}];renderEq();
+    body.querySelector('#r_area').value=prev.area||'';cp.remove();toast('Copied from report #'+prev.num+' — check and adjust');};}
 
   // photos — held as {id?, data} objects; stored as their own Firestore docs on save
   const PH={before:[],after:[]};
@@ -2880,7 +2885,7 @@ function reportEditor(r,isNew){
     w.area=body.querySelector('#r_area').value.trim();
     w.equipment=w.equipment.filter(eq=>eq.item.trim()||eq.notes.trim());
     if(!w.equipment.length)w.equipment=[];
-    delete w.draft;delete w.sig;delete w.sigName;delete w.sigRole;delete w.sigAt;delete w.name;delete w.assignee;
+    w.updatedAt=now();delete w.draft;delete w.sig;delete w.sigName;delete w.sigRole;delete w.sigAt;delete w.name;delete w.assignee;
     saveBtn.disabled=true;saveBtn.textContent='Saving…';
     const bootEl=document.getElementById('boot');bootEl.style.display='grid';
     const fail=(m)=>{bootEl.style.display='none';saveBtn.disabled=false;saveBtn.textContent=isNew?'Save report':'Save changes';toast(m);};
