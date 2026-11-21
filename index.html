@@ -898,7 +898,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 20 23:35';
+const BUILD='Nov 20 23:47';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -4584,11 +4584,39 @@ function viewEstimate(app){
   app.querySelector('#addEst').onclick=()=>input.click();
   input.onchange=async()=>{const f=input.files[0];input.value='';if(f)await addEstPlanFlow(e,f);};
 }
+/* ---------- takeoff summary: one row per run (with its branches and fills), totals by duct type, hours ---------- */
+function estTakeoff(e){const rows=[],byKind={};let totL=0,totA=0;const kl=k=>(EST_KINDS.find(x=>x[0]===k)||['','Other'])[1];
+  estDrawsOf(e.id).forEach(d=>{const rs=estRunsOf(d.id),groups=[];rs.forEach(r=>{const g=estGroupOf(r);if(groups.indexOf(g)<0)groups.push(g);});
+    groups.forEach(g=>{const mem=rs.filter(r=>estGroupOf(r)===g),main=estRunMain(rs,g)||mem[0];let L=0,lo=Infinity,hi=0;
+      mem.forEach(r=>{L+=estRunLenFt(r,d);estRunParts(r,d).forEach(p=>{if(p.win>0&&p.lf>0.5){lo=Math.min(lo,p.win);hi=Math.max(hi,p.win);}});});
+      const A=estUnionAreaFt(d,mem),k=main.kind||'mps',br=mem.filter(r=>r.role==='branch'||(!r.role&&r.tieStart&&r.widthMode!=='fill')).length;
+      rows.push({sheet:d.name||'',label:main.label||kl(k),type:kl(k),lf:L,sf:A,size:hi>0?(lo===hi?lo+'″':lo+'–'+hi+'″'):'',branches:br});
+      const t=byKind[k]||(byKind[k]={type:kl(k),lf:0,sf:0});t.lf+=L;t.sf+=A;});
+    rs.forEach(r=>totL+=estRunLenFt(r,d));totA+=estUnionAreaFt(d,rs);});
+  const s=estSettings(),hrs=[];EST_CATS.forEach(([c,l])=>{const h=estCatHours(e,c);if(h.lf!=null||h.sf!=null)hrs.push({cat:l,lf:h.lf,sf:h.sf,tuned:h.m.tunedJobs||0});});
+  return {rows,kinds:EST_KINDS.map(([k])=>byKind[k]).filter(Boolean),totL,totA,doors:s.lfPerDoor>0?Math.ceil(totL/s.lfPerDoor):0,branches:estBranchCount(e.id),hrs,actual:e.actual||{}};}
+function estTakeoffText(e){const t=estTakeoff(e),f1=x=>x==null?'—':(Math.round(x*10)/10).toLocaleString(),f0=x=>Math.round(x).toLocaleString();
+  const out=[`${e.number||''} · ${e.name||''}`.trim(),'',`Total: ${f1(t.totL)} lf · ${f0(t.totA)} sq ft · ${t.branches} branches${t.doors?` · ${t.doors} access doors`:''}`];
+  if(t.kinds.length){out.push('','By duct type:');t.kinds.forEach(k=>out.push(`  ${k.type}: ${f1(k.lf)} lf · ${f0(k.sf)} sq ft`));}
+  if(t.hrs.length){out.push('','Hours:');t.hrs.forEach(h=>out.push(`  ${h.cat}: ${h.lf!=null?f1(h.lf)+' by lf':''}${h.lf!=null&&h.sf!=null?' · ':''}${h.sf!=null?f1(h.sf)+' by sf':''}${h.tuned?` (tuned from ${h.tuned} job${h.tuned>1?'s':''})`:''}`));}
+  if(t.rows.length){out.push('','Runs:');t.rows.forEach(r=>out.push(`  ${r.label} (${r.type}${r.size?', '+r.size:''})${r.sheet?' — '+r.sheet:''}: ${f1(r.lf)} lf · ${f0(r.sf)} sq ft${r.branches?` · ${r.branches} branch${r.branches>1?'es':''}`:''}`));}
+  return out.join('\n');}
+function estTakeoffCsv(e){const t=estTakeoff(e),q=v=>{v=v==null?'':String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;},n=x=>x==null?'':(Math.round(x*100)/100);
+  const L=[['Estimate',e.number||'','Job',e.name||''].map(q).join(','),'',['Sheet','Run','Duct type','Size (in)','Linear ft','Sq ft','Branches'].join(',')];
+  t.rows.forEach(r=>L.push([r.sheet,r.label,r.type,r.size.replace('″',''),n(r.lf),n(r.sf),r.branches].map(q).join(',')));
+  L.push('',['','Total','','',n(t.totL),n(t.totA),t.branches].map(q).join(','));t.kinds.forEach(k=>L.push(['','',k.type,'',n(k.lf),n(k.sf),''].map(q).join(',')));
+  if(t.doors)L.push('',['','Access doors','','',t.doors].map(q).join(','));
+  if(t.hrs.length){L.push('',['Hours','By lf','By sf','Actual'].join(','));t.hrs.forEach(h=>{const c=EST_CATS.find(x=>x[1]===h.cat)[0];L.push([h.cat,n(h.lf),n(h.sf),t.actual[c]||''].map(q).join(','));});}
+  return L.join('\r\n');}
 function estMenu(e){
   const body=document.createElement('div');body.className='actionlist';
   const ren=mkAction(I.edit,'Rename estimate');const del=mkAction(I.trash,'Delete estimate','danger');
-  body.append(ren,mkDiv(),del);const ctl=sheetShell({title:esc(e.name),bodyNode:body});
+  const cp=mkAction(I.copy,'Copy takeoff summary'),csv=mkAction(I.download,'Download takeoff (CSV)');
+  body.append(ren,cp,csv,mkDiv(),del);const ctl=sheetShell({title:esc(e.name),bodyNode:body});
   ren.onclick=()=>{ctl.close();estForm(e);};
+  cp.onclick=async()=>{ctl.close();try{await navigator.clipboard.writeText(estTakeoffText(e));toast('Takeoff copied');}catch(x){toast('Copy isn’t available here');}};
+  csv.onclick=()=>{ctl.close();const blob=new Blob(['\ufeff'+estTakeoffCsv(e)],{type:'text/csv'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download=((e.number||'estimate')+' '+(e.name||'')).trim().replace(/[\\/:*?"<>|]+/g,'-')+' takeoff.csv';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500);};
   del.onclick=async()=>{ctl.close();
     if(!await confirmDialog({title:'Delete estimate?',message:`“${e.name}” and its drawings, scale and measured runs will be removed.`,confirmText:'Delete'}))return;
     for(const d of estDrawsOf(e.id)){for(const r of estRunsOf(d.id)){await pDel('estruns',r.id).catch(()=>{});}

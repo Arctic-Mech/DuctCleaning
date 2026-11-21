@@ -119,6 +119,9 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   on the next job** (each job estimated from the other jobs only; needs 3+ jobs), what lf backs each
   multiplier, and each job's miss. With automatic tuning off, estimates use your numbers and a button
   copies the tuned numbers into them.
+  **Takeoff export** (estimate ⋯ menu): **Copy takeoff summary** (totals, lf / sq ft by duct type,
+  hours by lf and sf for each kind of labor, and every run with its size range and branches — ready to
+  paste into a bid or email) and **Download takeoff (CSV)** for a spreadsheet, including actual hours.
 - **Export**: choose what the PDF includes — **Reports**, **Markups**, or **Both**.
   - *Reports*: each plan is a full-resolution vector page with numbered pins; tapping a pin jumps to
     that report's page.
