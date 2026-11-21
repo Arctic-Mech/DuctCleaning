@@ -933,7 +933,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 02:51';
+const BUILD='Nov 21 03:02';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2835,7 +2835,8 @@ function reportEditor(r,isNew){
     <div class="field"><label>Status</label>
       <div class="seg status" id="r_status">
         <button data-v="Open" class="${w.status==='Open'?'on':''}">Open</button>
-        <button data-v="Completed" class="${w.status==='Completed'?'on':''}">Completed</button></div></div>
+        <button data-v="Completed" class="${w.status==='Completed'?'on':''}">Completed</button></div>
+      <div class="cl-note" id="r_noAfter" style="margin-top:6px;font-size:12.5px;color:var(--warn)" hidden>Completed with no after pictures yet — add some below if you can.</div></div>
     <div class="field"><label>Recommended re-visit time frame</label>
       <select class="inp" id="r_revisit">${REVISIT.map(t=>`<option value="${t}" ${t===w.revisit?'selected':''}>${t||'— none —'}</option>`).join('')}</select></div>
 
@@ -2863,7 +2864,8 @@ function reportEditor(r,isNew){
 
   // status segmented
   body.querySelector('#r_status').querySelectorAll('button').forEach(b=>b.onclick=()=>{
-    body.querySelectorAll('#r_status button').forEach(x=>x.classList.remove('on'));b.classList.add('on');w.status=b.dataset.v;});
+    body.querySelectorAll('#r_status button').forEach(x=>x.classList.remove('on'));b.classList.add('on');w.status=b.dataset.v;noAfter();});
+  const noAfter=()=>{const el=body.querySelector('#r_noAfter');if(el)el.hidden=!(w.status==='Completed'&&!(PH.after.length||(!isNew&&!PH._loaded&&(w.after||[]).length)));};   /* saved photos still loading count as there */
 
   // equipment rows
   const eqlist=body.querySelector('#eqlist');
@@ -2899,11 +2901,11 @@ function reportEditor(r,isNew){
     PH[which].forEach((p,i)=>{
       const ph=document.createElement('div');ph.className='ph';
       ph.innerHTML=`<img src="${p.data}" alt=""><button class="rm" aria-label="Remove">${I.x}</button>`;
-      ph.querySelector('.rm').onclick=()=>{PH[which].splice(i,1);renderPhotos(which);};
+      ph.querySelector('.rm').onclick=()=>{PH[which].splice(i,1);renderPhotos(which);noAfter();};
       grid.appendChild(ph);
     });
     const add=document.createElement('button');add.className='add';add.innerHTML=I.camera+'<span>Add</span>';
-    add.onclick=()=>photoSource(which,()=>renderPhotos(which));
+    add.onclick=()=>photoSource(which,()=>{renderPhotos(which);noAfter();});
     grid.appendChild(add);
   }
   function photoSource(which,done){
@@ -2922,14 +2924,14 @@ function reportEditor(r,isNew){
     take.onclick=()=>inCap.click();lib.onclick=()=>inLib.click();
     inCap.onchange=()=>handle(inCap);inLib.onchange=()=>handle(inLib);
   }
-  renderPhotos('before');renderPhotos('after');
+  renderPhotos('before');renderPhotos('after');noAfter();
   // load existing photos for this report (their own docs) and show them
   if(!isNew&&((w.before&&w.before.length)||(w.after&&w.after.length))){
     photosByReport(w.id).then(docs=>{
-      const byId={};docs.forEach(p=>{byId[p.id]=p;origIds.add(p.id);});
+      const byId={};docs.forEach(p=>{byId[p.id]=p;origIds.add(p.id);});PH._loaded=true;
       ['before','after'].forEach(which=>{
         PH[which]=(w[which]||[]).map(id=>byId[id]).filter(Boolean).map(p=>({id:p.id,data:p.data}));
-        renderPhotos(which);
+        renderPhotos(which);noAfter();
       });
     }).catch(e=>console.warn('photo load failed',e));
   }
