@@ -924,7 +924,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 01:02';
+const BUILD='Nov 21 01:07';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -5352,6 +5352,7 @@ function viewExport(app){
             <span class="thumb">${d.img?`<img src="${esc(d.img)}" alt="">`:I.plan}</span>
             <span class="grow"><h3>${esc(d.name)}</h3><span class="meta">${drawReports(d.id).length} report${drawReports(d.id).length!==1?'s':''} · ${drawMarkers(d.id).length} tag${drawMarkers(d.id).length!==1?'s':''}</span></span>
             <span class="exp-ck">${I.check}</span></button>`).join('')}</div>`:''}
+      <label id="expSumWrap" style="display:flex;align-items:center;gap:10px;margin:14px 2px 0;font-size:14.5px"><input type="checkbox" id="expSum" style="width:20px;height:20px"${expSumOn()?' checked':''}><span><b>Summary page first</b> — job details, completed / open counts and an index of every report (tap a row to jump to it)</span></label>
       <div id="expStatus" class="hintline" style="text-align:center;min-height:18px;margin-top:10px"></div>
     </div>
     <div class="bottombar">
@@ -5367,7 +5368,8 @@ function viewExport(app){
   const mkWrap=app.querySelector('#expMkWrap'), mkBtns=[...app.querySelectorAll('#expMk button')];
   const paintMk=()=>mkBtns.forEach(b=>b.classList.toggle('on',!!mkSel[b.dataset.k]));
   const paint=()=>{seg.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.m===mode));
-    banner.innerHTML=EXP_BANNER[mode];mkWrap.hidden=mode==='reports';paintMk();};
+    banner.innerHTML=EXP_BANNER[mode];mkWrap.hidden=mode==='reports';paintMk();app.querySelector('#expSumWrap').hidden=mode==='markups';};
+  app.querySelector('#expSum').onchange=e=>{try{localStorage.setItem('ductpro-exp-sum',e.target.checked?'1':'0');}catch(x){}};
   seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{mode=b.dataset.m;try{localStorage.setItem('ductpro-exp-mode',mode);}catch(e){}paint();});
   mkBtns.forEach(b=>b.onclick=()=>{const k=b.dataset.k;
     if(mkSel[k]&&Object.values(mkSel).filter(Boolean).length===1){toast('Keep at least one type');return;}
@@ -5385,8 +5387,9 @@ function viewExport(app){
   planRows.forEach(r=>r.onclick=()=>{const id=r.dataset.d;if(sel.has(id))sel.delete(id);else sel.add(id);paintPlans();});
   if(allBtn)allBtn.onclick=()=>{if(sel.size===draws.length)sel.clear();else draws.forEach(d=>sel.add(d.id));paintPlans();};
   paintPlans();
-  btn.onclick=()=>{if(!sel.size){toast('Pick at least one plan');return;}exportInteractivePdf(j,btn,status,mode,[...sel],mkSel);};
+  btn.onclick=()=>{if(!sel.size){toast('Pick at least one plan');return;}exportInteractivePdf(j,btn,status,mode,[...sel],mkSel,app.querySelector('#expSum').checked);};
 }
+function expSumOn(){try{return localStorage.getItem('ductpro-exp-sum')!=='0';}catch(e){return true;}}
 function expMode(){try{const m=localStorage.getItem('ductpro-exp-mode');if(m==='reports'||m==='markups'||m==='both')return m;}catch(e){}return 'reports';}
 function expMkSel(){const d={exhaust:true,access:true,note:true,draw:true};
   try{const v=JSON.parse(localStorage.getItem('ductpro-exp-mk')||'null');
@@ -5399,11 +5402,12 @@ const EXP_BANNER={
   both:'Each plan is a full-resolution page with <b>numbered report pins</b> (tap to jump to the report) <b>and your markups</b> drawn on top. Report pages follow.',
 };
 
-async function exportInteractivePdf(j,btn,status,mode,planIds,mkTypes){
+async function exportInteractivePdf(j,btn,status,mode,planIds,mkTypes,summary){
   mkTypes=mkTypes||{exhaust:true,access:true,note:true,draw:true};
   if(!window.PDFLib){toast('PDF engine still loading — try again');return;}
   const content=mode==='markups'?{reports:false,markups:true}
     :mode==='both'?{reports:true,markups:true}:{reports:true,markups:false};
+  content.summary=!!summary&&content.reports;
   const dlLabel=I.download+' Download PDF';
   btn.disabled=true;const reset=()=>{btn.disabled=false;btn.innerHTML=dlLabel;};
   const set=t=>{btn.textContent=t;if(status)status.textContent=t;};
@@ -5556,6 +5560,7 @@ async function makeExportPdf(PDFLib,{job,company,plans,logoPng,content}){
     }
   }
   async function embedJpgs(list){const a=[];for(const bz of (list||[])){try{a.push(await out.embedJpg(bz));}catch(e){}}return a;}
+  const allRep=[];
   for(const plan of plans){
     let pg;
     if(plan.pdfBytes){const src=await PDFDocument.load(plan.pdfBytes);const pi=Math.min(plan.pageIndex||0,src.getPageCount()-1);[pg]=await out.copyPages(src,[pi]);out.addPage(pg);}
@@ -5568,7 +5573,7 @@ async function makeExportPdf(PDFLib,{job,company,plans,logoPng,content}){
     if(content.reports){
       const repPages=[];
       for(const r of plan.reports){r.beforeImg=await embedJpgs(r.before);r.afterImg=await embedJpgs(r.after);
-        const rp=out.addPage([612,792]);drawReportPage(rp,r,plan);repPages.push(rp);}
+        const rp=out.addPage([612,792]);drawReportPage(rp,r,plan);repPages.push(rp);allRep.push({r,plan,page:rp});}
       const annots=[];
       plan.reports.forEach((r,i)=>{
         const x=r.nx*pw, y=(1-r.ny)*ph, R=Math.max(10,pw*0.0085);
@@ -5585,7 +5590,34 @@ async function makeExportPdf(PDFLib,{job,company,plans,logoPng,content}){
       pg.node.set(PDFName.of('Annots'), out.context.obj(annots));
     }
   }
+  if(content.summary&&allRep.length)drawSummary(allRep);
   return await out.save();
+  // summary page(s) at the front: job, counts, and an index whose rows jump to each report page
+  function drawSummary(list){const W=612,H=792,M=48,RH=19;const cols=[[M,'#',28],[M+30,'Plan',150],[M+186,'Type',86],[M+278,'Status',70],[M+354,'Re-visit',62],[M+420,'Inspected area',W-M-(M+420)]];
+    const done=list.filter(x=>x.r.status==='Completed').length,pagesOut=[];let pg=null,y=0,idx=0;
+    const fit=(t,font,size,w)=>{t=String(t||'').replace(/\s+/g,' ').trim();if(font.widthOfTextAtSize(t,size)<=w)return t;while(t&&font.widthOfTextAtSize(t+'…',size)>w)t=t.slice(0,-1);return t+'…';};
+    const head=()=>{cols.forEach(([x,l])=>pg.drawText(l.toUpperCase(),{x,y,size:8,font:helvB,color:MUT}));y-=8;pg.drawLine({start:{x:M,y},end:{x:W-M,y},thickness:0.8,color:rgb(0.82,0.85,0.88)});y-=14;};
+    const newPage=first=>{pg=out.insertPage(pagesOut.length,[W,H]);pagesOut.push({pg,annots:[]});y=H-M;
+      if(first){if(logo){const lw=96,lh=lw*(logo.height/logo.width);pg.drawImage(logo,{x:M,y:y-lh+6,width:lw,height:lh});}else pg.drawText(company||'Arctic',{x:M,y:y-6,size:20,font:helvB,color:INK});
+        const t='Duct Cleaning Summary';pg.drawText(t,{x:W-M-helv.widthOfTextAtSize(t,11),y:y-2,size:11,font:helv,color:MUT});y-=44;
+        pg.drawText(fit(job.name,helvB,20,W-M*2),{x:M,y,size:20,font:helvB,color:INK});y-=18;
+        const sub=[job.number,job.address&&job.address.replace(/\n/g,', '),'Exported '+new Date().toLocaleDateString()].filter(Boolean).join('  \u00b7  ');
+        pg.drawText(fit(sub,helv,9.5,W-M*2),{x:M,y,size:9.5,font:helv,color:MUT});y-=14;
+        pg.drawLine({start:{x:M,y},end:{x:W-M,y},thickness:2,color:rgb(0.12,0.5,0.85)});y-=34;
+        const stats=[[String(list.length),'Reports',INK],[String(done),'Completed',GREEN],[String(list.length-done),'Open',AMBER],[String(new Set(list.map(x=>x.plan)).size),'Plans',INK]];
+        stats.forEach(([v,l,c],i)=>{const x=M+i*120;pg.drawText(v,{x,y,size:22,font:helvB,color:c});pg.drawText(l.toUpperCase(),{x,y:y-14,size:8,font:helv,color:MUT});});y-=44;}
+      else{pg.drawText(fit((job.name||'')+' \u00b7 report index (continued)',helv,9.5,W-M*2),{x:M,y:y-4,size:9.5,font:helv,color:MUT});y-=28;}
+      head();};
+    newPage(true);
+    for(const {r,plan,page} of list){if(y<M+RH){newPage(false);}
+      if(idx++%2===0)pg.drawRectangle({x:M-4,y:y-5,width:W-M*2+8,height:RH-2,color:rgb(0.965,0.972,0.98)});
+      const type=r.type==='Other'?(r.typeOther||'Other'):(r.type||'\u2014');
+      const vals=[String(r.num),plan.name,type,r.status,r.revisit||'\u2014',r.area||''];
+      cols.forEach(([x,,w],i)=>pg.drawText(fit(vals[i],i===0?helvB:helv,9.5,w-6),{x,y,size:9.5,font:i===0?helvB:helv,color:i===3?(r.status==='Completed'?GREEN:AMBER):INK}));
+      const dest=out.context.obj([page.ref,PDFName.of('Fit')]);
+      pagesOut[pagesOut.length-1].annots.push(out.context.register(out.context.obj({Type:PDFName.of('Annot'),Subtype:PDFName.of('Link'),Rect:[M-4,y-5,W-M+4,y+RH-7],Border:[0,0,0],A:{Type:PDFName.of('Action'),S:PDFName.of('GoTo'),D:dest}})));
+      y-=RH;}
+    pagesOut.forEach(o=>o.pg.node.set(PDFName.of('Annots'),out.context.obj(o.annots)));}
 }
 
 /* ============================ theme ============================ */
