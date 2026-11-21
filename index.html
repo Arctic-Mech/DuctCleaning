@@ -933,7 +933,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 02:33';
+const BUILD='Nov 21 02:34';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -4969,7 +4969,7 @@ function viewEstMeasure(app){
       const nv=temp.length/2;
       const curRun=runGroup?estRunMain(estRunsOf(d.id),runGroup):null;
       const lead=curRun?`Adding to <b>${esc(curRun.label||'this run')}</b>`:'Tap along the duct';
-      hint.innerHTML=`${I.pen}<span>${lead} · <b>Add run</b> keeps the same run, <b>Finish</b> ends it${nv?' · '+nv+' pt'+(nv!==1?'s':''):''}${matchMedia('(pointer:fine)').matches?' <span style="opacity:.7">(Enter · Esc · ⌫)</span>':''}</span>`;
+      hint.innerHTML=`${I.pen}<span>${lead} · <b>Add run</b> keeps the same run, <b>Finish</b> ends it${nv?' · '+nv+' pt'+(nv!==1?'s':''):''}${nv>=2&&d.cal?' · <b>'+ft1(estLenFt(temp,d))+' lf</b> so far':''}${matchMedia('(pointer:fine)').matches?' <span style="opacity:.7">(Enter · Esc · ⌫)</span>':''}</span>`;
       vbar.innerHTML=`<div class="estrun"><div class="estkinds">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${k===estKind?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
         <div class="drawbar"><button class="dt" id="eUndo" aria-label="Remove last tap"${temp.length?'':' disabled style="opacity:.4"'}>${I.undo}</button>
         <button class="btn block" id="eFinish">${I.check} Finish</button>
