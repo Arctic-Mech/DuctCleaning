@@ -933,7 +933,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 03:02';
+const BUILD='Nov 21 03:06';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2574,18 +2574,21 @@ function markerListSheet(jobId,kind){
 }
 function reportsListSheet(jobId,onlyDraw){
   const body=document.createElement('div');const all=onlyDraw?drawReports(onlyDraw):jobReports(jobId),nOpen=all.filter(r=>r.status!=='Completed').length,nDone=all.length-nOpen;
-  let filt=S.repFilter||'all';
+  let filt=S.repFilter||'all',q='';
+  const hit=r=>!q||[String(r.num),r.type,r.typeOther,r.area,r.revisit,...(r.equipment||[]).map(e=>e.item+' '+e.notes)].some(x=>String(x||'').toLowerCase().includes(q));
   const draw=()=>{let html='';
     if(all.length)html+=`<div class="seg" id="repFilt" style="margin-bottom:12px">${[['all','All',all.length],['open','Open',nOpen],['done','Completed',nDone]].map(([k,l,n])=>`<button type="button" data-f="${k}"${k===filt?' class="on"':''}>${l} (${n})</button>`).join('')}</div>`;
+    if(all.length>=15)html+=`<input class="inp" id="repQ" type="search" placeholder="Search reports (area, equipment, type, #)" value="${esc(q)}" style="margin-bottom:12px" autocomplete="off">`;
     let any=false;
-    jobDrawings(jobId).filter(d=>!onlyDraw||d.id===onlyDraw).forEach(d=>{const reps=drawReports(d.id).filter(r=>filt==='all'||(filt==='done')===(r.status==='Completed'));if(!reps.length)return;any=true;
+    jobDrawings(jobId).filter(d=>!onlyDraw||d.id===onlyDraw).forEach(d=>{const reps=drawReports(d.id).filter(r=>(filt==='all'||(filt==='done')===(r.status==='Completed'))&&hit(r));if(!reps.length)return;any=true;
       html+=`<div class="lyr-sec">${esc(d.name)}</div>`+reps.map(r=>{const tl=typeLabel(r),eq=(r.equipment||[]).map(e=>e.item).filter(Boolean).join(', '),extra=[r.area,eq].filter(Boolean).join(' · ');
         return `<button class="dl-item" data-rep="${r.id}"><span class="rnum ${r.status==='Completed'?'good':'warn'}">${r.num}</span>
           <span class="grow"><b style="font-family:var(--font-body)">${esc(tl==='—'?'Report #'+r.num:tl)}</b><span>${esc(r.status)}${r.revisit?' · re-visit '+esc(r.revisit):''}${(r.before||[]).length+(r.after||[]).length?' · '+((r.before||[]).length+(r.after||[]).length)+' photo'+(((r.before||[]).length+(r.after||[]).length)>1?'s':''):''}</span>${extra?`<span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(extra)}</span>`:''}</span>
           <span class="chev">${I.chev}</span></button>`;}).join('');});
-    if(all.length&&!any)html+=`<p class="cl-note" style="padding:10px 2px">No ${filt==='open'?'open':'completed'} reports.</p>`;
+    if(all.length&&!any)html+=`<p class="cl-note" style="padding:10px 2px">${q?'No reports match “'+esc(q)+'”.':'No '+(filt==='open'?'open':'completed')+' reports.'}</p>`;
     body.innerHTML=html||`<div class="empty" style="padding:28px 10px"><div class="ic">${I.list}</div><h2>No reports yet</h2><p>Open a plan and tap Place report.</p></div>`;
     body.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{filt=S.repFilter=b.dataset.f;draw();});
+    {const rq=body.querySelector('#repQ');if(rq)rq.oninput=()=>{q=rq.value.trim().toLowerCase();const pos=rq.selectionStart;draw();const n=body.querySelector('#repQ');if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(e){}}};}
     body.querySelectorAll('[data-rep]').forEach(b=>b.onclick=()=>{const r=S.reports.find(x=>x.id===b.dataset.rep);if(!r)return;ctl.close();reportPreview(r,{fromList:true});});};
   const ctl=sheetShell({title:'Reports',bodyNode:body,full:true});draw();
 }
