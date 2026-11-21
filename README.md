@@ -36,6 +36,9 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   A new report can **copy details from the last report** (type, re-visit, equipment, area — not
   status or photos). The job's **Reports** list filters All / Open / Completed and shows each
   report's area, equipment and photo count; a report's **Show on plan** zooms to its pin and flashes it.
+  With 15+ reports the list has a search box (area, equipment, type, number). The plan ⋯ menu has
+  **Reports on this plan**. Tap any report photo to see it full screen. Marking a report Completed
+  with no after pictures shows a gentle reminder (it still saves).
   Plan rows and the plan screen show how many reports are still open.
 - **No signal**: saves finish right away on the phone and sync when signal returns; a small pill
   shows "Offline · N changes waiting to sync", then "All changes synced".
@@ -131,7 +134,8 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   copies the tuned numbers into them.
   **Estimates list** shows each estimate's lf and cleaning hours, marks ones with actual hours
   logged, and has a search box with 6+ estimates. **Desktop shortcuts while measuring**: Enter =
-  Add run / Done, Esc = Finish / Cancel, Backspace = remove the last tap, Ctrl/⌘-Z = undo. After
+  Add run / Done, Esc = Finish / Cancel, Backspace = remove the last tap, Ctrl/⌘-Z = undo. The hint shows the
+  run's length so far, and the Runs list shows each run's sizes and duct-type color. After
   setting a scale, the app offers it to the estimate's other sheets of the same size that have none.
   **Takeoff export** (estimate ⋯ menu): **Copy takeoff summary** (totals, lf / sq ft by duct type,
   hours by lf and sf for each kind of labor, lf / sq ft **by size** (duct type × width), and every run with its size range and branches — ready to
