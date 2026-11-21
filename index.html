@@ -898,7 +898,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 20 22:44';
+const BUILD='Nov 20 23:23';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2923,10 +2923,76 @@ function estGroupLabel(rs,r){const m=estRunMain(rs,estGroupOf(r));return (m&&m.l
 function estAutoLabel(rs,kind){const n=rs.filter(x=>estIsMain(x)&&(x.kind||'mps')===kind).length+1;return (LABELCODE[kind]||String(kind).toUpperCase())+' '+n;}
 function estDefaultKind(){try{const k=localStorage.getItem('ductpro-est-kind');if(DUCT_KINDS[k])return k;}catch(e){}return 'mps';}
 // estimating standards (shared): hours per lf/sf and one access door every N feet of run
-function estSettings(){const d={hrPerLf:0,hrPerSf:0,lfPerDoor:0,hrPerBranch:0,fMps:0,fLps:0,fRet:0,fExh:0,wideIn:0,wideF:0,narrowIn:0,narrowF:0};const v=S.estsetArr&&S.estsetArr[0];if(v){['hrPerLf','hrPerSf','lfPerDoor','hrPerBranch','fMps','fLps','fRet','fExh','wideIn','wideF','narrowIn','narrowF'].forEach(k=>{if(typeof v[k]==='number')d[k]=v[k];});}return d;}
-// labor factor for a piece of duct: duct-type factor × width rule(s) (blank = ×1 / off)
-function estFactorFor(kind,widthIn,s){s=s||estSettings();let f=({mps:s.fMps,lps:s.fLps,ret:s.fRet,exh:s.fExh})[kind||'mps'];if(!(f>0))f=1;
-  if(widthIn>0){if(s.wideIn>0&&s.wideF>0&&widthIn>s.wideIn)f*=s.wideF;if(s.narrowIn>0&&s.narrowF>0&&widthIn<s.narrowIn)f*=s.narrowF;}return f;}
+/* ---------- estimating model: cleaning / install / shop fab hours, each with its own multipliers ---------- */
+const EST_CATS=[['clean','Cleaning'],['install','Install'],['fab','Shop fab']];
+const EST_KINDS=[['mps','MPS'],['lps','LPS'],['ret','Return'],['exh','Exhaust']];
+const EST_BANDS=[6,10,14,20,28,40,Infinity];   // duct width bands, inches: ≤6, 6–10, 10–14, 14–20, 20–28, 28–40, >40
+const estBandOf=w=>{for(let i=0;i<EST_BANDS.length;i++)if((w||0)<=EST_BANDS[i])return i;return EST_BANDS.length-1;};
+const estBandLabel=i=>i===0?'≤ 6″':i===EST_BANDS.length-1?`over ${EST_BANDS[i-1]}″`:`${EST_BANDS[i-1]}–${EST_BANDS[i]}″`;
+// what the estimate card shows (chosen in Standards → Display)
+const EST_SHOW=[['cleanLf','Cleaning hrs by lf',true],['cleanSf','Cleaning hrs by sf',true],['branches','Branch count / load',true],['doors','Access doors',true],
+  ['installLf','Install hrs by lf',false],['installSf','Install hrs by sf',false],['fabLf','Shop fab hrs by lf',false],['fabSf','Shop fab hrs by sf',false],
+  ['branchToggle','Branch load On/Off switch',true],['factors','Multipliers line',true],['note','Explanation note',false],['actuals','Actual hours (after the job)',true]];
+function estSettings(){const d={hrPerLf:0,hrPerSf:0,lfPerDoor:0,hrPerBranch:0,fMps:0,fLps:0,fRet:0,fExh:0,wideIn:0,wideF:0,narrowIn:0,narrowF:0,cats:{},show:{}};const v=S.estsetArr&&S.estsetArr[0];
+  if(v){['hrPerLf','hrPerSf','lfPerDoor','hrPerBranch','fMps','fLps','fRet','fExh','wideIn','wideF','narrowIn','narrowF'].forEach(k=>{if(typeof v[k]==='number')d[k]=v[k];});
+    if(v.cats&&typeof v.cats==='object')d.cats=v.cats;if(v.show&&typeof v.show==='object')d.show=v.show;}
+  EST_SHOW.forEach(([k,,def])=>{if(typeof d.show[k]!=='boolean')d.show[k]=def;});return d;}
+// one kind of labor's numbers: rates, duct-type multipliers, width-band multipliers (cleaning keeps its original fields)
+function estCat(s,c){const v=(s.cats&&s.cats[c])||{},T=v.type||{},B=Array.isArray(v.bands)?v.bands:[];
+  const m={hrPerLf:+v.hrPerLf||0,hrPerSf:+v.hrPerSf||0,hrPerBranch:+v.hrPerBranch||0,type:{},bands:EST_BANDS.map((_,i)=>B[i]>0?+B[i]:1)};
+  EST_KINDS.forEach(([k])=>m.type[k]=T[k]>0?+T[k]:1);
+  if(c==='clean'){m.hrPerLf=s.hrPerLf;m.hrPerSf=s.hrPerSf;m.hrPerBranch=s.hrPerBranch;m.type={mps:s.fMps>0?s.fMps:1,lps:s.fLps>0?s.fLps:1,ret:s.fRet>0?s.fRet:1,exh:s.fExh>0?s.fExh:1};}
+  return m;}
+// cleaning's original "wider than / narrower than" rules (kept as they are; the width bands come on top)
+function estRuleFactor(s,widthIn){let f=1;if(widthIn>0){if(s.wideIn>0&&s.wideF>0&&widthIn>s.wideIn)f*=s.wideF;if(s.narrowIn>0&&s.narrowF>0&&widthIn<s.narrowIn)f*=s.narrowF;}return f;}
+function estPieceFactor(s,c,m,kind,widthIn){return (m.type[kind||'mps']||1)*(m.bands[estBandOf(widthIn)]||1)*(c==='clean'?estRuleFactor(s,widthIn):1);}
+// labor factor for a piece of duct (cleaning): duct-type × width band × width rules
+function estFactorFor(kind,widthIn,s){s=s||estSettings();return estPieceFactor(s,'clean',estCat(s,'clean'),kind,widthIn);}
+// hours for one kind of labor on an estimate: by lf and by sf (sf on the union area, so overlaps count once), branch time included
+function estCatHours(e,c){const s=estSettings(),m=estCat(s,c);let L=0,fL=0,A=0,fA=0,uA=0;
+  estDrawsOf(e.id).forEach(d=>{const rs=estRunsOf(d.id);rs.forEach(r=>estRunParts(r,d).forEach(p=>{const f=estPieceFactor(s,c,m,r.kind,p.win);L+=p.lf;fL+=p.lf*f;A+=p.sf;fA+=p.sf*f;}));uA+=estUnionAreaFt(d,rs);});
+  const branches=estBranchCount(e.id),br=(e.branchMode==='none')?0:branches*m.hrPerBranch,kL=L>0?fL/L:1,kA=A>0?fA/A:1;
+  return {lf:m.hrPerLf>0?L*kL*m.hrPerLf+br:null,sf:m.hrPerSf>0?uA*kA*m.hrPerSf+br:null,br,kL,kA,branches,L,uA,m};}
+function estCatUsed(s,c){const m=estCat(s,c);return m.hrPerLf>0||m.hrPerSf>0;}
+
+/* ---------- fine-tuning from actual hours ----------
+   Every estimate marked "use this job to fine-tune" with an actual figure for a kind of labor is a data point. One set of
+   multipliers per kind (duct type, width band) is fitted to all of them together, with a separate hours-per-lf and
+   hours-per-sf rate and the per-branch time: least squares on the log of estimated ÷ actual, each multiplier pulled
+   gently toward its current value so a few jobs mostly correct the overall rate and the finer multipliers move as
+   jobs accumulate. Returns current vs suggested values and the error before / after, or null with no data. */
+function estJobRows(e,c,s){const rows=[];let A=0,uA=0;
+  estDrawsOf(e.id).forEach(d=>{const rs=estRunsOf(d.id);rs.forEach(r=>estRunParts(r,d).forEach(p=>{const rule=c==='clean'?estRuleFactor(s,p.win):1;rows.push({k:EST_KINDS.findIndex(x=>x[0]===(r.kind||'mps')),b:estBandOf(p.win),lf:p.lf*rule,sf:p.sf*rule});A+=p.sf;}));uA+=estUnionAreaFt(d,rs);});
+  const sc=A>0?uA/A:1;rows.forEach(q=>{if(q.k<0)q.k=0;q.sf*=sc;});return {rows,n:e.branchMode==='none'?0:estBranchCount(e.id)};}
+function estTune(c,src){const s=estSettings(),m=estCat(s,c);src=src||(e=>estJobRows(e,c,s));   /* src: a job's pieces (tests pass their own) */
+  const jobs=S.estimates.filter(e=>e.tuneUse&&e.actual&&+e.actual[c]>0).map(e=>Object.assign({e,act:+e.actual[c]},src(e))).filter(j=>j.rows.length);
+  if(!jobs.length)return null;
+  const nK=EST_KINDS.length,nB=EST_BANDS.length,lg=Math.log;
+  const qty=(j,b)=>{let t=0;j.rows.forEach(q=>t+=q[b]*(m.type[EST_KINDS[q.k][0]]*m.bands[q.b]));return t;};
+  const sumAct=jobs.reduce((t,j)=>t+j.act,0);
+  const rate0=b=>{const cur=b==='lf'?m.hrPerLf:m.hrPerSf;if(cur>0)return cur;const Q=jobs.reduce((t,j)=>t+qty(j,b),0);return Q>0?sumAct/Q:0;};
+  const anyBr=jobs.some(j=>j.n>0);
+  // θ = [log rate lf, log rate sf, log type×4, log band×7, log branch hrs]
+  const r0=[rate0('lf'),rate0('sf')];if(!(r0[0]>0)&&!(r0[1]>0))return null;
+  const th0=[lg(r0[0]||1e-6),lg(r0[1]||1e-6)].concat(EST_KINDS.map(([k])=>lg(m.type[k])),m.bands.map(x=>lg(x)),[lg(m.hrPerBranch>0?m.hrPerBranch:0.25)]);
+  const lam=[0.0005,0.0005].concat(Array(nK).fill(0.02),Array(nB).fill(0.02),[m.hrPerBranch>0?0.05:0.3]);   /* the rates move freely; each multiplier costs about as much as a fiftieth of a job's miss */
+  // the multipliers are fitted on the basis the crew prices by (hours per lf when set, else per sf); the other basis then gets its own rate
+  const prim=(m.hrPerLf>0||!(m.hrPerSf>0))?0:1,use=[prim===0,prim===1];const th=th0.slice();
+  const pred=(t,j,bi)=>{const b=bi?'sf':'lf';let x=0;j.rows.forEach(q=>x+=q[b]*Math.exp(t[2+q.k]+t[2+nK+q.b]));return {base:x,p:Math.exp(t[bi])*x+(anyBr?j.n*Math.exp(t[2+nK+nB]):0)};};
+  const mo=th.map(()=>0),ve=th.map(()=>0);   // Adam steps
+  for(let it=1;it<=4000;it++){const g=th.map((v,i)=>2*lam[i]*(v-th0[i]));
+    jobs.forEach(j=>{const bi=prim,b=bi?'sf':'lf',R=Math.exp(th[bi]),{base,p}=pred(th,j,bi);if(!(p>0))return;const e=2*lg(p/j.act)/p;
+      g[bi]+=e*R*base;j.rows.forEach(q=>{const v=q[b]*R*Math.exp(th[2+q.k]+th[2+nK+q.b])*e;g[2+q.k]+=v;g[2+nK+q.b]+=v;});if(anyBr&&j.n)g[2+nK+nB]+=e*j.n*Math.exp(th[2+nK+nB]);});
+    for(let i=0;i<th.length;i++){mo[i]=0.9*mo[i]+0.1*g[i];ve[i]=0.999*ve[i]+0.001*g[i]*g[i];th[i]-=0.02*(mo[i]/(1-Math.pow(0.9,it)))/(Math.sqrt(ve[i]/(1-Math.pow(0.999,it)))+1e-8);}}
+  {const o=1-prim;if(r0[o]>0){let sl=0,c=0;jobs.forEach(j=>{const x=pred(th,j,o).base,br=anyBr?j.n*Math.exp(th[2+nK+nB]):0;if(x>0&&j.act>br){sl+=lg((j.act-br)/x);c++;}});if(c){th[o]=sl/c;use[o]=true;}}}   /* the other basis: its rate only */
+  const err=(t,cur)=>{if(cur&&!((prim?m.hrPerSf:m.hrPerLf)>0))return null;const es=[];jobs.forEach(j=>{const {p}=pred(t,j,prim);if(p>0)es.push(Math.abs(p/j.act-1));});return es.length?es.reduce((a,b)=>a+b,0)/es.length:null;};   /* the miss on the basis the crew prices by */
+  const r3=v=>+v.toFixed(3),sug={hrPerLf:use[0]?r3(Math.exp(th[0])):m.hrPerLf,hrPerSf:use[1]?r3(Math.exp(th[1])):m.hrPerSf,hrPerBranch:anyBr?+Math.exp(th[2+nK+nB]).toFixed(2):m.hrPerBranch,type:{},bands:[]};
+  EST_KINDS.forEach(([k],i)=>sug.type[k]=+Math.exp(th[2+i]).toFixed(3));for(let i=0;i<nB;i++)sug.bands.push(+Math.exp(th[2+nK+i]).toFixed(3));
+  return {jobs:jobs.length,basis:prim?'sf':'lf',cur:m,sug,before:err(th0,true),after:err(th,false),perJob:jobs.map(j=>({name:j.e.name,act:j.act,est:pred(th0,j,0).p,estSf:pred(th0,j,1).p,fitLf:pred(th,j,0).p}))};}
+// write a kind of labor's numbers back into the standards document (cleaning keeps its original fields)
+function estSetCat(doc,c,m){doc.cats=Object.assign({},doc.cats||{});
+  if(c==='clean'){doc.hrPerLf=m.hrPerLf;doc.hrPerSf=m.hrPerSf;doc.hrPerBranch=m.hrPerBranch;doc.fMps=m.type.mps;doc.fLps=m.type.lps;doc.fRet=m.type.ret;doc.fExh=m.type.exh;doc.cats.clean={bands:m.bands.slice()};}
+  else doc.cats[c]={hrPerLf:m.hrPerLf,hrPerSf:m.hrPerSf,hrPerBranch:m.hrPerBranch,type:Object.assign({},m.type),bands:m.bands.slice()};return doc;}
 // a run split into pieces with their own width: [{lf, sf, win (width in inches, nearest ½")}]
 function estRunParts(r,d){const rIn=w=>Math.round(w*24)/2;
   if(r.widthMode==='fill')return [{lf:estRunLenFt(r,d),sf:estAreaFt(r,d),win:rIn(estFillWidthFt(r,d))}];
@@ -2942,27 +3008,68 @@ function estRunParts(r,d){const rIn=w=>Math.round(w*24)/2;
 function estFactored(estId){const s=estSettings();let L=0,fL=0,A=0,fA=0;
   estDrawsOf(estId).forEach(d=>estRunsOf(d.id).forEach(r=>estRunParts(r,d).forEach(p=>{const f=estFactorFor(r.kind,p.win,s);L+=p.lf;fL+=p.lf*f;A+=p.sf;fA+=p.sf*f;})));
   return {L,fL,A,fA,kL:L>0?fL/L:1,kA:A>0?fA/A:1};}
-function estFactorsActive(s){s=s||estSettings();return ['fMps','fLps','fRet','fExh'].some(k=>s[k]>0&&s[k]!==1)||(s.wideIn>0&&s.wideF>0&&s.wideF!==1)||(s.narrowIn>0&&s.narrowF>0&&s.narrowF!==1);}
+function estFactorsActive(s){s=s||estSettings();if(estCat(s,'clean').bands.some(x=>x!==1))return true;return ['fMps','fLps','fRet','fExh'].some(k=>s[k]>0&&s[k]!==1)||(s.wideIn>0&&s.wideF>0&&s.wideF!==1)||(s.narrowIn>0&&s.narrowF>0&&s.narrowF!==1);}
 function estBranchCount(estId){let n=0;estDrawsOf(estId).forEach(d=>{estRunsOf(d.id).forEach(r=>{if(r.role==='branch'||(!r.role&&r.tieStart&&r.widthMode!=='fill'))n++;});});return n;}
 function estStandardsSheet(){
-  const cur=estSettings();const body=document.createElement('div');
-  body.innerHTML=`<p class="cl-note">Rules of thumb used to turn measured duct into labor hours and access doors. They apply to every estimate.</p>
-    <div class="field" style="margin-top:14px"><label>Hours per linear foot</label><input class="inp" id="sHl" inputmode="decimal" value="${cur.hrPerLf||''}" placeholder="e.g. 0.05"></div>
-    <div class="field"><label>Hours per square foot</label><input class="inp" id="sHs" inputmode="decimal" value="${cur.hrPerSf||''}" placeholder="e.g. 0.02"></div>
-    <div class="field"><label>Access door every ___ feet of run</label><input class="inp" id="sDd" inputmode="decimal" value="${cur.lfPerDoor||''}" placeholder="e.g. 20"></div>
+  const cur=estSettings();const body=document.createElement('div');const v=n=>n>0?n:'';
+  const bandsHtml=(c,m)=>`<div class="cl-subhead" style="margin-top:4px">Width bands — multiply hours by the duct's width (blank = ×1)</div>
+    <div class="facgrid">${EST_BANDS.map((_,i)=>`<div class="field"><label>${estBandLabel(i)} ×</label><input class="inp" id="b_${c}_${i}" inputmode="decimal" value="${m.bands[i]!==1?m.bands[i]:''}" placeholder="1.00"></div>`).join('')}</div>`;
+  const typeHtml=(c,m)=>`<div class="cl-subhead" style="margin-top:4px">Duct type — multiply hours (blank = ×1)</div>
+    <div class="facgrid">${EST_KINDS.map(([k,l])=>`<div class="field"><label>${l} ×</label><input class="inp" id="t_${c}_${k}" inputmode="decimal" value="${m.type[k]!==1?m.type[k]:''}" placeholder="1.00"></div>`).join('')}</div>`;
+  const mc=estCat(cur,'clean');
+  const cleanHtml=`<p class="cl-note">Rules of thumb used to turn measured duct into cleaning hours and access doors. They apply to every estimate.</p>
+    <div class="field" style="margin-top:14px"><label>Hours per linear foot</label><input class="inp" id="sHl" inputmode="decimal" value="${v(cur.hrPerLf)}" placeholder="e.g. 0.05"></div>
+    <div class="field"><label>Hours per square foot</label><input class="inp" id="sHs" inputmode="decimal" value="${v(cur.hrPerSf)}" placeholder="e.g. 0.02"></div>
+    <div class="field"><label>Access door every ___ feet of run</label><input class="inp" id="sDd" inputmode="decimal" value="${v(cur.lfPerDoor)}" placeholder="e.g. 20"></div>
     <div class="cl-subhead" style="margin-top:4px">Branch load — branches are slower to clean than a straight run</div>
-    <div class="field" style="margin-top:8px"><label>Extra hours per branch</label><input class="inp" id="sHb" inputmode="decimal" value="${cur.hrPerBranch||''}" placeholder="e.g. 0.4"></div>
+    <div class="field" style="margin-top:8px"><label>Extra hours per branch</label><input class="inp" id="sHb" inputmode="decimal" value="${v(cur.hrPerBranch)}" placeholder="e.g. 0.4"></div>
     <div class="cl-subhead" style="margin-top:4px">Labor factors — multiply hours by duct type and size (blank = ×1)</div>
-    <div class="facgrid">${[['fMps','MPS'],['fLps','LPS'],['fRet','Return'],['fExh','Exhaust']].map(([k,l])=>`<div class="field"><label>${l} ×</label><input class="inp" id="s_${k}" inputmode="decimal" value="${cur[k]||''}" placeholder="1.00"></div>`).join('')}</div>
-    <div class="facrow"><span>Wider than</span><input class="inp" id="s_wideIn" inputmode="decimal" value="${cur.wideIn||''}" placeholder="e.g. 24"><span>″ ×</span><input class="inp" id="s_wideF" inputmode="decimal" value="${cur.wideF||''}" placeholder="1.10"></div>
-    <div class="facrow" style="margin-bottom:2px"><span>Narrower than</span><input class="inp" id="s_narrowIn" inputmode="decimal" value="${cur.narrowIn||''}" placeholder="e.g. 8"><span>″ ×</span><input class="inp" id="s_narrowF" inputmode="decimal" value="${cur.narrowF||''}" placeholder="1.15"></div>
+    <div class="facgrid">${[['fMps','MPS'],['fLps','LPS'],['fRet','Return'],['fExh','Exhaust']].map(([k,l])=>`<div class="field"><label>${l} ×</label><input class="inp" id="s_${k}" inputmode="decimal" value="${v(cur[k])}" placeholder="1.00"></div>`).join('')}</div>
+    <div class="facrow"><span>Wider than</span><input class="inp" id="s_wideIn" inputmode="decimal" value="${v(cur.wideIn)}" placeholder="e.g. 24"><span>″ ×</span><input class="inp" id="s_wideF" inputmode="decimal" value="${v(cur.wideF)}" placeholder="1.10"></div>
+    <div class="facrow" style="margin-bottom:2px"><span>Narrower than</span><input class="inp" id="s_narrowIn" inputmode="decimal" value="${v(cur.narrowIn)}" placeholder="e.g. 8"><span>″ ×</span><input class="inp" id="s_narrowF" inputmode="decimal" value="${v(cur.narrowF)}" placeholder="1.15"></div>
+    ${bandsHtml('clean',mc)}
     <p class="cl-note" style="font-size:12.5px;margin-top:6px">Width is each piece's measured duct width (rounded to ½″). Factors multiply both hrs by lf and hrs by sf; access doors use the raw footage.</p>`;
+  const catHtml=(c,label)=>{const m=estCat(cur,c);return `<p class="cl-note">${label} hours from the same measured duct, with their own rates and multipliers.</p>
+    <div class="field" style="margin-top:14px"><label>Hours per linear foot</label><input class="inp" id="r_${c}_hl" inputmode="decimal" value="${v(m.hrPerLf)}" placeholder="e.g. 0.15"></div>
+    <div class="field"><label>Hours per square foot</label><input class="inp" id="r_${c}_hs" inputmode="decimal" value="${v(m.hrPerSf)}" placeholder="e.g. 0.04"></div>
+    <div class="field"><label>Extra hours per branch</label><input class="inp" id="r_${c}_hb" inputmode="decimal" value="${v(m.hrPerBranch)}" placeholder="e.g. 0.5"></div>
+    ${typeHtml(c,m)}${bandsHtml(c,m)}`;};
+  const showHtml=`<p class="cl-note">Choose what each estimate shows. Hidden figures are still worked out.</p>
+    <div style="margin-top:10px">${EST_SHOW.map(([k,l])=>`<label class="cl-row" style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line)"><input type="checkbox" id="sh_${k}"${cur.show[k]?' checked':''} style="width:20px;height:20px"><span>${l}</span></label>`).join('')}</div>`;
+  body.innerHTML=`<div class="seg" id="stdTabs" style="margin-bottom:12px;flex-wrap:wrap">${[['clean','Cleaning'],['install','Install'],['fab','Shop fab'],['tune','Fine-tune'],['show','Display']].map(([k,l],i)=>`<button type="button" data-tab="${k}"${i?'':' class="on"'}>${l}</button>`).join('')}</div>
+    <div data-pane="clean">${cleanHtml}</div><div data-pane="install" hidden>${catHtml('install','Install')}</div><div data-pane="fab" hidden>${catHtml('fab','Shop fab')}</div>
+    <div data-pane="tune" hidden></div><div data-pane="show" hidden>${showHtml}</div>`;
+  const tabs=[...body.querySelectorAll('#stdTabs [data-tab]')];
+  const showTab=k=>{tabs.forEach(b=>b.classList.toggle('on',b.dataset.tab===k));body.querySelectorAll('[data-pane]').forEach(p=>p.hidden=p.dataset.pane!==k);if(k==='tune')renderTune();};
+  tabs.forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+  const num=id=>{const el=body.querySelector(id);const x=el?parseFloat(el.value):NaN;return isNaN(x)||x<0?0:x;};
+  const readCat=c=>{const m={hrPerLf:num(c==='clean'?'#sHl':`#r_${c}_hl`),hrPerSf:num(c==='clean'?'#sHs':`#r_${c}_hs`),hrPerBranch:num(c==='clean'?'#sHb':`#r_${c}_hb`),type:{},bands:EST_BANDS.map((_,i)=>num(`#b_${c}_${i}`)||1)};
+    EST_KINDS.forEach(([k])=>{m.type[k]=num(c==='clean'?`#s_f${k[0].toUpperCase()+k.slice(1)}`:`#t_${c}_${k}`)||1;});return m;};
+  const writeCat=(c,m)=>{const set=(id,x,rate)=>{const el=body.querySelector(id);if(el)el.value=rate?(x>0?x:''):(x>0&&x!==1?x:'');};
+    set(c==='clean'?'#sHl':`#r_${c}_hl`,m.hrPerLf,1);set(c==='clean'?'#sHs':`#r_${c}_hs`,m.hrPerSf,1);set(c==='clean'?'#sHb':`#r_${c}_hb`,m.hrPerBranch,1);
+    EST_KINDS.forEach(([k])=>set(c==='clean'?`#s_f${k[0].toUpperCase()+k.slice(1)}`:`#t_${c}_${k}`,m.type[k],0));m.bands.forEach((x,i)=>set(`#b_${c}_${i}`,x,0));};
+  const build=()=>{const doc={id:'default',lfPerDoor:num('#sDd'),wideIn:num('#s_wideIn'),wideF:num('#s_wideF'),narrowIn:num('#s_narrowIn'),narrowF:num('#s_narrowF'),cats:{},show:{},createdAt:now()};
+    EST_CATS.forEach(([c])=>estSetCat(doc,c,readCat(c)));EST_SHOW.forEach(([k])=>{const el=body.querySelector('#sh_'+k);doc.show[k]=!!(el&&el.checked);});return doc;};
+  const save=async(msg)=>{const doc=build();S.estsetArr=[doc];await pPut('estsettings',doc).catch(()=>toast('Not saved — check connection'));render();if(msg)toast(msg);};
+  // fine-tune: from the jobs marked "use to fine-tune" with actual hours
+  function renderTune(){const pane=body.querySelector('[data-pane="tune"]');const n=S.estimates.filter(e=>e.tuneUse&&e.actual).length;
+    const pct=x=>x==null?'—':(x*100).toFixed(1)+'%';
+    let h=`<p class="cl-note">After a job, enter how many hours it actually took on the estimate (Actual hours) and tick <b>Use this job to fine-tune</b>. The multipliers are then fitted to all those jobs together — rates, duct types, width bands and branch time. With only a job or two mostly the overall rate moves; the width and type multipliers firm up as jobs add up.</p>`;
+    if(!n)h+=`<p class="cl-note" style="margin-top:10px"><b>No jobs marked yet.</b></p>`;
+    EST_CATS.forEach(([c,l])=>{const t=estTune(c);if(!t){if(n)h+=`<div class="cl-subhead" style="margin-top:12px">${l}</div><p class="cl-note">No actual ${l.toLowerCase()} hours entered on the marked jobs yet.</p>`;return;}
+      const rows=[];const add=(lab,a,b,fmt)=>{if(Math.abs((b||0)-(a||0))>Math.max(0.005,0.01*Math.abs(a||0)))rows.push(`<tr><td>${lab}</td><td>${fmt(a)}</td><td><b>${fmt(b)}</b></td></tr>`);};
+      const hr=x=>x>0?(+x).toFixed(3):'—',fx=x=>'×'+(+x).toFixed(2);
+      add('Hours per lf',t.cur.hrPerLf,t.sug.hrPerLf,hr);add('Hours per sf',t.cur.hrPerSf,t.sug.hrPerSf,hr);add('Hours per branch',t.cur.hrPerBranch,t.sug.hrPerBranch,x=>x>0?(+x).toFixed(2):'—');
+      EST_KINDS.forEach(([k,kl])=>add(kl,t.cur.type[k],t.sug.type[k],fx));EST_BANDS.forEach((_,i)=>add(estBandLabel(i),t.cur.bands[i],t.sug.bands[i],fx));
+      h+=`<div class="cl-subhead" style="margin-top:14px">${l} — from ${t.jobs} job${t.jobs>1?'s':''}</div>
+        <p class="cl-note" style="margin:6px 0">Average miss on hours by ${t.basis} now: <b>${pct(t.before)}</b> · with the suggestions: <b>${pct(t.after)}</b></p>
+        ${rows.length?`<table class="tunetbl" style="width:100%;font-size:13px;border-collapse:collapse"><tr style="color:var(--muted)"><td>Setting</td><td>Now</td><td>Suggested</td></tr>${rows.join('')}</table>
+        <button type="button" class="btn block" data-apply="${c}" style="margin-top:8px">Apply ${l.toLowerCase()} suggestions</button>`:'<p class="cl-note">Already in line with the actual hours.</p>'}`;});
+    pane.innerHTML=h;
+    pane.querySelectorAll('[data-apply]').forEach(b=>b.onclick=async()=>{const c=b.dataset.apply,t=estTune(c);if(!t)return;writeCat(c,t.sug);await save('Applied — '+EST_CATS.find(x=>x[0]===c)[1]+' multipliers updated');renderTune();});}
   const foot=document.createElement('button');foot.className='btn primary block';foot.textContent='Save standards';
   const ctl=sheetShell({title:'Estimating standards',bodyNode:body,footNode:foot});
-  foot.onclick=async()=>{const num=id=>{const v=parseFloat(body.querySelector(id).value);return isNaN(v)||v<0?0:v;};
-    const doc={id:'default',hrPerLf:num('#sHl'),hrPerSf:num('#sHs'),lfPerDoor:num('#sDd'),hrPerBranch:num('#sHb'),fMps:num('#s_fMps'),fLps:num('#s_fLps'),fRet:num('#s_fRet'),fExh:num('#s_fExh'),wideIn:num('#s_wideIn'),wideF:num('#s_wideF'),narrowIn:num('#s_narrowIn'),narrowF:num('#s_narrowF'),createdAt:now()};
-    S.estsetArr=[doc];await pPut('estsettings',doc).catch(()=>toast('Not saved — check connection'));
-    ctl.close();render();toast('Standards saved');};
+  foot.onclick=async()=>{await save('Standards saved');ctl.close();};
 }
 // labor + access-door estimate from totals and the standards
 function estDerived(totL,totA,branches,mode,kL,kA){const s=estSettings();branches=branches||0;mode=(mode==='none')?'none':'flat';kL=kL>0?kL:1;kA=kA>0?kA:1;
@@ -4389,21 +4496,33 @@ function viewEstimate(app){
         <div class="stats"><div class="s"><b>${draws.length}</b><span>Drawings</span></div>
           <div class="s"><b>${ft1(totL)}</b><span>Linear ft</span></div>
           <div class="s"><b>${Math.round(totA)}</b><span>Sq ft</span></div></div></div>
-      ${(()=>{const branches=estBranchCount(e.id);const bmode=(e.branchMode==='none')?'none':'flat';const fx=estFactored(e.id);const dv=estDerived(totL,totA,branches,bmode,fx.kL,fx.kA);const es=estSettings();const facOn=estFactorsActive(es);
+      ${(()=>{const s=estSettings(),sh=s.show,bmode=(e.branchMode==='none')?'none':'flat';const H={};EST_CATS.forEach(([c])=>H[c]=estCatHours(e,c));
+        const branches=H.clean.branches,dv=estDerived(totL,totA,branches,bmode,H.clean.kL,H.clean.kA),facOn=estFactorsActive(s);
+        const multi=sh.installLf||sh.installSf||sh.fabLf||sh.fabSf;
         const bBig=(!dv.hasBranchRate||bmode==='none'||!branches)?'—':('+'+ft1(dv.branchFlat)+'h');
-        const noteAdd=bmode==='none'?'nothing':(es.hrPerBranch>0?ft1(es.hrPerBranch)+'h per branch':'nothing yet (set it in Standards)');
+        const noteAdd=bmode==='none'?'nothing':(s.hrPerBranch>0?ft1(s.hrPerBranch)+'h per branch':'nothing yet (set it in Standards)');
+        const tiles=[];
+        if(sh.cleanLf)tiles.push([dv.hasLf?ft1(dv.hrsLf):'—',multi?'Cleaning hrs by lf':'Hrs by lf']);
+        if(sh.cleanSf)tiles.push([dv.hasSf?ft1(dv.hrsSf):'—',multi?'Cleaning hrs by sf':'Hrs by sf']);
+        if(sh.branches)tiles.push([bBig,`Branches (${branches})`]);
+        if(sh.doors)tiles.push([dv.hasDoor?dv.doors:'—','Access doors']);
+        [['install','Install'],['fab','Shop fab']].forEach(([c,l])=>{if(sh[c+'Lf'])tiles.push([H[c].lf!=null?ft1(H[c].lf):'—',l+' hrs by lf']);if(sh[c+'Sf'])tiles.push([H[c].sf!=null?ft1(H[c].sf):'—',l+' hrs by sf']);});
+        const facLine=[];if(facOn)facLine.push(`Labor factors applied: <b>×${H.clean.kL.toFixed(3)}</b> on lf hours · <b>×${H.clean.kA.toFixed(3)}</b> on sf hours`);
+        [['install','Install'],['fab','Shop fab']].forEach(([c,l])=>{if((sh[c+'Lf']||sh[c+'Sf'])&&(Math.abs(H[c].kL-1)>1e-4||Math.abs(H[c].kA-1)>1e-4))facLine.push(`${l}: ×${H[c].kL.toFixed(3)} lf · ×${H[c].kA.toFixed(3)} sf`);});
         return `<div class="card est-card" style="padding:14px 16px;margin-top:12px">
         <div class="eyebrow" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><span>Estimate</span><button type="button" class="linkbtn" id="estEditStd">Standards</button></div>
-        <div class="stats"><div class="s"><b>${dv.hasLf?ft1(dv.hrsLf):'—'}</b><span>Hrs by lf</span></div>
-          <div class="s"><b>${dv.hasSf?ft1(dv.hrsSf):'—'}</b><span>Hrs by sf</span></div>
-          <div class="s"><b>${bBig}</b><span>Branches (${branches})</span></div>
-          <div class="s"><b>${dv.hasDoor?dv.doors:'—'}</b><span>Access doors</span></div></div>
-        <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:12px;color:var(--muted)">Branch load</span>
+        ${tiles.length?`<div class="stats" style="flex-wrap:wrap">${tiles.map(([b,l])=>`<div class="s"><b>${b}</b><span>${l}</span></div>`).join('')}</div>`:'<p class="cl-note">Nothing chosen to show — pick figures in Standards → Display.</p>'}
+        ${sh.branchToggle?`<div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:12px;color:var(--muted)">Branch load</span>
           <div class="seg" id="estBranchMode" style="flex:1;min-width:160px;max-width:220px">
             <button type="button" data-bm="flat"${bmode!=='none'?' class="on"':''}>On</button>
-            <button type="button" data-bm="none"${bmode==='none'?' class="on"':''}>Off</button></div></div>
-        ${facOn?`<div class="cl-statrow" id="estFac" style="margin-top:10px;font-size:12.5px">Labor factors applied: <b>×${fx.kL.toFixed(3)}</b> on lf hours · <b>×${fx.kA.toFixed(3)}</b> on sf hours</div>`:''}
-        ${dv.any?`<p class="cl-note" style="margin:10px 0 0;font-size:12.5px">Hrs by lf and hrs by sf each already include branch time${facOn?' and your duct-type / size factors':''} — pick whichever your crew prices by. Branch load adds ${noteAdd}.</p>`:'<p class="cl-note" style="margin:10px 0 0">Set your standards (hours per lf and/or sf, access door spacing, branch load) to estimate labor and doors.</p>'}</div>`;})()}
+            <button type="button" data-bm="none"${bmode==='none'?' class="on"':''}>Off</button></div></div>`:''}
+        ${sh.factors&&facLine.length?`<div class="cl-statrow" id="estFac" style="margin-top:10px;font-size:12.5px">${facLine.join('<br>')}</div>`:''}
+        ${sh.note?(dv.any?`<p class="cl-note" style="margin:10px 0 0;font-size:12.5px">Hrs by lf and hrs by sf each already include branch time${facOn?' and your duct-type / size factors':''} — pick whichever your crew prices by. Branch load adds ${noteAdd}.</p>`:'<p class="cl-note" style="margin:10px 0 0">Set your standards (hours per lf and/or sf, access door spacing, branch load) to estimate labor and doors.</p>'):''}</div>
+        ${sh.actuals?(()=>{const a=e.actual||{};const cats=EST_CATS.filter(([c])=>c==='clean'||sh[c+'Lf']||sh[c+'Sf']||+a[c]>0);
+          const cmp=c=>{const act=+a[c];if(!(act>0))return '';const h=H[c],parts=[];if(h.lf!=null)parts.push(`by lf ${ft1(h.lf)}h (${h.lf>=act?'+':''}${((h.lf/act-1)*100).toFixed(0)}%)`);if(h.sf!=null)parts.push(`by sf ${ft1(h.sf)}h (${h.sf>=act?'+':''}${((h.sf/act-1)*100).toFixed(0)}%)`);return parts.length?`<div style="font-size:12px;color:var(--muted);margin-top:2px">Estimated ${parts.join(' · ')}</div>`:'';};
+          return `<div class="card" id="estActual" style="padding:14px 16px;margin-top:12px"><div class="eyebrow" style="margin-bottom:8px">Actual hours (after the job)</div>
+          ${cats.map(([c,l])=>`<div style="display:flex;align-items:center;gap:10px;margin:6px 0"><label for="act_${c}" style="flex:1">${l}<span>${cmp(c)}</span></label><input class="inp" id="act_${c}" inputmode="decimal" style="width:96px" value="${+a[c]>0?+a[c]:''}" placeholder="hours"></div>`).join('')}
+          <label style="display:flex;align-items:center;gap:10px;margin-top:10px"><input type="checkbox" id="actTune"${e.tuneUse?' checked':''} style="width:20px;height:20px"><span>Use this job to fine-tune the multipliers</span></label></div>`;})():''}`;})()}
       <div class="section-head"><h2>Drawings</h2></div>
       ${draws.length?`<div class="card" style="padding:0">${list}</div>`
         :`<div class="empty"><div class="ic">${I.plan}</div><h2>No drawings yet</h2><p>Upload a PDF to measure.</p></div>`}
@@ -4415,6 +4534,10 @@ function viewEstimate(app){
   app.querySelector('#estMenu').onclick=()=>estMenu(e);
   {const es=app.querySelector('#estEditStd');if(es)es.onclick=estStandardsSheet;}
   app.querySelectorAll('#estBranchMode [data-bm]').forEach(b=>b.onclick=async()=>{e.branchMode=b.dataset.bm;await pPut('estimates',e).catch(()=>toast('Not saved — check connection'));render();});
+  /* actual hours after the job, and whether this job tunes the multipliers */
+  app.querySelectorAll('#estActual input[id^="act_"]').forEach(inp=>inp.onchange=async()=>{const c=inp.id.slice(4),x=parseFloat(inp.value);e.actual=Object.assign({},e.actual||{});if(x>0)e.actual[c]=x;else delete e.actual[c];
+    await pPut('estimates',e).catch(()=>toast('Not saved — check connection'));render();});
+  {const t=app.querySelector('#actTune');if(t)t.onchange=async()=>{e.tuneUse=t.checked;await pPut('estimates',e).catch(()=>toast('Not saved — check connection'));toast(t.checked?'This job will fine-tune the multipliers (Standards → Fine-tune)':'No longer used for fine-tuning');render();};}
   app.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>go('estmeasure',{estDrawId:b.dataset.d}));
   const input=app.querySelector('#estInput');
   app.querySelector('#addEst').onclick=()=>input.click();

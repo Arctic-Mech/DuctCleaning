@@ -100,6 +100,18 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   and **hours by sf** side by side (not summed) plus access doors — pick whichever your crew prices
   by. Estimating is desktop/laptop oriented (mouse wheel zooms); the drawing renders at high
   resolution for sharp zooming.
+  **Standards tabs**: **Cleaning**, **Install** and **Shop fab** each have their own hours per lf,
+  hours per sf, hours per branch, duct-type multipliers and **width-band multipliers** (under 6″,
+  6–10″, 10–14″, 14–20″, 20–28″, 28–40″, 40″+), applied to each measured piece. **Display** picks
+  which figures the estimate card shows (cleaning lf/sf, branches, access doors, install lf/sf, shop
+  fab lf/sf, the branch switch, the factors line, notes, actual hours); install and fab are off until
+  you turn them on.
+  **Actual hours / fine-tune**: after a job, enter the hours it actually took (cleaning, install,
+  shop fab) on the estimate and tick **Use this job to fine-tune**. The **Fine-tune** tab fits every
+  multiplier — rate, duct type, width bands and hours per branch — to all ticked jobs (a regularised
+  least-squares fit on log hours, so one job mostly moves the rate and the shape factors only move
+  once several jobs agree), shows the average miss now vs. with the suggestions and the changed
+  settings, and applies them with one button.
 - **Export**: choose what the PDF includes — **Reports**, **Markups**, or **Both**.
   - *Reports*: each plan is a full-resolution vector page with numbered pins; tapping a pin jumps to
     that report's page.
@@ -128,7 +140,7 @@ Firebase Storage is not used, so the project stays on the free Spark plan.
 | `users`     | People, keyed by name (`u_first_last`) |
 | `mkgroups`  | Markup groups, owned by a person, with their set color |
 | `checklist` | Truck checklist items: who checked each one and when, replacement order, replacement history and replace-by date |
-| `estimates` | Estimate takeoffs: number + job name |
+| `estimates` | Estimate takeoffs: number + job name, actual hours and the fine-tune flag |
 | `estdrawings` | Estimate drawings (PDF per page) with their scale calibration |
 | `estruns` | Measured duct runs: centerline points, detected/entered width |
 
