@@ -924,7 +924,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 01:11';
+const BUILD='Nov 21 01:54';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -4293,9 +4293,12 @@ function estInPoly(Q,x,y){let c=false;for(let i=0,j=Q.length-1;i<Q.length;j=i++)
 // best-first toward the end tap. Returns the legs' centreline points (page pt), or null; the measuring then centres
 // each leg and traces each fitting exactly.
 async function estAutoRoute(V,P0,P1,maxW,minW){let r=null;   /* the likeliest readings at the start tap each tried; the cheapest complete route wins */
-  const t0=performance.now();for(let k=0;k<3;k++){if(performance.now()-t0>6000)break;const q=await estAutoRoute0(V,P0,P1,maxW||160,minW||4,k,r?r.cost:Infinity);if(q===undefined)break;if(q&&(!r||q.cost<r.cost))r=q;}if(!r)return null;
+  const t0=performance.now(),dl=t0+12000;for(let k=0;k<3;k++){if(performance.now()>dl)break;const q=await estAutoRoute0(V,P0,P1,maxW||160,minW||4,k,r?r.cost:Infinity,dl);if(q===undefined)break;if(q&&q.w0<0.9*(maxW||160)&&estRouteStartsAt(q,P0)&&(!r||q.cost<r.cost))r=q;}   /* a start as wide as the search allows spans two ducts */if(!r)return null;
   const pts=r.pts.filter((p,i)=>i===0||Math.hypot(p[0]-r.pts[i-1][0],p[1]-r.pts[i-1][1])>0.5);return estSimplify(pts,Math.max(1,0.12*r.wmin));}
-async function estAutoRoute0(V,P0,P1,maxW,minW,pick,bound){let wmin=Infinity;
+// the route has to begin in the duct that was tapped: its first leg passes within half the duct's width of the tap
+function estRouteStartsAt(q,P0){const a=q.pts[0],b=q.pts[1]||a,ex=b[0]-a[0],ey=b[1]-a[1],L2=ex*ex+ey*ey||1e-9;const t=Math.max(0,Math.min(1,((P0[0]-a[0])*ex+(P0[1]-a[1])*ey)/L2));
+  return Math.hypot(P0[0]-a[0]-ex*t,P0[1]-a[1]-ey*t)<=(q.w0||q.wmin)/2+2;}
+async function estAutoRoute0(V,P0,P1,maxW,minW,pick,bound,deadline){let wmin=Infinity;deadline=deadline||Infinity;
   const nrm=v=>{const l=Math.hypot(v[0],v[1])||1;return [v[0]/l,v[1]/l];},dist=(p,q)=>Math.hypot(p[0]-q[0],p[1]-q[1]),rot=(d,a)=>[d[0]*Math.cos(a)-d[1]*Math.sin(a),d[0]*Math.sin(a)+d[1]*Math.cos(a)];
   const AC=new Map(),across=(p,d,K)=>{const kk=(p[0]*4|0)+','+(p[1]*4|0)+','+Math.round(Math.atan2(d[1],d[0])*600)+','+K;if(AC.has(kk))return AC.get(kk);const r=across0(p,d,K);AC.set(kk,r);return r;};
   const across0=(p,d,K)=>{const n=[-d[1],d[0]];const cl=estVecWall(V,p[0],p[1],n[0],n[1],1,d[0],d[1],1000,2000,K,maxW),cr=estVecWall(V,p[0],p[1],n[0],n[1],-1,d[0],d[1],1000,2000,K,maxW);if(!cl||!cr)return null;
@@ -4310,24 +4313,42 @@ async function estAutoRoute0(V,P0,P1,maxW,minW,pick,bound){let wmin=Infinity;
     for(const j of [1,-1,2,-2,3,-3,4,-4,5,-5]){const q=[m.c[0]+m.dir[0]*st*j,m.c[1]+m.dir[1]*st*j],mm=across(q,m.dir,Kof(m.w));if(same(mm,m.c,m.w,m.dir))n++;if(n>=3)break;}   /* agreeing crossings either way along it */
     return n>=3?{p:m.c,d:m.dir,w:m.w}:null;};
   const starts=[];
-  for(let k=0;k<72;k++){const th=k*Math.PI/72,d=[Math.cos(th),Math.sin(th)];for(const sg of [1,-1]){const L=leg(P0,[d[0]*sg,d[1]*sg]);if(!L)continue;
-    const L2=leg(L.p,[-L.d[0],-L.d[1]],L.w);const sc=(L2?1:0)*1e4+L.w;starts.push({L,sc});}}   /* confirmed both ways first, then the widest (a tap in a duct is also inside any tag box or line pair within it) */
+  const readAt=(Q,nDir)=>{for(let k=0;k<nDir;k++){const th=k*Math.PI/nDir,d=[Math.cos(th),Math.sin(th)];for(const sg of [1,-1]){const L=leg(Q,[d[0]*sg,d[1]*sg]);if(!L)continue;
+    if(Math.abs(-(P0[0]-L.p[0])*L.d[1]+(P0[1]-L.p[1])*L.d[0])>L.w/2)continue;   /* the tap has to be inside the duct read */
+    const L2=leg(L.p,[-L.d[0],-L.d[1]],L.w);const sc=(L2?1:0)*1e4+L.w-(L.w>=0.9*maxW?2e4:0);starts.push({L,sc});}}};   /* a reading as wide as the search allows spans two ducts */
+  readAt(P0,72);
+  if(!starts.some(c=>c.sc>=1e4&&c.L.w<0.9*maxW&&c.L.w>=Math.max(8,3*minW)))for(const r of [4,8])for(let a=0;a<8;a++)readAt([P0[0]+r*Math.cos(a*Math.PI/4),P0[1]+r*Math.sin(a*Math.PI/4)],24);   /* the tap sits on a line inside the duct: read from just beside it */   /* confirmed both ways first, then the widest (a tap in a duct is also inside any tag box or line pair within it) */
   starts.sort((x,y)=>y.sc-x.sc);const uniq=[];for(const c of starts)if(!uniq.some(u=>Math.abs(u.L.w-c.L.w)<Math.max(1,0.1*c.L.w)))uniq.push(c);
   const best=uniq[pick];if(!best)return undefined;
   const heap=[],pri=s=>s.len+dist(s.p,P1),push=s=>{heap.push(s);heap.sort((x,y)=>pri(y)-pri(x));};
+  /* a detour (out along another duct and back to the same line) is cut out when the duct visibly carries straight on between
+     where the detour leaves and where it comes back: most crossings along the straight line read the same duct */
+  const plen=(T,i,j)=>{let L=0;for(let k=i;k<j;k++)L+=dist(T[k],T[k+1]);return L;};
+  const straightOn=(a,b,w)=>{const d=nrm([b[0]-a[0],b[1]-a[1]]),L=dist(a,b),st=Math.max(2,w/3);let n=0,ok=0;
+    for(let t=st;t<L-st/2;t+=st){n++;const q=[a[0]+d[0]*t,a[1]+d[1]*t];if(wallsAround(q,d,w))ok++;}
+    return n>=2&&ok>=0.75*n;};   /* the size may change a little along the way (a transition), the line has to stay inside the duct */
+  // walls on both sides of q, running along d, a pair the duct's size (±) with q well inside — labels and lines inside the duct looked past
+  const wallsAround=(q,d,w)=>{const n=[-d[1],d[0]],cl=estVecWall(V,q[0],q[1],n[0],n[1],1,d[0],d[1],1000,2000,Kof(w),maxW),cr=estVecWall(V,q[0],q[1],n[0],n[1],-1,d[0],d[1],1000,2000,Kof(w),maxW);if(!cl||!cr)return false;
+    for(let a=0;a<cl.length;a++)for(let b=0;b<cr.length;b++){const W=cl[a]+cr[b];if(W>=0.75*w&&W<=1.4*w&&Math.abs(cl[a]-cr[b])/2<=0.3*W)return true;}return false;};
+  const shortcut=T=>{T=T.slice();let budget=40;for(let i=1;i<T.length-2;i++){const w0=(()=>{const a=T[i-1],b=T[i],d=nrm([b[0]-a[0],b[1]-a[1]]),m=across([(a[0]+b[0])/2,(a[1]+b[1])/2],d,Kof(wmin));return m?m.w:null;})();if(!w0)continue;
+      const din=nrm([T[i][0]-T[i-1][0],T[i][1]-T[i-1][1]]);
+      for(let j=T.length-1;j>=i+2;j--){const dd=nrm([T[j][0]-T[i][0],T[j][1]-T[i][1]]),D=dist(T[i],T[j]);if(D<w0||din[0]*dd[0]+din[1]*dd[1]<0.985)continue;
+        if(plen(T,i,j)<1.3*D)continue;if(--budget<0)return T;if(straightOn(T[i],T[j],w0)){T.splice(i+1,j-i-1);break;}}}return T;};
+  const fin=(trail,len,p)=>{const pts=shortcut(trail);return {pts,wmin,w0:best.L.w,cost:len+dist(p,P1)-(plen(trail,0,trail.length-1)-plen(pts,0,pts.length-1))};};
   for(const sg of [1,-1])push({p:best.L.p,d:[best.L.d[0]*sg,best.L.d[1]*sg],w:best.L.w,len:0,trail:[best.L.p]});
   const seen=new Set(),key=(p,d,w)=>Math.round(p[0]/Math.max(3,w/2))+':'+Math.round(p[1]/Math.max(3,w/2))+':'+Math.round(Math.atan2(d[1],d[0])/(Math.PI/8));
   const endOn=(p,d)=>{const al=(P1[0]-p[0])*d[0]+(P1[1]-p[1])*d[1];return [p[0]+d[0]*al,p[1]+d[1]*al];};   /* the end on the duct's centreline, level with the tap */
   const atEnd=(p,d,w,reach)=>{const v=[P1[0]-p[0],P1[1]-p[1]],al=v[0]*d[0]+v[1]*d[1],cr=Math.abs(-v[0]*d[1]+v[1]*d[0]);return al>=-1&&al<=reach&&cr<=w/2+1;};
-  for(let it=0;it<800&&heap.length;it++){if(it%15===14)await new Promise(r=>setTimeout(r,0));const s=heap.pop();if(pri(s)>bound)break;const k=key(s.p,s.d,s.w);if(seen.has(k))continue;seen.add(k);
+  for(let it=0;it<800&&heap.length;it++){if(performance.now()>deadline)return null;   /* past the time allowed: no route (the taps are measured as drawn) */
+    if(it%15===14)await new Promise(r=>setTimeout(r,0));const s=heap.pop();if(pri(s)>bound)break;const k=key(s.p,s.d,s.w);if(seen.has(k))continue;seen.add(k);
     let p=s.p,d=s.d,w=s.w,len=s.len;const trail=s.trail.slice();wmin=Math.min(wmin,w);
-    for(let st=0;st<3000;st++){
-      if(atEnd(p,d,w,Math.max(4,w/2))){trail.push(p,endOn(p,d));return {pts:trail,wmin,cost:len+dist(p,P1)};}
+    for(let st=0;st<3000;st++){if((st&63)===63&&performance.now()>deadline)return null;
+      if(atEnd(p,d,w,Math.max(4,w/2))){trail.push(p,endOn(p,d));return fin(trail,len,p);}
       const step=Math.max(1.5,Math.min(4,w/5));let nx=null;
       for(let j=1;j*step<=2*w+step;j++){const q=[p[0]+d[0]*step*j,p[1]+d[1]*step*j],m=across(q,d,Kof(w));if(same(m,q,w,d)){nx=m;break;}if(j===1&&atEnd(p,d,w,2*w))break;}
-      if(nx&&atEnd(p,d,w,dist(nx.c,p)+1)){trail.push(p,endOn(p,d));return {pts:trail,wmin,cost:len+dist(p,P1)};}   /* the end tap lies in the stretch stepped over */   /* a crossing that disagrees is stepped over when the duct resumes just beyond */
+      if(nx&&atEnd(p,d,w,dist(nx.c,p)+1)){trail.push(p,endOn(p,d));return fin(trail,len,p);}   /* the end tap lies in the stretch stepped over */   /* a crossing that disagrees is stepped over when the duct resumes just beyond */
       if(nx){len+=dist(nx.c,p);p=nx.c;d=nx.dir;w=nx.w;continue;}
-      trail.push(p);if(atEnd(p,d,w,2*w)){trail.push(endOn(p,d));return {pts:trail,wmin,cost:len+dist(p,P1)};}   // the leg ends here
+      trail.push(p);if(atEnd(p,d,w,2*w)){trail.push(endOn(p,d));return fin(trail,len,p);}   // the leg ends here
       const n=[-d[1],d[0]];
       for(const ang of [0,Math.PI/4,-Math.PI/4,Math.PI/2,-Math.PI/2,Math.PI/6,-Math.PI/6,Math.PI/3,-Math.PI/3]){const dd=rot(d,ang);let got=null;
         const pos=[];for(const g of ang===0?[0,0.25,-0.25,0.5,-0.5,0.7,-0.7]:[0,0.5,1,1.5,2,2.5,3.2])for(const f of [0.5,1,1.6,2.4,3.4,4.5,6]){const o=ang===0?[n[0]*g*w,n[1]*g*w]:[d[0]*g*w,d[1]*g*w];pos.push({g,c:[p[0]+o[0]+dd[0]*f*w,p[1]+o[1]+dd[1]*f*w]});}
@@ -4343,7 +4364,10 @@ async function estAutoRoute0(V,P0,P1,maxW,minW,pick,bound){let wmin=Infinity;
       break;}}
   return null;}
 // everything a drawn run stores from the wall sampler: centred points, per-segment mean width, width profile, outline
-async function estMeasureRun(d,ptsN,centre,raw,opt){opt=opt||{};
+// a two-tap route the measuring can't read a width along is dropped: the run is measured on the taps themselves (and the user told)
+async function estMeasureRun(d,ptsN,centre,raw,opt){const r=await estMeasureRun0(d,ptsN,centre,raw,opt);if(r||!opt||!opt.route)return r;
+  if(opt.onNoRoute)opt.onNoRoute();return estMeasureRun0(d,ptsN,centre,raw,Object.assign({},opt,{route:false,onNoRoute:null}));}
+async function estMeasureRun0(d,ptsN,centre,raw,opt){opt=opt||{};
   // pass 1 (first line each way) lines the run up on its duct; pass 2 (on the lined-up run) finds the walls proper:
   // lines that run on along the duct, looking past tags, crossing ducts and boxes inside it
   let pts=ptsN;const V=await estVecPage(d);   // the PDF's own vector lines (exact walls), when the drawing has them
