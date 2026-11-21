@@ -116,6 +116,9 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .content{flex:1;min-height:0;
   padding:16px max(16px,env(safe-area-inset-right,0px)) 120px max(16px,env(safe-area-inset-left,0px))}
 .content.flush{padding:0}
+/* wide screens (desktop estimating, iPad landscape): keep lists and cards a readable width */
+@media (min-width:960px){.content:not(.flush){padding-left:calc((100% - 920px)/2);padding-right:calc((100% - 920px)/2)}
+  body .bottombar{padding-left:calc((100% - 920px)/2);padding-right:calc((100% - 920px)/2)}}
 
 /* ---------- bottom bar ---------- */
 .bottombar{position:fixed;left:0;right:0;bottom:0;z-index:50;
@@ -921,7 +924,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 00:47';
+const BUILD='Nov 21 00:53';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -4607,6 +4610,7 @@ function viewEstimate(app){
         [['install','Install'],['fab','Shop fab']].forEach(([c,l])=>{if((sh[c+'Lf']||sh[c+'Sf'])&&(Math.abs(H[c].kL-1)>1e-4||Math.abs(H[c].kA-1)>1e-4))facLine.push(`${l}: ×${H[c].kL.toFixed(3)} lf · ×${H[c].kA.toFixed(3)} sf`);});
         return `<div class="card est-card" style="padding:14px 16px;margin-top:12px">
         <div class="eyebrow" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><span>Estimate${tunedN?` <span id="estTuned" style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--muted)">· tuned from ${tunedN} job${tunedN>1?'s':''}</span>`:''}</span><button type="button" class="linkbtn" id="estEditStd">Standards</button></div>
+        ${!dv.any&&!EST_CATS.some(([c])=>H[c].lf!=null||H[c].sf!=null)?`<div class="cl-note" id="estNoRates" style="margin:0 0 10px;padding:9px 12px;border-radius:10px;background:var(--surface-2)">No labor rates yet — <button type="button" class="linkbtn" id="estSetRates" style="padding:0">set hours per lf or sq ft in Standards</button> to see hours here.</div>`:''}
         ${tiles.length?`<div class="stats" style="flex-wrap:wrap">${tiles.map(([b,l])=>`<div class="s"><b>${b}</b><span>${l}</span></div>`).join('')}</div>`:'<p class="cl-note">Nothing chosen to show — pick figures in Standards → Display.</p>'}
         ${sh.branchToggle?`<div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:12px;color:var(--muted)">Branch load</span>
           <div class="seg" id="estBranchMode" style="flex:1;min-width:160px;max-width:220px">
@@ -4628,7 +4632,7 @@ function viewEstimate(app){
   app.querySelectorAll('.content .card').forEach(card=>{[...card.children].forEach((c,i)=>{if(i)c.style.borderTop='1px solid var(--line)';});});
   app.querySelector('#back').onclick=back;
   app.querySelector('#estMenu').onclick=()=>estMenu(e);
-  {const es=app.querySelector('#estEditStd');if(es)es.onclick=estStandardsSheet;}
+  {const es=app.querySelector('#estEditStd');if(es)es.onclick=estStandardsSheet;const sr=app.querySelector('#estSetRates');if(sr)sr.onclick=estStandardsSheet;}
   app.querySelectorAll('#estBranchMode [data-bm]').forEach(b=>b.onclick=async()=>{e.branchMode=b.dataset.bm;await pPut('estimates',e).catch(()=>toast('Not saved — check connection'));render();});
   /* actual hours after the job, and whether this job tunes the multipliers */
   app.querySelectorAll('#estActual input[id^="act_"]').forEach(inp=>inp.onchange=async()=>{const c=inp.id.slice(4),x=parseFloat(inp.value);e.actual=Object.assign({},e.actual||{});if(x>0)e.actual[c]=x;else delete e.actual[c];
