@@ -898,7 +898,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 20 17:30';
+const BUILD='Nov 20 18:38';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -3658,18 +3658,18 @@ function estVecSnap(V,P0,nx,ny,ux,uy,tol){let best=null;
 // (offset oa from the line A + s·u, + = left) to the wall at sb (offset ob). Every step runs on along the duct (never
 // back, never across it) inside the band of offsets the two ends span, so a reducer's taper, an offset or a curved
 // stretch comes out exactly as drawn. Points (page pt) or null when the strokes don't connect the two ends.
-function estVecTrace(V,A,ux,uy,sa,oa,sb,ob){const nx=-uy,ny=ux;
+function estVecTrace(V,A,ux,uy,sa,oa,sb,ob,W){const nx=-uy,ny=ux,open=ob==null;   /* ob null: open end (a run's free end), the wall followed wherever it goes within half a width */
   const al=p=>(p[0]-A[0])*ux+(p[1]-A[1])*uy,of=p=>(p[0]-A[0])*nx+(p[1]-A[1])*ny;
-  const s0=estVecSnap(V,[A[0]+ux*sa+nx*oa,A[1]+uy*sa+ny*oa],nx,ny,ux,uy,1.2),s1=estVecSnap(V,[A[0]+ux*sb+nx*ob,A[1]+uy*sb+ny*ob],nx,ny,ux,uy,1.2);
-  if(!s0||!s1)return null;oa=of(s0.p);ob=of(s1.p);
-  const lo=Math.min(oa,ob)-1.5,hi=Math.max(oa,ob)+1.5,end=(j,e)=>e?[V.x2[j],V.y2[j]]:[V.x1[j],V.y1[j]];
+  const s0=estVecSnap(V,[A[0]+ux*sa+nx*oa,A[1]+uy*sa+ny*oa],nx,ny,ux,uy,1.2),s1=open?null:estVecSnap(V,[A[0]+ux*sb+nx*ob,A[1]+uy*sb+ny*ob],nx,ny,ux,uy,1.2);
+  if(!s0||(!open&&!s1))return null;oa=of(s0.p);if(!open)ob=of(s1.p);
+  const lo=open?oa-0.5*W:Math.min(oa,ob)-1.5,hi=open?oa+0.5*W:Math.max(oa,ob)+1.5,end=(j,e)=>e?[V.x2[j],V.y2[j]]:[V.x1[j],V.y1[j]];
   let budget=4000;
   // the walk goes piece by piece: S -> E along stroke id. At E it carries on along a stroke that starts there, one it
   // meets there (a T-junction: e.g. a box edge passing the corner), or one starting just ahead (a small break);
   // a square step along a box edge (≤ 8 pt) is allowed between stretches that run along the duct
   const walk=(S,E,id,used,depth,perp)=>{if(--budget<0||depth>600)return null;
     const aE=al(E);
-    if(aE>=sb-1e-9){const aC=al(S),t=aE-aC>1e-9?(sb-aC)/(aE-aC):1,X=[S[0]+(E[0]-S[0])*t,S[1]+(E[1]-S[1])*t];return Math.abs(of(X)-ob)<=0.15?[X]:null;}
+    if(aE>=sb-1e-9){const aC=al(S),t=aE-aC>1e-9?(sb-aC)/(aE-aC):1,X=[S[0]+(E[0]-S[0])*t,S[1]+(E[1]-S[1])*t];return open||Math.abs(of(X)-ob)<=0.15?[X]:null;}
     let dx=E[0]-S[0],dy=E[1]-S[1];const dl=Math.hypot(dx,dy)||1;dx/=dl;dy/=dl;
     const cands=[];
     const consider=(j,P0,P1,gap,back)=>{const ex=P1[0]-P0[0],ey=P1[1]-P0[1],L=Math.hypot(ex,ey);if(L<1e-6)return;
@@ -4123,7 +4123,11 @@ async function estMeasureRun(d,ptsN,centre,raw){
       const steady=k=>k>=0&&k<N&&sg.lc[k]!=null&&(k<1||(sg.lc[k-1]!=null&&Math.abs(o[k]-o[k-1])<=0.05))&&(k>N-2||(sg.lc[k+1]!=null&&Math.abs(o[k+1]-o[k])<=0.05))&&!!estVecSnap(V,[A[0]+ux*sg.s[k]+nx*o[k],A[1]+uy*sg.s[k]+ny*o[k]],nx,ny,ux,uy,0.1);   /* on found, unchanging wall that is really drawn there */
       const trySpan=(ka,kb,lev)=>{ka=Math.max(0,ka);kb=Math.min(N-1,kb);if(lev==null){for(let j=0;j<12&&ka>0&&!steady(ka);j++)ka--;for(let j=0;j<12&&kb<N-1&&!steady(kb);j++)kb++;}if(kb<=ka||ka<done)return false;const sa=sg.s[ka],sb=sg.s[kb],A0=ka===0&&a0&&lev==null,A1=kb===N-1&&a1&&lev==null;
         if((!A0&&i>0&&sa<sg.lw[ka]/2*t0)||(!A1&&i<last&&sg.L-sb<sg.lw[kb]/2*t1))return false;
-        const tr=estVecTrace(V,A,ux,uy,sa,lev!=null?lev:A0?ofs(a0):o[ka],sb,lev!=null?lev:A1?ofs(a1):o[kb]);if(!tr)return false;
+        /* at the run's own free start / end, with no wall found there, the wall is followed open-ended to it (a short piece past a reducer) */
+        const openE=lev==null&&kb===N-1&&!A1&&i===last&&!steady(kb)&&steady(ka),openS=lev==null&&ka===0&&!A0&&i===0&&!steady(ka)&&steady(kb)&&!openE;
+        let tr;if(openS){const B0=[A[0]+ux*sg.L,A[1]+uy*sg.L],q=estVecTrace(V,B0,-ux,-uy,sg.L-sb,-o[kb],sg.L-sa,null,sg.lw[kb]);tr=q&&q.reverse();}
+        else tr=estVecTrace(V,A,ux,uy,sa,lev!=null?lev:A0?ofs(a0):o[ka],sb,openE?null:lev!=null?lev:A1?ofs(a1):o[kb],sg.lw[ka]);
+        if(!tr)return false;
         E[sd]=E[sd].filter(q=>q[0]<sa-1e-6).concat(tr.map(p=>[at(p),p]),E[sd].filter(q=>q[0]>sb+1e-6));
         let s0=0,s1=0;for(let q=ka;q<kb;q++)s0+=(o[q]+o[q+1])/2*(sg.s[q+1]-sg.s[q]);
         for(let q=1;q<tr.length;q++)s1+=(ofs(tr[q-1])+ofs(tr[q]))/2*(at(tr[q])-at(tr[q-1]));
@@ -4140,6 +4144,10 @@ async function estMeasureRun(d,ptsN,centre,raw){
           const x=Math.max(0,cl[c][0]),y=Math.min(N-1,cl[c][1]),pe=c>0?Math.min(N-1,Math.max(0,cl[c-1][1])):0,ns=c+1<cl.length?Math.max(0,Math.min(N-1,cl[c+1][0])):N-1;
           if(sg.s[x]-sg.s[pe]<sg.s[ns]-sg.s[y]){if(steady(y))trySpan(pe,y,o[y]);}else if(steady(x))trySpan(x,ns,o[x]);}
         c0=e+1;}}
+    /* at a sharp corner (a square elbow, a tee) each edge carries on to where it meets the next leg's edge: a square corner, not a cut-off one */
+    if(i>0&&t0>0.02)for(const [Q,F] of [[L,E[1]],[R,E[-1]]]){if(Q.length<2||F.length<2)continue;const a=Q[Q.length-2],b=Q[Q.length-1],c=F[0][1],e=F[1][1];
+      const d1=[b[0]-a[0],b[1]-a[1]],d2=[e[0]-c[0],e[1]-c[1]],den=d1[0]*d2[1]-d1[1]*d2[0];if(Math.abs(den)<1e-9)continue;
+      const t=((c[0]-b[0])*d2[1]-(c[1]-b[1])*d2[0])/den,X=[b[0]+d1[0]*t,b[1]+d1[1]*t];if(t>0&&Math.hypot(X[0]-b[0],X[1]-b[1])<=1.5*sg.lw[0])Q.push(X);}
     E[1].forEach(q=>L.push(q[1]));E[-1].forEach(q=>R.push(q[1]));
     /* the width at each sample from the band's own (traced) edges, so each size piece matches the outline */
     const offAt=(Q,sv)=>{if(!Q.length)return null;let j=0;while(j<Q.length&&Q[j][0]<sv)j++;if(j===0||j===Q.length)return null;const p=Q[j-1],q=Q[j],f=q[0]-p[0]>1e-9?(sv-p[0])/(q[0]-p[0]):0,
