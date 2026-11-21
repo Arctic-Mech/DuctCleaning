@@ -181,8 +181,9 @@ Firebase console → **Firestore Database → Rules** → paste `firebase/firest
 
 ### Backup
 Home ⋯ menu → **Download a backup**: one JSON file with every job, plan's details, report, tag, freehand
-stroke, checklist item, person, group, estimate, run and the standards (photos and plan PDFs are not
-included — they stay in the database). Worth doing now and then, since the open rules mean anyone with
+stroke, checklist item, person, group, estimate, run and the standards, plus plan preview images (photos
+and plan PDFs are not included — they stay in the database). **Restore from a backup…** adds back any
+record that's missing from the database (matched by id); nothing that exists is changed or removed. Worth doing now and then, since the open rules mean anyone with
 the URL could change data.
 
 ### Free-tier limits and offloading

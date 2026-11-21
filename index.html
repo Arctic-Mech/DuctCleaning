@@ -933,7 +933,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 02:48';
+const BUILD='Nov 21 02:51';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -5695,18 +5695,33 @@ function homeMenu(){const body=document.createElement('div');const cur=document.
     <div class="seg" id="themeSeg" style="margin:8px 0 16px">${[['','Match phone'],['light','Light'],['dark','Dark']].map(([k,l])=>`<button type="button" data-th="${k}"${k===cur?' class="on"':''}>${l}</button>`).join('')}</div>
     <div class="actionlist" id="hmActs"></div>
     <p class="cl-note" style="margin-top:14px;font-size:12px">Version ${esc(BUILD==='__BUILD__'?'dev':BUILD)}</p>`;
-  const acts=body.querySelector('#hmActs'),est=mkAction(I.plan,'Estimates (measure takeoffs)'),bk=mkAction(I.download,'Download a backup (all records, no photos or PDFs)');acts.append(est,bk);
+  const acts=body.querySelector('#hmActs'),est=mkAction(I.plan,'Estimates (measure takeoffs)'),bk=mkAction(I.download,'Download a backup (all records, no photos or PDFs)'),rs=mkAction(I.upload,'Restore from a backup…');acts.append(est,bk,rs);
+  const rsIn=document.createElement('input');rsIn.type='file';rsIn.accept='application/json,.json';rsIn.className='sr';acts.appendChild(rsIn);
   const ctl=sheetShell({title:'Menu',bodyNode:body});
   body.querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>{const k=b.dataset.th;setTheme(k);body.querySelectorAll('[data-th]').forEach(x=>x.classList.toggle('on',x===b));});
   est.onclick=()=>{ctl.close();go('estimates',{estId:null,estDrawId:null});};
-  bk.onclick=()=>{ctl.close();downloadBackup();};}
+  bk.onclick=()=>{ctl.close();downloadBackup();};
+  rs.onclick=()=>rsIn.click();rsIn.onchange=async()=>{const f=rsIn.files&&rsIn.files[0];rsIn.value='';if(!f)return;ctl.close();restoreBackup(f);};}
+// put back what a backup holds that the database no longer has (matched by id); nothing that exists is overwritten
+const BACKUP_STORES=[['jobs','jobs','jobs'],['drawings','drawings','drawings'],['reports','reports','reports'],['markers','markers','markers'],['strokes','strokes',null],
+  ['users','users','users'],['mkgroups','mkgroups','groups'],['checklist','checklist','checklist'],['estimates','estimates','estimates'],['estdrawings','estdrawings','estdraws'],['estruns','estruns','estruns'],['estsettings','estsettings','estsetArr']];
+async function restoreBackup(file){let data;try{data=JSON.parse(await file.text());}catch(e){toast('That file isn’t a backup');return;}
+  if(!data||data.app!=='Arctic Duct Cleaning'){toast('That file isn’t an Arctic backup');return;}
+  let strokesNow=[];try{strokesNow=(await fdb.collection('strokes').get()).docs.map(d=>d.data());}catch(e){}
+  const plan=[];for(const [key,coll,sk] of BACKUP_STORES){const have=new Set((sk?S[sk]:strokesNow).map(x=>x.id));const miss=(data[key]||[]).filter(x=>x&&x.id&&!have.has(x.id));if(miss.length)plan.push({coll,sk,miss});}
+  const n=plan.reduce((a,p)=>a+p.miss.length,0);
+  if(!n){toast('Nothing to restore — everything in that backup is already here');return;}
+  const what=plan.map(p=>p.miss.length+' '+p.coll).join(', ');
+  if(!await confirmDialog({title:'Restore from backup?',message:`From ${data.exportedAt?new Date(data.exportedAt).toLocaleString():'the backup'}: ${what}. Only records that are missing get added back; nothing that's here now is changed or removed. (Photos and plan PDFs aren't in backups.)`,confirmText:'Restore '+n,danger:false}))return;
+  let done=0;for(const p of plan){for(const x of p.miss){try{await pPut(p.coll,x);if(p.sk)S[p.sk].push(x);done++;}catch(e){console.warn('restore',p.coll,x.id,e);}}}
+  render();toast('Restored '+done+' record'+(done!==1?'s':''));}
 // everything except photos and plan PDFs (those are big and stay in the database): jobs, plans' details, reports, tags,
 // checklist, people, groups, estimates, runs and standards — a safety copy, since the database has no login
 async function downloadBackup(){const strip=(a,keys)=>(a||[]).map(x=>{const o=Object.assign({},x);keys.forEach(k=>delete o[k]);return o;});
   let strokes=[];try{const sn=await fdb.collection('strokes').get();strokes=sn.docs.map(d=>d.data());}catch(e){}
   const data={app:'Arctic Duct Cleaning',version:BUILD,exportedAt:new Date().toISOString(),
-    jobs:S.jobs,drawings:strip(S.drawings,['img','pdfData']),reports:S.reports,markers:S.markers,strokes,users:S.users,mkgroups:S.groups,checklist:S.checklist,
-    estimates:S.estimates,estdrawings:strip(S.estdraws,['img','pdfData']),estruns:S.estruns,estsettings:S.estsetArr};
+    jobs:S.jobs,drawings:strip(S.drawings,['pdfData']),reports:S.reports,markers:S.markers,strokes,users:S.users,mkgroups:S.groups,checklist:S.checklist,
+    estimates:S.estimates,estdrawings:strip(S.estdraws,['pdfData']),estruns:S.estruns,estsettings:S.estsetArr};
   const fname='Arctic backup '+new Date().toISOString().slice(0,10)+'.json',blob=new Blob([JSON.stringify(data)],{type:'application/json'});
   let file=null;try{file=new File([blob],fname,{type:'application/json'});}catch(e){}
   if(file&&navigator.canShare&&navigator.share&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:fname});return;}catch(e){if(e&&e.name==='AbortError')return;}}
