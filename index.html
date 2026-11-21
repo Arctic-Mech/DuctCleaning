@@ -898,7 +898,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 20 18:38';
+const BUILD='Nov 20 19:09';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -3582,7 +3582,7 @@ function estVecWall(V,x,y,nx,ny,dir,ux,uy,s,L,K,maxT){const hits=estVecRay(V,x,y
     if(cv.gaps>=4)continue;   // a dashed / grid line: passed over
     if(first==null)first=h.t;
     const cont=(Kb+Ka>=K&&cv.f2>=0.6)||(cv.Kb>=20&&cv.fb>=0.85)||(cv.Ka>=20&&cv.fa>=0.85);
-    if(cont&&!out.some(o=>Math.abs(o-h.t)<0.3)){out.push(h.t);out.idx.push(h.i);if(out.length>=3)break;}}
+    if(cont&&!out.some(o=>Math.abs(o-h.t)<0.3)){out.push(h.t);out.idx.push(h.i);if(out.length>=6)break;}}
   if(!out.length)return null;out.past=first!=null&&out[0]>first+1;return out;}
 // the nearest line running along the duct (within ~25°) on one side — the plain reading, for short pieces and lining up
 function estVecFirst(V,x,y,nx,ny,dir,maxT){for(const h of estVecRay(V,x,y,nx*dir,ny*dir,maxT)){if(h.t<0.05)continue;if(h.c>=0.9)return h.t;}return null;}
@@ -3707,8 +3707,9 @@ function estVecLine(V,i){if(!V.lineExt)V.lineExt=new Map();const c=V.lineExt.get
 // ends (within 0.5 pt) than the nearest line each side do, that pair is the duct (the nearer line is something else drawn
 // inside it: a building wall, another duct, a box edge). {a, b}: indices into the candidate lists, or null
 function estVecPair(V,cl,cr,ux,uy){if(!cl||!cr||!cl.idx||!cr.idx)return null;
-  const ext=i=>{const e=estVecLine(V,i);let a=e[0][0]*ux+e[0][1]*uy,b=e[1][0]*ux+e[1][1]*uy;return a<b?[a,b]:[b,a];};
-  const m=(i,j)=>{const A=ext(i),B=ext(j);return (Math.abs(A[0]-B[0])<=0.5?1:0)+(Math.abs(A[1]-B[1])<=0.5?1:0);};
+  /* ends compared along the walls' own direction (not the tapped line's, which may be a little off the duct) */
+  const m=(i,j)=>{const P=estVecLine(V,i),Q=estVecLine(V,j);let dx=P[1][0]-P[0][0],dy=P[1][1]-P[0][1];const l=Math.hypot(dx,dy)||1;dx/=l;dy/=l;if(dx*ux+dy*uy<0){dx=-dx;dy=-dy;}
+    const ex=E=>{const a=E[0][0]*dx+E[0][1]*dy,b=E[1][0]*dx+E[1][1]*dy;return a<b?[a,b]:[b,a];};const A=ex(P),B=ex(Q);return (Math.abs(A[0]-B[0])<=0.5?1:0)+(Math.abs(A[1]-B[1])<=0.5?1:0);};
   const m0=m(cl.idx[0],cr.idx[0]);if(m0===2)return null;let best=null;
   for(let a=0;a<cl.length;a++)for(let b=0;b<cr.length;b++){if(a+b===0)continue;const q=m(cl.idx[a],cr.idx[b]);if(q>m0&&(!best||q>best.q||(q===best.q&&a+b<best.a+best.b)))best={a,b,q};}
   return best;}
@@ -3741,7 +3742,7 @@ async function estRunWallsHD(d,ptsN,opt){
       const ux=(B[0]-A[0])/L,uy=(B[1]-A[1])/L,nx=-uy,ny=ux,n=Math.max(2,Math.min(1500,Math.round(L/STEP))),K=Math.min(80,Math.max(20,L/2));
       if(opt.walls&&L>=40){sg.cl=[];sg.cr=[];sg.w1=[];sg.c1=[];}
       // a branch starting inside the run it ties into: its opening stretch, up to where it leaves that run's band, reads the other duct
-      let maskTo=0;if(i===0&&opt.mask){let k=0;for(;k<=n;k++){const s=L*k/n;if(!opt.mask.some(Q=>estInPoly(Q,A[0]+ux*s,A[1]+uy*s)))break;}maskTo=k<=n?k:0;}
+      let maskTo=0;if(i===0&&opt.mask){let k=0;for(;k<=n;k++){const s=L*k/n;if(!opt.mask.some(Q=>estInPoly(Q,A[0]+ux*s,A[1]+uy*s)))break;}maskTo=k<=n&&k<0.8*n?k:0;}   /* only when the run carries on well outside it (not a run lying on another) */
       for(let k=0;k<=n;k++){const s=L*k/n,x=A[0]+ux*s,y=A[1]+uy*s;
         if(k<maskTo){put(sg,k,s,null,null);if(sg.cl){sg.cl[k]=null;sg.cr[k]=null;sg.w1[k]=null;sg.c1[k]=null;}continue;}   // inside the run this one branches from: not this duct's walls
         if(opt.walls&&L>=40){const cl=estVecWall(V,x,y,nx,ny,1,ux,uy,s,L,K,MAXH),cr=estVecWall(V,x,y,nx,ny,-1,ux,uy,s,L,K,MAXH);
