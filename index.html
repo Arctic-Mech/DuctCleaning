@@ -933,7 +933,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 02:46';
+const BUILD='Nov 21 02:48';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -5279,7 +5279,8 @@ function viewEstMeasure(app){
     const groups=[];const seen={};rs.forEach(r=>{const g=estGroupOf(r);if(!seen[g]){seen[g]=[];groups.push(g);}seen[g].push(r);});
     const rowsHtml=groups.map(g=>{const mem=seen[g];const main=estRunMain(rs,g)||mem[0];const glabel=main.label||estGroupLabel(rs,main)||'Run';
       let gl=0;mem.forEach(m=>gl+=estRunLenFt(m,d));const ga=estUnionAreaFt(d,mem);
-      let h=`<button type="button" class="row" data-r="${main.id}"><span class="grow"><h3 style="font-size:15px">${esc(glabel)}</h3>
+      const sz=(()=>{try{return estRunSizes(main,d);}catch(e){return '';}})(),kc=estKindOf(main).color||'var(--accent)';
+      let h=`<button type="button" class="row" data-r="${main.id}"><span style="width:10px;height:10px;border-radius:50%;background:${kc};flex:none;margin-right:2px"></span><span class="grow"><h3 style="font-size:15px">${esc(glabel)}${sz?` <span style="font-weight:500;color:var(--muted);font-size:13px">${sz}</span>`:''}</h3>
         <span class="meta">${estKindOf(main).label} · ${ft1(gl)} lf · ${Math.round(ga)} sq ft${mem.length>1?(' · '+mem.length+' parts'):''}</span></span><span class="chev">${I.chev}</span></button>`;
       mem.filter(m=>m.id!==main.id).forEach(m=>{h+=`<button type="button" class="row" data-r="${m.id}" style="padding-left:28px"><span class="grow"><h3 style="font-size:13px;font-weight:600">${m.widthMode==='fill'?('Fill'+(m.centerBranches?' · '+m.centerBranches+' br':'')):'Branch'}</h3>
         <span class="meta">${ft1(estRunLenFt(m,d))+' lf · '+Math.round(estAreaFt(m,d))+' sq ft'}</span></span><span class="chev">${I.chev}</span></button>`;});
