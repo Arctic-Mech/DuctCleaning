@@ -924,7 +924,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 00:53';
+const BUILD='Nov 21 01:02';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -1177,9 +1177,9 @@ function render(){
 function viewJobs(app){
   if(UPDATE_READY){UPDATE_READY=false;location.reload();return;}
   const jobs=[...S.jobs].sort((a,b)=>b.createdAt-a.createdAt);
-  const q=(S.jobQuery||'').trim().toLowerCase(),shown=q?jobs.filter(j=>[j.name,j.number,j.address].some(x=>String(x||'').toLowerCase().includes(q))):jobs;
-  let rows='';
-  shown.forEach(j=>{
+  const q=(S.jobQuery||'').trim().toLowerCase(),matched=q?jobs.filter(j=>[j.name,j.number,j.address].some(x=>String(x||'').toLowerCase().includes(q))):jobs;
+  const finished=matched.filter(j=>j.finished),shown=matched.filter(j=>!j.finished);   // finished jobs fold away below (search shows them too)
+  const rowOf=j=>{let rows='';[j].forEach(j=>{
     const nd=jobDrawings(j.id).length, reps=jobReports(j.id), nr=reps.length, done=reps.filter(r=>r.status==='Completed').length;
     rows+=`<button class="row" data-job="${j.id}">
       <span class="thumb">${I.job}</span>
@@ -1187,7 +1187,10 @@ function viewJobs(app){
         <span class="meta"><span class="mono">${esc(j.number||'—')}</span> · ${nd} plan${nd!==1?'s':''} · ${nr} report${nr!==1?'s':''}</span>
         ${nr?`<span class="jobprog"><i><b style="width:${Math.round(done/nr*100)}%"></b></i><span>${done===nr?'All completed':done+' of '+nr+' completed'}</span></span>`:''}</span>
       <span class="chev">${I.chev}</span></button>`;
-  });
+  });return rows;};
+  const rows=shown.map(rowOf).join(''),finOpen=!!q||!!S.finOpen;
+  const finHtml=finished.length?`<button type="button" class="linkbtn" id="finToggle" style="margin:18px 2px 8px;display:flex;align-items:center;gap:6px">${finOpen?'Hide':'Show'} finished jobs (${finished.length})</button>
+      ${finOpen?`<div class="card stack" id="finList" style="padding:0;gap:0;opacity:.85">${finished.map(rowOf).join('')}</div>`:''}`:'';
   app.innerHTML=`
     <div class="topbar">
       <img class="brandlogo light-only" src="logo.png" alt="Arctic">
@@ -1204,15 +1207,16 @@ function viewJobs(app){
       <div class="card cl-card" id="clCard"></div>
       <div class="eyebrow" style="margin-top:24px">Jobs</div>
       ${jobs.length>=6?`<div class="jobsearch"><input class="inp" id="jobQ" type="search" placeholder="Search jobs by name, number or address" value="${esc(S.jobQuery||'')}" autocomplete="off"></div>`:''}
-      ${jobs.length&&!shown.length?`<p class="cl-note" style="padding:8px 2px">No jobs match “${esc(S.jobQuery)}”.</p>`:''}
-      ${shown.length? `<div class="card stack" style="padding:0;gap:0">${rows}</div>`:jobs.length?''
+      ${jobs.length&&!matched.length?`<p class="cl-note" style="padding:8px 2px">No jobs match “${esc(S.jobQuery)}”.</p>`:''}
+      ${jobs.length&&matched.length&&!shown.length&&!q?`<p class="cl-note" style="padding:8px 2px">All jobs are finished. Start a job for the next one.</p>`:''}
+      ${shown.length||finished.length? `${shown.length?`<div class="card stack" style="padding:0;gap:0">${rows}</div>`:''}${finHtml}`:jobs.length?''
         : `<div class="empty"><div class="ic">${I.job}</div><h2>No jobs yet</h2>
              <p>Start a job to add floor plans and log duct cleaning reports in the field.</p></div>`}
     </div>
     <div class="bottombar"><button class="btn primary block" id="newJob">${I.plus} Start a job</button></div>`;
   // card rows: need per-row borders
-  const cardEl=app.querySelector('.card.stack');
-  if(cardEl){[...cardEl.children].forEach((c,i)=>{if(i)c.style.borderTop='1px solid var(--line)';});}
+  app.querySelectorAll('.card.stack').forEach(cardEl=>{[...cardEl.children].forEach((c,i)=>{if(i)c.style.borderTop='1px solid var(--line)';});});
+  {const ft=app.querySelector('#finToggle');if(ft)ft.onclick=()=>{S.finOpen=!S.finOpen;render();};}
   app.querySelectorAll('[data-job]').forEach(b=>b.onclick=()=>go('job',{jobId:b.dataset.job,drawId:null}));
   app.querySelector('#newJob').onclick=()=>jobForm();
   app.querySelector('#themeBtn').onclick=homeMenu;
@@ -1555,7 +1559,7 @@ function viewJob(app){
   app.innerHTML=`
     <div class="topbar">
       <button class="iconbtn" id="back" aria-label="Back">${I.back}</button>
-      <div class="ttl"><h1>${esc(j.name)}</h1><div class="sub mono">${esc(j.number)}</div></div>
+      <div class="ttl"><h1>${esc(j.name)}</h1><div class="sub mono">${esc(j.number)}${j.finished?' · <span style="color:var(--good);font-family:var(--font-body);font-weight:600">Finished</span>':''}</div></div>
       <button class="iconbtn" id="jobMenu" aria-label="Job options">${I.dots}</button>
     </div>
     <div class="content">
@@ -1602,10 +1606,13 @@ function viewJob(app){
 function jobMenu(j){
   const body=document.createElement('div');body.className='actionlist';
   const edit=mkAction(I.edit,'Edit job details');
+  const fin=mkAction(I.check,j.finished?'Move back to active jobs':'Mark job finished');
   const del=mkAction(I.trash,'Delete job','danger');
-  body.append(edit,mkDiv(),del);
+  body.append(edit,fin,mkDiv(),del);
   const ctl=sheetShell({title:'Job options',bodyNode:body});
   edit.onclick=()=>{ctl.close();jobForm(j);};
+  fin.onclick=async()=>{ctl.close();j.finished=!j.finished;if(j.finished)j.finishedAt=now();else delete j.finishedAt;
+    await pPut('jobs',j).catch(()=>toast('Not saved — check connection'));render();toast(j.finished?'Job finished — it moves to Finished jobs on the home screen':'Back in active jobs');};
   del.onclick=async()=>{ctl.close();
     if(await confirmDialog({title:'Delete job?',message:'This permanently deletes "'+j.name+'", its plans, and all reports and photos.',confirmText:'Delete job'})){
       try{const ph=await photosByJob(j.id);for(const p of ph)await pDel('photos',p.id);}catch(e){console.warn(e);}

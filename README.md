@@ -25,7 +25,8 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   show up live on every phone.
 - **Jobs**: name, number, optional address. Each job card shows how many reports are completed
   ("3 of 4 completed" with a progress bar); with 6+ jobs a search box finds jobs by name, number or
-  address. The home ⋯ menu sets the appearance (match phone / light / dark) and opens Estimates.
+  address. **Mark job finished** (job ⋯ menu) folds a job into "Show finished jobs" at the bottom of
+  the home list (search still finds it; it can be moved back). The home ⋯ menu sets the appearance (match phone / light / dark) and opens Estimates.
 - **Plans**: upload a PDF and name it. A multi-page PDF becomes one plan per page.
   **Replace PDF (keep tags)** swaps in a clean copy of the same drawing without moving any pins.
 - **Reports**: tap the plan to drop an auto-numbered pin. Each report has type
