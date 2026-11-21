@@ -101,6 +101,9 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);
 .brandlogo{height:24px;width:auto;flex:none;margin-left:3px}
 .brandsub{font-size:14px!important;font-weight:600;color:var(--muted);letter-spacing:.02em;
   padding-left:11px;margin-left:9px;border-left:1px solid var(--line)}
+@media (max-width:420px){.brandlogo{height:21px}.brandsub{font-size:13px!important;letter-spacing:0;padding-left:9px;margin-left:7px}.topbar .estlink{padding:8px 4px}}
+.jobprog{display:flex;align-items:center;gap:8px;margin-top:6px}.jobprog i{flex:1;max-width:140px;height:4px;border-radius:2px;background:var(--line);overflow:hidden;display:block}.jobprog i b{display:block;height:100%;background:var(--good,#1a9b5f);border-radius:2px}.jobprog span{font-size:12px;color:var(--muted)}
+.jobsearch{margin:0 0 10px}
 /* theme-aware logo swap (black wordmark on light, white on dark) */
 .dark-only{display:none}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .light-only{display:none}
@@ -898,7 +901,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 20 23:47';
+const BUILD='Nov 21 00:10';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -1151,13 +1154,15 @@ function render(){
 function viewJobs(app){
   if(UPDATE_READY){UPDATE_READY=false;location.reload();return;}
   const jobs=[...S.jobs].sort((a,b)=>b.createdAt-a.createdAt);
+  const q=(S.jobQuery||'').trim().toLowerCase(),shown=q?jobs.filter(j=>[j.name,j.number,j.address].some(x=>String(x||'').toLowerCase().includes(q))):jobs;
   let rows='';
-  jobs.forEach(j=>{
-    const nd=jobDrawings(j.id).length, nr=jobReports(j.id).length;
+  shown.forEach(j=>{
+    const nd=jobDrawings(j.id).length, reps=jobReports(j.id), nr=reps.length, done=reps.filter(r=>r.status==='Completed').length;
     rows+=`<button class="row" data-job="${j.id}">
       <span class="thumb">${I.job}</span>
       <span class="grow"><h3>${esc(j.name)}${j.example?'<span class="example-tag">Example</span>':''}</h3>
-        <span class="meta"><span class="mono">${esc(j.number||'—')}</span> · ${nd} plan${nd!==1?'s':''} · ${nr} report${nr!==1?'s':''}</span></span>
+        <span class="meta"><span class="mono">${esc(j.number||'—')}</span> · ${nd} plan${nd!==1?'s':''} · ${nr} report${nr!==1?'s':''}</span>
+        ${nr?`<span class="jobprog"><i><b style="width:${Math.round(done/nr*100)}%"></b></i><span>${done===nr?'All completed':done+' of '+nr+' completed'}</span></span>`:''}</span>
       <span class="chev">${I.chev}</span></button>`;
   });
   app.innerHTML=`
@@ -1166,7 +1171,7 @@ function viewJobs(app){
       <img class="brandlogo dark-only" src="logo-dark.png" alt="Arctic">
       <div class="ttl"><h1 class="brandsub">Duct Cleaning</h1></div>
       <button class="estlink" id="estBtn">Estimate</button>
-      <button class="iconbtn" id="themeBtn" aria-label="Toggle theme">${I.dots}</button>
+      <button class="iconbtn" id="themeBtn" aria-label="Menu">${I.dots}</button>
     </div>
     <div class="content">
       <div class="zoomnote" id="zoomNote"${SAFE.zoom===1?' hidden':''}><b>Safari has this site zoomed to ${Math.round(SAFE.zoom*100)}%</b>, so everything is
@@ -1175,7 +1180,9 @@ function viewJobs(app){
       <div class="eyebrow cl-eyebrow"><span>Truck checklist</span><button type="button" class="linkbtn" id="clEdit">Edit list</button></div>
       <div class="card cl-card" id="clCard"></div>
       <div class="eyebrow" style="margin-top:24px">Jobs</div>
-      ${jobs.length? `<div class="card stack" style="padding:0;gap:0">${rows.split('</button>').join('</button>')}</div>`
+      ${jobs.length>=6?`<div class="jobsearch"><input class="inp" id="jobQ" type="search" placeholder="Search jobs by name, number or address" value="${esc(S.jobQuery||'')}" autocomplete="off"></div>`:''}
+      ${jobs.length&&!shown.length?`<p class="cl-note" style="padding:8px 2px">No jobs match “${esc(S.jobQuery)}”.</p>`:''}
+      ${shown.length? `<div class="card stack" style="padding:0;gap:0">${rows}</div>`:jobs.length?''
         : `<div class="empty"><div class="ic">${I.job}</div><h2>No jobs yet</h2>
              <p>Start a job to add floor plans and log duct cleaning reports in the field.</p></div>`}
     </div>
@@ -1185,7 +1192,8 @@ function viewJobs(app){
   if(cardEl){[...cardEl.children].forEach((c,i)=>{if(i)c.style.borderTop='1px solid var(--line)';});}
   app.querySelectorAll('[data-job]').forEach(b=>b.onclick=()=>go('job',{jobId:b.dataset.job,drawId:null}));
   app.querySelector('#newJob').onclick=()=>jobForm();
-  app.querySelector('#themeBtn').onclick=cycleTheme;
+  app.querySelector('#themeBtn').onclick=homeMenu;
+  {const jq=app.querySelector('#jobQ');if(jq){jq.oninput=()=>{S.jobQuery=jq.value;const pos=jq.selectionStart;render();const n=document.getElementById('jobQ');if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(e){}}};}}
   app.querySelector('#estBtn').onclick=()=>go('estimates',{estId:null,estDrawId:null});
   app.querySelector('#clEdit').onclick=checklistEditSheet;
   renderChecklistCard(app.querySelector('#clCard'));
@@ -5505,6 +5513,17 @@ async function makeExportPdf(PDFLib,{job,company,plans,logoPng,content}){
 }
 
 /* ============================ theme ============================ */
+// home ⋯ menu: appearance, estimates, version
+function homeMenu(){const body=document.createElement('div');const cur=document.documentElement.getAttribute('data-theme')||'';
+  body.innerHTML=`<div class="cl-subhead" style="margin-top:0">Appearance</div>
+    <div class="seg" id="themeSeg" style="margin:8px 0 16px">${[['','Match phone'],['light','Light'],['dark','Dark']].map(([k,l])=>`<button type="button" data-th="${k}"${k===cur?' class="on"':''}>${l}</button>`).join('')}</div>
+    <div class="actionlist" id="hmActs"></div>
+    <p class="cl-note" style="margin-top:14px;font-size:12px">Version ${esc(BUILD==='__BUILD__'?'dev':BUILD)}</p>`;
+  const acts=body.querySelector('#hmActs'),est=mkAction(I.plan,'Estimates (measure takeoffs)');acts.append(est);
+  const ctl=sheetShell({title:'Menu',bodyNode:body});
+  body.querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>{const k=b.dataset.th;setTheme(k);body.querySelectorAll('[data-th]').forEach(x=>x.classList.toggle('on',x===b));});
+  est.onclick=()=>{ctl.close();go('estimates',{estId:null,estDrawId:null});};}
+function setTheme(next){if(next)document.documentElement.setAttribute('data-theme',next);else document.documentElement.removeAttribute('data-theme');try{localStorage.setItem('ductpro-theme',next);}catch(e){}}
 function cycleTheme(){
   const cur=document.documentElement.getAttribute('data-theme');
   const next=cur==='dark'?'light':cur==='light'?'':'dark';
