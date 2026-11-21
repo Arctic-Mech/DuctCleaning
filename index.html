@@ -924,7 +924,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 01:07';
+const BUILD='Nov 21 01:11';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2782,6 +2782,7 @@ function reportPreview(r){
     <dl class="kv pv-kv">
       ${r.revisit?`<dt>Re-visit</dt><dd>${esc(r.revisit)}</dd>`:''}
       <dt>Plan</dt><dd>${esc(d?d.name:'')}</dd>
+      ${(r.updatedAt||r.createdAt)?`<dt>Date</dt><dd>${esc(new Date(r.updatedAt||r.createdAt).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}))}</dd>`:''}
     </dl>
     ${eq.length?'<h4 class="pv-h">Serviced equipment</h4>'+eq.map(e=>`<div class="pv-eq"><b>${esc(e.item||'—')}</b>${e.notes?'<span>'+esc(e.notes)+'</span>':''}</div>`).join(''):''}
     ${r.area?`<h4 class="pv-h">Inspected area</h4><div class="pv-area">${esc(r.area)}</div>`:''}
@@ -5431,7 +5432,7 @@ async function exportInteractivePdf(j,btn,status,mode,planIds,mkTypes,summary){
       if(d.pdfChunks||d.pdfKey){try{pdfBytes=await loadDrawingPdfBytes(d);}catch(e){console.warn(e);}}
       const reports=content.reports?drawReports(d.id).map(r=>({
         num:r.num,type:r.type,typeOther:r.typeOther,status:r.status,revisit:r.revisit,
-        equipment:r.equipment,area:r.area,nx:r.nx,ny:r.ny,
+        equipment:r.equipment,area:r.area,nx:r.nx,ny:r.ny,date:r.updatedAt||r.createdAt||0,
         before:(r.before||[]).map(id=>photoBytes[id]).filter(Boolean),
         after:(r.after||[]).map(id=>photoBytes[id]).filter(Boolean),
       })):[];
@@ -5519,6 +5520,7 @@ async function makeExportPdf(PDFLib,{job,company,plans,logoPng,content}){
     row('Type', r.type==='Other'?(r.typeOther||'Other'):(r.type||'\u2014'));
     row('Status', r.status, r.status==='Completed'?GREEN:AMBER);
     row('Plan', plan.name);
+    if(r.date) row('Date', new Date(r.date).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}));
     if(r.revisit) row('Re-visit', r.revisit);
     const eq=(r.equipment||[]).filter(e=>e.item||e.notes);
     if(eq.length){y-=6;pg.drawText('SERVICED EQUIPMENT',{x:M,y,size:10,font:helvB,color:INK});y-=16;
