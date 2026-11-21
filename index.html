@@ -641,7 +641,7 @@ select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns
 .pv-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}
 .pv-type{font-family:var(--font-head);font-weight:700;font-size:20px}
 .pv-kv{grid-template-columns:90px 1fr;font-size:14px;margin-bottom:4px}
-.pv-kv dt{color:var(--muted)} .pv-kv dd{margin:0}
+.kv.pv-kv dt{color:var(--muted)} .kv.pv-kv dd{margin:0;color:var(--fg);text-align:left;overflow-wrap:anywhere}
 .pv-h{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;
   margin:20px 0 8px;font-family:var(--font-body);font-weight:700}
 .pv-eq{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);
@@ -921,7 +921,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 00:26';
+const BUILD='Nov 21 00:39';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2457,7 +2457,8 @@ function viewDrawing(app){
   loadInk();
   if(S.focus&&S.focus.drawId===d.id){if(S.focus.rep){const r=S.reports.find(x=>x.id===S.focus.rep);S.focus=null;if(r)requestAnimationFrame(()=>VW&&VW.focusReport&&VW.focusReport(r));}
     else{const m=S.markers.find(x=>x.id===S.focus.id);S.focus=null;if(m)requestAnimationFrame(()=>VW&&VW.focus(m));}}
-  window.addEventListener('resize',()=>{if(VW&&stage.isConnected){setBase();VW.renderPins();VW.renderMarkers();}},{once:false});
+  if(window.__drawResize)window.removeEventListener('resize',window.__drawResize);   // the last plan's listener (and the plan it holds) goes
+  window.__drawResize=()=>{if(VW&&stage.isConnected){setBase();VW.renderPins();VW.renderMarkers();}};window.addEventListener('resize',window.__drawResize);
 }
 
 /* ---------- markup: shared helpers (palette, marker sheet, door list) ---------- */
@@ -4907,7 +4908,7 @@ function viewEstMeasure(app){
       const nv=temp.length/2;
       const curRun=runGroup?estRunMain(estRunsOf(d.id),runGroup):null;
       const lead=curRun?`Adding to <b>${esc(curRun.label||'this run')}</b>`:'Tap along the duct';
-      hint.innerHTML=`${I.pen}<span>${lead} · <b>Add run</b> keeps the same run, <b>Finish</b> ends it${nv?' · '+nv+' pt'+(nv!==1?'s':''):''}</span>`;
+      hint.innerHTML=`${I.pen}<span>${lead} · <b>Add run</b> keeps the same run, <b>Finish</b> ends it${nv?' · '+nv+' pt'+(nv!==1?'s':''):''}${matchMedia('(pointer:fine)').matches?' <span style="opacity:.7">(Enter · Esc · ⌫)</span>':''}</span>`;
       vbar.innerHTML=`<div class="estrun"><div class="estkinds">${Object.keys(DUCT_KINDS).map(k=>`<button type="button" data-k="${k}" class="${k===estKind?'on':''}" style="--kc:${DUCT_KINDS[k].color}">${DUCT_KINDS[k].short}</button>`).join('')}</div>
         <div class="drawbar"><button class="dt" id="eUndo"${temp.length?'':' disabled style="opacity:.4"'}>${I.undo}</button>
         <button class="btn block" id="eFinish">${I.check} Finish</button>
@@ -5232,7 +5233,16 @@ function viewEstMeasure(app){
     refresh();toast('Removed last '+(last.widthMode==='fill'?'fill':'run'));}
   app.querySelector('#evUndo').onclick=undoLast;
   const onKey=e=>{if(S.route[S.route.length-1]!=='estmeasure'){window.removeEventListener('keydown',onKey);return;}
-    if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){e.preventDefault();undoLast();}};
+    if((e.ctrlKey||e.metaKey)&&(e.key==='z'||e.key==='Z')){e.preventDefault();undoLast();return;}
+    // desktop shortcuts while measuring: Enter = Add run / Done, Esc = Finish / Cancel, Backspace = remove the last tap
+    const tg=e.target,typing=tg&&(tg.tagName==='INPUT'||tg.tagName==='TEXTAREA'||tg.tagName==='SELECT'||tg.isContentEditable);
+    if(typing||e.ctrlKey||e.metaKey||e.altKey||document.querySelector('.scrim.open'))return;
+    const vis=sel=>{const b=app.querySelector(sel);return b&&!b.disabled&&b.offsetParent?b:null;};
+    const press=(...sels)=>{for(const q of sels){const b=vis(q);if(b){e.preventDefault();b.click();return true;}}return false;};
+    if(e.key==='Enter')press('#eDone','#efDone','#eFillDone');
+    else if(e.key==='Escape')press('#eFinish','#efCancel','#eCancel');
+    else if(e.key==='Backspace'||e.key==='Delete')press('#eUndo','#eFillUndo');};
+  if(window.__estKey)window.removeEventListener('keydown',window.__estKey);window.__estKey=onKey;   // one listener, however often this screen redraws
   window.addEventListener('keydown',onKey);
 
   // ---- pan / zoom / tap ----
