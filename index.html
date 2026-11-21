@@ -933,7 +933,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 02:34';
+const BUILD='Nov 21 02:37';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -1212,6 +1212,7 @@ function viewJobs(app){
       <div class="zoomnote" id="zoomNote"${SAFE.zoom===1?' hidden':''}><b>Safari has this site zoomed to ${Math.round(SAFE.zoom*100)}%</b>, so everything is
         ${SAFE.zoom<1?'smaller':'bigger'} than it should be. To fix: open the site in Safari, tap <b>aA</b> in the address bar, and set it to <b>100%</b>.
         Then close and reopen this app.</div>
+      ${whatsNewHtml()}
       <div class="eyebrow cl-eyebrow"><span>Truck checklist</span><button type="button" class="linkbtn" id="clEdit">Edit list</button></div>
       <div class="card cl-card" id="clCard"></div>
       <div class="eyebrow" style="margin-top:24px">Jobs</div>
@@ -1229,6 +1230,7 @@ function viewJobs(app){
   app.querySelectorAll('[data-job]').forEach(b=>b.onclick=()=>go('job',{jobId:b.dataset.job,drawId:null}));
   app.querySelector('#newJob').onclick=()=>jobForm();
   app.querySelector('#themeBtn').onclick=homeMenu;
+  {const wn=app.querySelector('#wnDone');if(wn)wn.onclick=()=>{try{localStorage.setItem('ductpro-whatsnew',WHATSNEW.id);}catch(e){}const c=app.querySelector('#wnCard');if(c)c.remove();};}
   {const jq=app.querySelector('#jobQ');if(jq){jq.oninput=()=>{S.jobQuery=jq.value;const pos=jq.selectionStart;render();const n=document.getElementById('jobQ');if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(e){}}};}}
   app.querySelector('#estBtn').onclick=()=>go('estimates',{estId:null,estDrawId:null});
   app.querySelector('#clEdit').onclick=checklistEditSheet;
@@ -5673,6 +5675,15 @@ async function makeExportPdf(PDFLib,{job,company,plans,logoPng,content}){
 }
 
 /* ============================ theme ============================ */
+// a one-time card on the home screen listing what changed (dismissed per phone)
+const WHATSNEW={id:'2026-11-21',items:['Jobs show how many reports are done; search jobs; <b>Mark job finished</b> (job ⋯ menu)',
+  'New reports can <b>copy details from the last report</b>; equipment items suggest past ones',
+  'Reports list filters Open / Completed; <b>Show on plan</b> zooms to the pin; tap a photo to see it full size',
+  '<b>Works with no signal</b> — saves stay on the phone and sync later',
+  'Export: summary page first, dates on reports, share sheet on iPhone; job address has <b>Directions</b>']};
+function whatsNewHtml(){let seen='';try{seen=localStorage.getItem('ductpro-whatsnew')||'';}catch(e){return '';}if(seen===WHATSNEW.id)return '';
+  return `<div class="card" id="wnCard" style="padding:12px 14px;margin-bottom:16px;border-color:var(--accent)"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><b style="font-size:14px">What’s new</b><button type="button" class="linkbtn" id="wnDone">Got it</button></div>
+    <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.45;color:var(--muted)">${WHATSNEW.items.map(t=>`<li>${t}</li>`).join('')}</ul></div>`;}
 // home ⋯ menu: appearance, estimates, version
 function homeMenu(){const body=document.createElement('div');const cur=document.documentElement.getAttribute('data-theme')||'';
   body.innerHTML=`<div class="cl-subhead" style="margin-top:0">Appearance</div>
