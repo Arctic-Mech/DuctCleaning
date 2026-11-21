@@ -23,7 +23,7 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   Replacement-ordered, tracking and replace-by options. **Edit list** adds items (type or paste a
   list), reorders them by dragging the handle, and can uncheck everything for a fresh check. Changes
   show up live on every phone.
-- **Jobs**: name, number, optional address. Each job card shows how many reports are completed
+- **Jobs**: name, number, optional address (the job screen has a **Directions** link that opens Maps). Each job card shows how many reports are completed
   ("3 of 4 completed" with a progress bar); with 6+ jobs a search box finds jobs by name, number or
   address. **Mark job finished** (job ⋯ menu) folds a job into "Show finished jobs" at the bottom of
   the home list (search still finds it; it can be moved back). The home ⋯ menu sets the appearance (match phone / light / dark) and opens Estimates.
@@ -32,6 +32,7 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
 - **Reports**: tap the plan to drop an auto-numbered pin. Each report has type
   (Supply / Return / Exhaust / Other), status, re-visit time frame, serviced equipment,
   inspected area, and before/after photos. Reports can also be opened from the job screen.
+  Equipment items suggest ones already used on reports, then common items (supply duct, VAV box…).
   A new report can **copy details from the last report** (type, re-visit, equipment, area — not
   status or photos). The job's **Reports** list filters All / Open / Completed and shows each
   report's area, equipment and photo count; a report's **Show on plan** zooms to its pin and flashes it.
