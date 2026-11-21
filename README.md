@@ -134,7 +134,7 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   Add run / Done, Esc = Finish / Cancel, Backspace = remove the last tap, Ctrl/⌘-Z = undo. After
   setting a scale, the app offers it to the estimate's other sheets of the same size that have none.
   **Takeoff export** (estimate ⋯ menu): **Copy takeoff summary** (totals, lf / sq ft by duct type,
-  hours by lf and sf for each kind of labor, and every run with its size range and branches — ready to
+  hours by lf and sf for each kind of labor, lf / sq ft **by size** (duct type × width), and every run with its size range and branches — ready to
   paste into a bid or email) and **Download takeoff (CSV)** for a spreadsheet, including actual hours.
 - **Export**: choose what the PDF includes — **Reports**, **Markups**, or **Both**.
   - *Reports*: each plan is a full-resolution vector page with numbered pins; tapping a pin jumps to
