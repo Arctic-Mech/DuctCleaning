@@ -803,14 +803,14 @@ async function pAll(store){
    awaited only briefly: a real refusal still throws, otherwise it carries on and syncs later (the sync pill shows that). */
 const SYNC={pending:0,slow:false,shown:false,t:null};
 function syncPill(){let el=document.getElementById('syncPill');if(!el){el=document.createElement('div');el.id='syncPill';el.className='syncpill';el.setAttribute('role','status');document.body.appendChild(el);}
-  const off=navigator.onLine===false,show=SYNC.pending>0&&(SYNC.slow||off);
-  if(show){if(SYNC.t&&!SYNC.shown)return;clearTimeout(SYNC.t);SYNC.t=setTimeout(()=>{SYNC.t=null;if(!(SYNC.pending>0))return;el.textContent=(off?'Offline · ':'Weak signal · ')+SYNC.pending+' change'+(SYNC.pending>1?'s':'')+' waiting to sync';el.classList.add('show');SYNC.shown=true;},SYNC.shown?0:1200);}
-  else{clearTimeout(SYNC.t);SYNC.t=null;el.classList.remove('show');if(SYNC.shown&&!SYNC.pending){SYNC.shown=false;toast('All changes synced');}}}
-function trackWrite(p){SYNC.pending++;syncPill();
+  const off=navigator.onLine===false,show=off||(SYNC.pending>0&&SYNC.slow);   // offline shows even with nothing waiting, so you know before you start
+  if(show){if(SYNC.t&&!SYNC.shown)return;clearTimeout(SYNC.t);SYNC.t=setTimeout(()=>{SYNC.t=null;const off2=navigator.onLine===false;if(!(SYNC.pending>0)&&!off2)return;el.textContent=SYNC.pending>0?(off2?'Offline · ':'Weak signal · ')+SYNC.pending+' change'+(SYNC.pending>1?'s':'')+' waiting to sync':'Offline · changes save on this phone';el.classList.add('show');SYNC.shown=true;},SYNC.shown?0:1200);}
+  else{clearTimeout(SYNC.t);SYNC.t=null;el.classList.remove('show');if(SYNC.shown&&!SYNC.pending){SYNC.shown=false;if(SYNC.hadPending)toast('All changes synced');SYNC.hadPending=false;}}}
+function trackWrite(p){SYNC.pending++;SYNC.hadPending=true;syncPill();
   p.then(()=>{SYNC.pending--;SYNC.slow=false;syncPill();},e=>{SYNC.pending--;syncPill();console.warn('write failed',e);});return p;}
 function settleWrite(p){const ms=navigator.onLine===false?60:SYNC.slow?400:2500;let done=false;p.then(()=>done=true,()=>done=true);
   return Promise.race([p,new Promise(r=>setTimeout(()=>{if(!done){SYNC.slow=true;syncPill();}r();},ms))]);}
-window.addEventListener('online',syncPill);window.addEventListener('offline',syncPill);
+window.addEventListener('online',syncPill);window.addEventListener('offline',syncPill);setTimeout(()=>{if(navigator.onLine===false)syncPill();},1500);   // opened with no signal
 async function pPut(store,val){
   const clean={};for(const k in val){const v=val[k];if(v instanceof Blob||k.charAt(0)==='_')continue;clean[k]=v;}
   await settleWrite(trackWrite(fdb.collection(store).doc(String(val[_keyField(store)])).set(clean,{merge:false})));
@@ -924,7 +924,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 02:29';
+const BUILD='Nov 21 02:31';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
