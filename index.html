@@ -629,6 +629,12 @@ select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns
   font-size:14px;font-weight:600;z-index:200;opacity:0;transition:.25s;pointer-events:none;box-shadow:0 6px 20px rgba(0,0,0,.4);
   max-width:90vw;text-align:center}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.syncpill{position:fixed;left:50%;bottom:calc(150px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(8px);z-index:400;max-width:min(calc(100% - 120px),340px);
+  background:var(--surface,#fff);color:var(--fg);border:1px solid var(--line);border-radius:999px;padding:7px 14px;font:600 12.5px var(--font-body);
+  box-shadow:0 4px 16px rgba(0,0,0,.12);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.syncpill::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--warn);margin-right:8px;vertical-align:1px}
+.syncpill.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media print{.syncpill{display:none!important}}
 
 /* ---------- report preview ---------- */
 .pv-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}
@@ -788,11 +794,24 @@ async function pAll(store){
   const snap=await fdb.collection(store).get();
   return snap.docs.map(d=>d.data());
 }
+/* Writes land in the phone's own copy at once and reach the server when there's signal. Firestore only resolves a write
+   when the SERVER confirms it, so with no signal (basements, mech rooms) awaiting it would hang the screen. Each write is
+   awaited only briefly: a real refusal still throws, otherwise it carries on and syncs later (the sync pill shows that). */
+const SYNC={pending:0,slow:false,shown:false,t:null};
+function syncPill(){let el=document.getElementById('syncPill');if(!el){el=document.createElement('div');el.id='syncPill';el.className='syncpill';el.setAttribute('role','status');document.body.appendChild(el);}
+  const off=navigator.onLine===false,show=SYNC.pending>0&&(SYNC.slow||off);
+  if(show){if(SYNC.t&&!SYNC.shown)return;clearTimeout(SYNC.t);SYNC.t=setTimeout(()=>{SYNC.t=null;if(!(SYNC.pending>0))return;el.textContent=(off?'Offline · ':'Weak signal · ')+SYNC.pending+' change'+(SYNC.pending>1?'s':'')+' waiting to sync';el.classList.add('show');SYNC.shown=true;},SYNC.shown?0:1200);}
+  else{clearTimeout(SYNC.t);SYNC.t=null;el.classList.remove('show');if(SYNC.shown&&!SYNC.pending){SYNC.shown=false;toast('All changes synced');}}}
+function trackWrite(p){SYNC.pending++;syncPill();
+  p.then(()=>{SYNC.pending--;SYNC.slow=false;syncPill();},e=>{SYNC.pending--;syncPill();console.warn('write failed',e);});return p;}
+function settleWrite(p){const ms=navigator.onLine===false?60:SYNC.slow?400:2500;let done=false;p.then(()=>done=true,()=>done=true);
+  return Promise.race([p,new Promise(r=>setTimeout(()=>{if(!done){SYNC.slow=true;syncPill();}r();},ms))]);}
+window.addEventListener('online',syncPill);window.addEventListener('offline',syncPill);
 async function pPut(store,val){
   const clean={};for(const k in val){const v=val[k];if(v instanceof Blob||k.charAt(0)==='_')continue;clean[k]=v;}
-  await fdb.collection(store).doc(String(val[_keyField(store)])).set(clean,{merge:false});
+  await settleWrite(trackWrite(fdb.collection(store).doc(String(val[_keyField(store)])).set(clean,{merge:false})));
 }
-async function pDel(store,id){ await fdb.collection(store).doc(String(id)).delete(); }
+async function pDel(store,id){ await settleWrite(trackWrite(fdb.collection(store).doc(String(id)).delete())); }
 async function pGetMeta(k){ const d=await fdb.collection('meta').doc(String(k)).get(); return d.exists?d.data():undefined; }
 
 // ---- photos live in their own Firestore docs (one per image, each < 1 MiB) ----
@@ -901,7 +920,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 00:13';
+const BUILD='Nov 21 00:18';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
