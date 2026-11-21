@@ -924,7 +924,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 02:10';
+const BUILD='Nov 21 02:14';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -5473,10 +5473,19 @@ async function exportInteractivePdf(j,btn,status,mode,planIds,mkTypes,summary){
     const tag=mode==='markups'?' markups':mode==='both'?' full':'';
     const fname=(j.name+' '+j.number).replace(/[^\w .\-]+/g,'').trim()+tag+' — Arctic.pdf';
     set('');reset();
-    const url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
-    const a=document.createElement('a');a.href=url;a.download=fname;document.body.appendChild(a);a.click();a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),15000);
-    toast('PDF downloaded');
+    const blob=new Blob([bytes],{type:'application/pdf'});
+    const download=()=>{const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fname;document.body.appendChild(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),15000);toast('PDF downloaded');};
+    // iPhone / iPad: the share sheet (Mail, Messages, Save to Files, AirDrop) — a download from a Home Screen app can strand you in a viewer
+    let file=null;try{file=new File([blob],fname,{type:'application/pdf'});}catch(e){}
+    if(file&&navigator.canShare&&navigator.share&&navigator.canShare({files:[file]})){
+      const body=document.createElement('div');const mb=(blob.size/1048576).toFixed(1);
+      body.innerHTML=`<p class="cl-note" style="margin:2px 0 14px">${esc(fname)} · ${mb} MB</p><div class="actionlist" id="pdfActs"></div>`;
+      const share=mkAction(I.share,'Share or save to Files…'),dl=mkAction(I.download,'Open / download');body.querySelector('#pdfActs').append(share,dl);
+      const ctl=sheetShell({title:'PDF ready',bodyNode:body});
+      share.onclick=async()=>{try{await navigator.share({files:[file],title:fname});ctl.close();}catch(e){if(e&&e.name!=='AbortError'){ctl.close();download();}}};
+      dl.onclick=()=>{ctl.close();download();};
+    }else download();
   }catch(e){
     console.error(e);set('');reset();toast('Export failed — try again');
   }

@@ -141,6 +141,8 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
     that report's page.
   - *Markups*: each plan page shows the exhaust / cleaning-access / note tags and freehand drawings.
   - *Both*: report pins and markups on the same plan pages, with report pages following.
+  On iPhone / iPad the finished PDF opens a **PDF ready** sheet: **Share or save to Files…** (Mail,
+  Messages, AirDrop, Files) or **Open / download**; elsewhere it downloads.
   **Summary page first** (on by default, a checkbox on the Export screen): job details, report /
   completed / open / plan counts and an index of every report — each row jumps to its report page.
   The source plan's own embedded annotations (e.g. old Bluebeam markups) are stripped for a clean export.
