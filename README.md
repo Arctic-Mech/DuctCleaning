@@ -23,12 +23,20 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   Replacement-ordered, tracking and replace-by options. **Edit list** adds items (type or paste a
   list), reorders them by dragging the handle, and can uncheck everything for a fresh check. Changes
   show up live on every phone.
-- **Jobs**: name, number, optional address.
+- **Jobs**: name, number, optional address. Each job card shows how many reports are completed
+  ("3 of 4 completed" with a progress bar); with 6+ jobs a search box finds jobs by name, number or
+  address. The home ⋯ menu sets the appearance (match phone / light / dark) and opens Estimates.
 - **Plans**: upload a PDF and name it. A multi-page PDF becomes one plan per page.
   **Replace PDF (keep tags)** swaps in a clean copy of the same drawing without moving any pins.
 - **Reports**: tap the plan to drop an auto-numbered pin. Each report has type
   (Supply / Return / Exhaust / Other), status, re-visit time frame, serviced equipment,
   inspected area, and before/after photos. Reports can also be opened from the job screen.
+  A new report can **copy details from the last report** (type, re-visit, equipment, area — not
+  status or photos). The job's **Reports** list filters All / Open / Completed and shows each
+  report's area, equipment and photo count; a report's **Show on plan** zooms to its pin and flashes it.
+  Plan rows and the plan screen show how many reports are still open.
+- **No signal**: saves finish right away on the phone and sync when signal returns; a small pill
+  shows "Offline · N changes waiting to sync", then "All changes synced".
 - **Quick / HD**: the field view uses a fast preview image; the **HD** button renders the
   on-screen area from the PDF at full resolution.
 - **Markup** (internal planning, web view only, never exported):
@@ -119,6 +127,10 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   on the next job** (each job estimated from the other jobs only; needs 3+ jobs), what lf backs each
   multiplier, and each job's miss. With automatic tuning off, estimates use your numbers and a button
   copies the tuned numbers into them.
+  **Estimates list** shows each estimate's lf and cleaning hours, marks ones with actual hours
+  logged, and has a search box with 6+ estimates. **Desktop shortcuts while measuring**: Enter =
+  Add run / Done, Esc = Finish / Cancel, Backspace = remove the last tap, Ctrl/⌘-Z = undo. After
+  setting a scale, the app offers it to the estimate's other sheets of the same size that have none.
   **Takeoff export** (estimate ⋯ menu): **Copy takeoff summary** (totals, lf / sq ft by duct type,
   hours by lf and sf for each kind of labor, and every run with its size range and branches — ready to
   paste into a bid or email) and **Download takeoff (CSV)** for a spreadsheet, including actual hours.
