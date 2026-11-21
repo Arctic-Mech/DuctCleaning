@@ -638,6 +638,11 @@ select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns
   box-shadow:0 4px 16px rgba(0,0,0,.12);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .syncpill::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--warn);margin-right:8px;vertical-align:1px}
 .syncpill.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.phview{position:fixed;inset:0;z-index:600;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0);touch-action:pinch-zoom}
+.phview img{max-width:100%;max-height:100%;object-fit:contain}
+.phview .phx{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:12px;width:40px;height:40px;border-radius:50%;border:0;background:rgba(255,255,255,.18);color:#fff;display:grid;place-items:center}
+.phview .phx svg{width:20px;height:20px}
+.photogrid .ph img{cursor:zoom-in}
 @media print{.syncpill{display:none!important}}
 
 /* ---------- report preview ---------- */
@@ -810,6 +815,10 @@ function trackWrite(p){SYNC.pending++;SYNC.hadPending=true;syncPill();
   p.then(()=>{SYNC.pending--;SYNC.slow=false;syncPill();},e=>{SYNC.pending--;syncPill();console.warn('write failed',e);});return p;}
 function settleWrite(p){const ms=navigator.onLine===false?60:SYNC.slow?400:2500;let done=false;p.then(()=>done=true,()=>done=true);
   return Promise.race([p,new Promise(r=>setTimeout(()=>{if(!done){SYNC.slow=true;syncPill();}r();},ms))]);}
+// tap a report photo to see it full screen (tap again or ✕ to close)
+document.addEventListener('click',e=>{const im=e.target.closest&&e.target.closest('.photogrid .ph img');if(!im||e.target.closest('.rm'))return;
+  const v=document.createElement('div');v.className='phview';v.setAttribute('role','dialog');v.innerHTML=`<img src="${im.src}" alt=""><button class="phx" aria-label="Close">${I.x}</button>`;
+  v.onclick=()=>v.remove();document.body.appendChild(v);});
 window.addEventListener('online',syncPill);window.addEventListener('offline',syncPill);setTimeout(()=>{if(navigator.onLine===false)syncPill();},1500);   // opened with no signal
 async function pPut(store,val){
   const clean={};for(const k in val){const v=val[k];if(v instanceof Blob||k.charAt(0)==='_')continue;clean[k]=v;}
@@ -924,7 +933,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 02:31';
+const BUILD='Nov 21 02:33';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
