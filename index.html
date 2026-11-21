@@ -898,7 +898,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 20 23:23';
+const BUILD='Nov 20 23:35';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -2935,14 +2935,20 @@ const EST_SHOW=[['cleanLf','Cleaning hrs by lf',true],['cleanSf','Cleaning hrs b
   ['branchToggle','Branch load On/Off switch',true],['factors','Multipliers line',true],['note','Explanation note',false],['actuals','Actual hours (after the job)',true]];
 function estSettings(){const d={hrPerLf:0,hrPerSf:0,lfPerDoor:0,hrPerBranch:0,fMps:0,fLps:0,fRet:0,fExh:0,wideIn:0,wideF:0,narrowIn:0,narrowF:0,cats:{},show:{}};const v=S.estsetArr&&S.estsetArr[0];
   if(v){['hrPerLf','hrPerSf','lfPerDoor','hrPerBranch','fMps','fLps','fRet','fExh','wideIn','wideF','narrowIn','narrowF'].forEach(k=>{if(typeof v[k]==='number')d[k]=v[k];});
-    if(v.cats&&typeof v.cats==='object')d.cats=v.cats;if(v.show&&typeof v.show==='object')d.show=v.show;}
+    if(v.cats&&typeof v.cats==='object')d.cats=v.cats;if(v.show&&typeof v.show==='object')d.show=v.show;
+    if(v.tuned&&typeof v.tuned==='object')d.tuned=v.tuned;if(typeof v.tunedSig==='string')d.tunedSig=v.tunedSig;}
+  d.autoTune=!(v&&v.autoTune===false);d.tuned=d.tuned||{};
   EST_SHOW.forEach(([k,,def])=>{if(typeof d.show[k]!=='boolean')d.show[k]=def;});return d;}
 // one kind of labor's numbers: rates, duct-type multipliers, width-band multipliers (cleaning keeps its original fields)
-function estCat(s,c){const v=(s.cats&&s.cats[c])||{},T=v.type||{},B=Array.isArray(v.bands)?v.bands:[];
+function estCatBase(s,c){const v=(s.cats&&s.cats[c])||{},T=v.type||{},B=Array.isArray(v.bands)?v.bands:[];
   const m={hrPerLf:+v.hrPerLf||0,hrPerSf:+v.hrPerSf||0,hrPerBranch:+v.hrPerBranch||0,type:{},bands:EST_BANDS.map((_,i)=>B[i]>0?+B[i]:1)};
   EST_KINDS.forEach(([k])=>m.type[k]=T[k]>0?+T[k]:1);
   if(c==='clean'){m.hrPerLf=s.hrPerLf;m.hrPerSf=s.hrPerSf;m.hrPerBranch=s.hrPerBranch;m.type={mps:s.fMps>0?s.fMps:1,lps:s.fLps>0?s.fLps:1,ret:s.fRet>0?s.fRet:1,exh:s.fExh>0?s.fExh:1};}
   return m;}
+// the numbers estimates use: the tuned ones while automatic fine-tuning is on and checked jobs exist, else your own
+function estCat(s,c){const m=estCatBase(s,c),t=s.autoTune&&s.tuned&&s.tuned[c];if(!t||!(t.jobs>0))return m;
+  const o={hrPerLf:+t.hrPerLf>0?+t.hrPerLf:m.hrPerLf,hrPerSf:+t.hrPerSf>0?+t.hrPerSf:m.hrPerSf,hrPerBranch:+t.hrPerBranch>0?+t.hrPerBranch:m.hrPerBranch,type:{},bands:m.bands.map((x,i)=>Array.isArray(t.bands)&&t.bands[i]>0?+t.bands[i]:x),tunedJobs:t.jobs};
+  EST_KINDS.forEach(([k])=>o.type[k]=t.type&&t.type[k]>0?+t.type[k]:m.type[k]);return o;}
 // cleaning's original "wider than / narrower than" rules (kept as they are; the width bands come on top)
 function estRuleFactor(s,widthIn){let f=1;if(widthIn>0){if(s.wideIn>0&&s.wideF>0&&widthIn>s.wideIn)f*=s.wideF;if(s.narrowIn>0&&s.narrowF>0&&widthIn<s.narrowIn)f*=s.narrowF;}return f;}
 function estPieceFactor(s,c,m,kind,widthIn){return (m.type[kind||'mps']||1)*(m.bands[estBandOf(widthIn)]||1)*(c==='clean'?estRuleFactor(s,widthIn):1);}
@@ -2959,36 +2965,62 @@ function estCatUsed(s,c){const m=estCat(s,c);return m.hrPerLf>0||m.hrPerSf>0;}
    Every estimate marked "use this job to fine-tune" with an actual figure for a kind of labor is a data point. One set of
    multipliers per kind (duct type, width band) is fitted to all of them together, with a separate hours-per-lf and
    hours-per-sf rate and the per-branch time: least squares on the log of estimated ÷ actual, each multiplier pulled
-   gently toward its current value so a few jobs mostly correct the overall rate and the finer multipliers move as
+   gently toward your own numbers so a few jobs mostly correct the overall rate and the finer multipliers move as
    jobs accumulate. Returns current vs suggested values and the error before / after, or null with no data. */
 function estJobRows(e,c,s){const rows=[];let A=0,uA=0;
   estDrawsOf(e.id).forEach(d=>{const rs=estRunsOf(d.id);rs.forEach(r=>estRunParts(r,d).forEach(p=>{const rule=c==='clean'?estRuleFactor(s,p.win):1;rows.push({k:EST_KINDS.findIndex(x=>x[0]===(r.kind||'mps')),b:estBandOf(p.win),lf:p.lf*rule,sf:p.sf*rule});A+=p.sf;}));uA+=estUnionAreaFt(d,rs);});
   const sc=A>0?uA/A:1;rows.forEach(q=>{if(q.k<0)q.k=0;q.sf*=sc;});return {rows,n:e.branchMode==='none'?0:estBranchCount(e.id)};}
-function estTune(c,src){const s=estSettings(),m=estCat(s,c);src=src||(e=>estJobRows(e,c,s));   /* src: a job's pieces (tests pass their own) */
-  const jobs=S.estimates.filter(e=>e.tuneUse&&e.actual&&+e.actual[c]>0).map(e=>Object.assign({e,act:+e.actual[c]},src(e))).filter(j=>j.rows.length);
+// a job's pieces summed per duct type × width band (all the fit needs, and far fewer terms)
+function estAggRows(rows){const M={};rows.forEach(q=>{const key=q.k+'_'+q.b,o=M[key]||(M[key]={k:q.k,b:q.b,lf:0,sf:0});o.lf+=q.lf;o.sf+=q.sf;});return Object.values(M).filter(q=>q.lf>0||q.sf>0);}
+function estTune(c,src,opt){opt=opt||{};const s=estSettings(),m=estCatBase(s,c),inUse=estCat(s,c);src=src||(e=>estJobRows(e,c,s));   /* src: a job's pieces (tests pass their own) */
+  const jobs=S.estimates.filter(e=>e.tuneUse&&e.actual&&+e.actual[c]>0).map(e=>{const r=src(e);return {e,act:+e.actual[c],rows:estAggRows(r.rows),n:r.n||0};}).filter(j=>j.rows.length);
   if(!jobs.length)return null;
   const nK=EST_KINDS.length,nB=EST_BANDS.length,lg=Math.log;
-  const qty=(j,b)=>{let t=0;j.rows.forEach(q=>t+=q[b]*(m.type[EST_KINDS[q.k][0]]*m.bands[q.b]));return t;};
-  const sumAct=jobs.reduce((t,j)=>t+j.act,0);
-  const rate0=b=>{const cur=b==='lf'?m.hrPerLf:m.hrPerSf;if(cur>0)return cur;const Q=jobs.reduce((t,j)=>t+qty(j,b),0);return Q>0?sumAct/Q:0;};
+  const qty=(J,b)=>{let t=0;J.forEach(j=>j.rows.forEach(q=>t+=q[b]*(m.type[EST_KINDS[q.k][0]]*m.bands[q.b])));return t;};
+  const rate0=b=>{const cur=b==='lf'?m.hrPerLf:m.hrPerSf;if(cur>0)return cur;const Q=qty(jobs,b);return Q>0?jobs.reduce((t,j)=>t+j.act,0)/Q:0;};
   const anyBr=jobs.some(j=>j.n>0);
-  // θ = [log rate lf, log rate sf, log type×4, log band×7, log branch hrs]
+  // θ = [log rate lf, log rate sf, log type×4, log band×7, log branch hrs]; the prior is always YOUR numbers (never last fit's), so jobs never count twice
   const r0=[rate0('lf'),rate0('sf')];if(!(r0[0]>0)&&!(r0[1]>0))return null;
-  const th0=[lg(r0[0]||1e-6),lg(r0[1]||1e-6)].concat(EST_KINDS.map(([k])=>lg(m.type[k])),m.bands.map(x=>lg(x)),[lg(m.hrPerBranch>0?m.hrPerBranch:0.25)]);
-  const lam=[0.0005,0.0005].concat(Array(nK).fill(0.02),Array(nB).fill(0.02),[m.hrPerBranch>0?0.05:0.3]);   /* the rates move freely; each multiplier costs about as much as a fiftieth of a job's miss */
-  // the multipliers are fitted on the basis the crew prices by (hours per lf when set, else per sf); the other basis then gets its own rate
-  const prim=(m.hrPerLf>0||!(m.hrPerSf>0))?0:1,use=[prim===0,prim===1];const th=th0.slice();
+  const thOf=x=>[lg(x.r[0]||1e-6),lg(x.r[1]||1e-6)].concat(EST_KINDS.map(([k])=>lg(x.type[k])),x.bands.map(v=>lg(v)),[lg(x.br>0?x.br:0.25)]);
+  const th0=thOf({r:r0,type:m.type,bands:m.bands,br:m.hrPerBranch});
+  /* each squared log-miss of a job counts 1; a multiplier moving by a factor e costs 0.02 — so the data's say grows with every
+     job checked off: one job mostly moves the rate, and a width band or duct type follows the jobs once enough of them have it */
+  const LK=opt.lamK||1,lam=[0.0005,0.0005].concat(Array(nK).fill(0.02*LK),Array(nB).fill(0.02*LK),[(m.hrPerBranch>0?(opt.lamBr||0.05):0.3)*LK]);
+  const prim=(m.hrPerLf>0||!(m.hrPerSf>0))?0:1,use=[prim===0,prim===1];
   const pred=(t,j,bi)=>{const b=bi?'sf':'lf';let x=0;j.rows.forEach(q=>x+=q[b]*Math.exp(t[2+q.k]+t[2+nK+q.b]));return {base:x,p:Math.exp(t[bi])*x+(anyBr?j.n*Math.exp(t[2+nK+nB]):0)};};
-  const mo=th.map(()=>0),ve=th.map(()=>0);   // Adam steps
-  for(let it=1;it<=4000;it++){const g=th.map((v,i)=>2*lam[i]*(v-th0[i]));
-    jobs.forEach(j=>{const bi=prim,b=bi?'sf':'lf',R=Math.exp(th[bi]),{base,p}=pred(th,j,bi);if(!(p>0))return;const e=2*lg(p/j.act)/p;
-      g[bi]+=e*R*base;j.rows.forEach(q=>{const v=q[b]*R*Math.exp(th[2+q.k]+th[2+nK+q.b])*e;g[2+q.k]+=v;g[2+nK+q.b]+=v;});if(anyBr&&j.n)g[2+nK+nB]+=e*j.n*Math.exp(th[2+nK+nB]);});
-    for(let i=0;i<th.length;i++){mo[i]=0.9*mo[i]+0.1*g[i];ve[i]=0.999*ve[i]+0.001*g[i]*g[i];th[i]-=0.02*(mo[i]/(1-Math.pow(0.9,it)))/(Math.sqrt(ve[i]/(1-Math.pow(0.999,it)))+1e-8);}}
+  const HUB=0.3;   // a job off by more than ~35% (something unusual happened) pulls no harder than that, so one odd job can't drag everything
+  const fit=(J,start,iters,lr)=>{const th=start.slice(),mo=th.map(()=>0),ve=th.map(()=>0);
+    for(let it=1;it<=iters;it++){const g=th.map((v,i)=>2*lam[i]*(v-th0[i]));
+      J.forEach(j=>{const bi=prim,b=bi?'sf':'lf',R=Math.exp(th[bi]),{base,p}=pred(th,j,bi);if(!(p>0))return;const r=lg(p/j.act),e=(Math.abs(r)<=HUB?2*r:2*HUB*Math.sign(r))/p;
+        g[bi]+=e*R*base;j.rows.forEach(q=>{const v=q[b]*R*Math.exp(th[2+q.k]+th[2+nK+q.b])*e;g[2+q.k]+=v;g[2+nK+q.b]+=v;});if(anyBr&&j.n)g[2+nK+nB]+=e*j.n*Math.exp(th[2+nK+nB]);});
+      for(let i=0;i<th.length;i++){mo[i]=0.9*mo[i]+0.1*g[i];ve[i]=0.999*ve[i]+0.001*g[i]*g[i];th[i]-=lr*(mo[i]/(1-Math.pow(0.9,it)))/(Math.sqrt(ve[i]/(1-Math.pow(0.999,it)))+1e-8);}}
+    return th;};
+  let th=fit(jobs,th0,opt.iters||4000,0.02);if(opt.polish)th=fit(jobs,th,opt.polish,0.002);
   {const o=1-prim;if(r0[o]>0){let sl=0,c=0;jobs.forEach(j=>{const x=pred(th,j,o).base,br=anyBr?j.n*Math.exp(th[2+nK+nB]):0;if(x>0&&j.act>br){sl+=lg((j.act-br)/x);c++;}});if(c){th[o]=sl/c;use[o]=true;}}}   /* the other basis: its rate only */
-  const err=(t,cur)=>{if(cur&&!((prim?m.hrPerSf:m.hrPerLf)>0))return null;const es=[];jobs.forEach(j=>{const {p}=pred(t,j,prim);if(p>0)es.push(Math.abs(p/j.act-1));});return es.length?es.reduce((a,b)=>a+b,0)/es.length:null;};   /* the miss on the basis the crew prices by */
+  const miss=(t,J)=>{const es=[];J.forEach(j=>{const {p}=pred(t,j,prim);if(p>0)es.push(Math.abs(p/j.act-1));});return es.length?es.reduce((a,b)=>a+b,0)/es.length:null;};   /* on the basis the crew prices by */
+  const hasRate=x=>(prim?x.hrPerSf:x.hrPerLf)>0;
+  const thUse=thOf({r:[inUse.hrPerLf,inUse.hrPerSf],type:inUse.type,bands:inUse.bands,br:inUse.hrPerBranch});
+  // the honest test: each job estimated by a fit to the OTHER jobs only — what to expect on the next job; it falls as jobs are added
+  let loo=null;if(opt.loo&&jobs.length>=3){const es=[];jobs.forEach((j,i)=>{const J=jobs.filter((_,k)=>k!==i),t=fit(J,th,800,0.01),{p}=pred(t,j,prim);if(p>0)es.push(Math.abs(p/j.act-1));});loo=es.length?es.reduce((a,b)=>a+b,0)/es.length:null;}
   const r3=v=>+v.toFixed(3),sug={hrPerLf:use[0]?r3(Math.exp(th[0])):m.hrPerLf,hrPerSf:use[1]?r3(Math.exp(th[1])):m.hrPerSf,hrPerBranch:anyBr?+Math.exp(th[2+nK+nB]).toFixed(2):m.hrPerBranch,type:{},bands:[]};
   EST_KINDS.forEach(([k],i)=>sug.type[k]=+Math.exp(th[2+i]).toFixed(3));for(let i=0;i<nB;i++)sug.bands.push(+Math.exp(th[2+nK+i]).toFixed(3));
-  return {jobs:jobs.length,basis:prim?'sf':'lf',cur:m,sug,before:err(th0,true),after:err(th,false),perJob:jobs.map(j=>({name:j.e.name,act:j.act,est:pred(th0,j,0).p,estSf:pred(th0,j,1).p,fitLf:pred(th,j,0).p}))};}
+  // how much real footage stands behind each multiplier
+  const sup={type:{},bands:EST_BANDS.map(()=>({lf:0,jobs:0}))};EST_KINDS.forEach(([k])=>sup.type[k]={lf:0,jobs:0});let totLf=0;
+  jobs.forEach(j=>{const kb={},bb={};j.rows.forEach(q=>{const k=EST_KINDS[q.k][0];sup.type[k].lf+=q.lf;sup.bands[q.b].lf+=q.lf;totLf+=q.lf;kb[k]=1;bb[q.b]=1;});Object.keys(kb).forEach(k=>sup.type[k].jobs++);Object.keys(bb).forEach(b=>sup.bands[b].jobs++);});
+  return {jobs:jobs.length,basis:prim?'sf':'lf',base:m,cur:inUse,sug,sup,totLf,loo,
+    start:hasRate(m)?miss(th0,jobs):null,before:hasRate(inUse)?miss(thUse,jobs):null,after:miss(th,jobs),
+    perJob:jobs.map(j=>({id:j.e.id,name:j.e.name,act:j.act,fit:pred(th,j,prim).p,est:pred(th0,j,0).p,estSf:pred(th0,j,1).p,fitLf:pred(th,j,0).p}))};}
+// automatic fine-tuning: refit whenever the checked jobs, their actual hours or your numbers change, and store the result
+function estTuneSig(s){const parts=S.estimates.filter(e=>e.tuneUse&&e.actual).map(e=>{let n=0,L=0;estDrawsOf(e.id).forEach(d=>estRunsOf(d.id).forEach(r=>{n++;L+=estRunLenFt(r,d);}));
+    return e.id+':'+JSON.stringify(e.actual)+':'+(e.branchMode||'')+':'+n+':'+L.toFixed(1);}).sort();
+  const str=parts.join('|')+'#'+EST_CATS.map(([c])=>JSON.stringify(estCatBase(s,c))).join('|')+'#'+[s.wideIn,s.wideF,s.narrowIn,s.narrowF].join(',');
+  let h=5381;for(let i=0;i<str.length;i++)h=((h*33)^str.charCodeAt(i))>>>0;return 'v1_'+h.toString(36)+'_'+parts.length;}
+let estTuning=false;
+async function estAutoRetune(force){const s=estSettings();if(!s.autoTune||estTuning)return false;const sig=estTuneSig(s);if(!force&&s.tunedSig===sig)return false;
+  estTuning=true;try{const v=Object.assign({id:'default'},(S.estsetArr&&S.estsetArr[0])||{}),tuned={};
+    EST_CATS.forEach(([c])=>{const t=estTune(c);if(t)tuned[c]=Object.assign({},t.sug,{jobs:t.jobs,miss:t.after==null?null:+t.after.toFixed(4),basis:t.basis});});
+    v.tuned=tuned;v.tunedSig=sig;S.estsetArr=[v];await pPut('estsettings',v).catch(()=>{});return true;}finally{estTuning=false;}}
+function estAutoRetuneSoon(){if(!estSettings().autoTune)return;setTimeout(()=>estAutoRetune().then(ch=>{if(ch)render();}).catch(()=>{}),30);}
 // write a kind of labor's numbers back into the standards document (cleaning keeps its original fields)
 function estSetCat(doc,c,m){doc.cats=Object.assign({},doc.cats||{});
   if(c==='clean'){doc.hrPerLf=m.hrPerLf;doc.hrPerSf=m.hrPerSf;doc.hrPerBranch=m.hrPerBranch;doc.fMps=m.type.mps;doc.fLps=m.type.lps;doc.fRet=m.type.ret;doc.fExh=m.type.exh;doc.cats.clean={bands:m.bands.slice()};}
@@ -3016,8 +3048,9 @@ function estStandardsSheet(){
     <div class="facgrid">${EST_BANDS.map((_,i)=>`<div class="field"><label>${estBandLabel(i)} ×</label><input class="inp" id="b_${c}_${i}" inputmode="decimal" value="${m.bands[i]!==1?m.bands[i]:''}" placeholder="1.00"></div>`).join('')}</div>`;
   const typeHtml=(c,m)=>`<div class="cl-subhead" style="margin-top:4px">Duct type — multiply hours (blank = ×1)</div>
     <div class="facgrid">${EST_KINDS.map(([k,l])=>`<div class="field"><label>${l} ×</label><input class="inp" id="t_${c}_${k}" inputmode="decimal" value="${m.type[k]!==1?m.type[k]:''}" placeholder="1.00"></div>`).join('')}</div>`;
-  const mc=estCat(cur,'clean');
-  const cleanHtml=`<p class="cl-note">Rules of thumb used to turn measured duct into cleaning hours and access doors. They apply to every estimate.</p>
+  const mc=estCatBase(cur,'clean');
+  const tunedNote=c=>{const t=cur.autoTune&&cur.tuned&&cur.tuned[c];return t&&t.jobs>0?`<p class="cl-note tunednote" style="margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--chip,rgba(127,127,127,.12))">These are your starting numbers. Estimates use them <b>tuned by ${t.jobs} checked job${t.jobs>1?'s':''}</b> — see Fine-tune.</p>`:'';};
+  const cleanHtml=`<p class="cl-note">Rules of thumb used to turn measured duct into cleaning hours and access doors. They apply to every estimate.</p>${tunedNote('clean')}
     <div class="field" style="margin-top:14px"><label>Hours per linear foot</label><input class="inp" id="sHl" inputmode="decimal" value="${v(cur.hrPerLf)}" placeholder="e.g. 0.05"></div>
     <div class="field"><label>Hours per square foot</label><input class="inp" id="sHs" inputmode="decimal" value="${v(cur.hrPerSf)}" placeholder="e.g. 0.02"></div>
     <div class="field"><label>Access door every ___ feet of run</label><input class="inp" id="sDd" inputmode="decimal" value="${v(cur.lfPerDoor)}" placeholder="e.g. 20"></div>
@@ -3029,7 +3062,7 @@ function estStandardsSheet(){
     <div class="facrow" style="margin-bottom:2px"><span>Narrower than</span><input class="inp" id="s_narrowIn" inputmode="decimal" value="${v(cur.narrowIn)}" placeholder="e.g. 8"><span>″ ×</span><input class="inp" id="s_narrowF" inputmode="decimal" value="${v(cur.narrowF)}" placeholder="1.15"></div>
     ${bandsHtml('clean',mc)}
     <p class="cl-note" style="font-size:12.5px;margin-top:6px">Width is each piece's measured duct width (rounded to ½″). Factors multiply both hrs by lf and hrs by sf; access doors use the raw footage.</p>`;
-  const catHtml=(c,label)=>{const m=estCat(cur,c);return `<p class="cl-note">${label} hours from the same measured duct, with their own rates and multipliers.</p>
+  const catHtml=(c,label)=>{const m=estCatBase(cur,c);return `<p class="cl-note">${label} hours from the same measured duct, with their own rates and multipliers.</p>${tunedNote(c)}
     <div class="field" style="margin-top:14px"><label>Hours per linear foot</label><input class="inp" id="r_${c}_hl" inputmode="decimal" value="${v(m.hrPerLf)}" placeholder="e.g. 0.15"></div>
     <div class="field"><label>Hours per square foot</label><input class="inp" id="r_${c}_hs" inputmode="decimal" value="${v(m.hrPerSf)}" placeholder="e.g. 0.04"></div>
     <div class="field"><label>Extra hours per branch</label><input class="inp" id="r_${c}_hb" inputmode="decimal" value="${v(m.hrPerBranch)}" placeholder="e.g. 0.5"></div>
@@ -3049,30 +3082,36 @@ function estStandardsSheet(){
     set(c==='clean'?'#sHl':`#r_${c}_hl`,m.hrPerLf,1);set(c==='clean'?'#sHs':`#r_${c}_hs`,m.hrPerSf,1);set(c==='clean'?'#sHb':`#r_${c}_hb`,m.hrPerBranch,1);
     EST_KINDS.forEach(([k])=>set(c==='clean'?`#s_f${k[0].toUpperCase()+k.slice(1)}`:`#t_${c}_${k}`,m.type[k],0));m.bands.forEach((x,i)=>set(`#b_${c}_${i}`,x,0));};
   const build=()=>{const doc={id:'default',lfPerDoor:num('#sDd'),wideIn:num('#s_wideIn'),wideF:num('#s_wideF'),narrowIn:num('#s_narrowIn'),narrowF:num('#s_narrowF'),cats:{},show:{},createdAt:now()};
-    EST_CATS.forEach(([c])=>estSetCat(doc,c,readCat(c)));EST_SHOW.forEach(([k])=>{const el=body.querySelector('#sh_'+k);doc.show[k]=!!(el&&el.checked);});return doc;};
-  const save=async(msg)=>{const doc=build();S.estsetArr=[doc];await pPut('estsettings',doc).catch(()=>toast('Not saved — check connection'));render();if(msg)toast(msg);};
+    EST_CATS.forEach(([c])=>estSetCat(doc,c,readCat(c)));EST_SHOW.forEach(([k])=>{const el=body.querySelector('#sh_'+k);doc.show[k]=!!(el&&el.checked);});
+    const at=body.querySelector('#autoTune');doc.autoTune=at?at.checked:cur.autoTune;doc.tuned=(S.estsetArr&&S.estsetArr[0]&&S.estsetArr[0].tuned)||{};doc.tunedSig='';return doc;};
+  const save=async(msg)=>{const doc=build();S.estsetArr=[doc];await pPut('estsettings',doc).catch(()=>toast('Not saved — check connection'));await estAutoRetune(true).catch(()=>{});render();if(msg)toast(msg);};
   // fine-tune: from the jobs marked "use to fine-tune" with actual hours
-  function renderTune(){const pane=body.querySelector('[data-pane="tune"]');const n=S.estimates.filter(e=>e.tuneUse&&e.actual).length;
+  function renderTune(){const pane=body.querySelector('[data-pane="tune"]');const n=S.estimates.filter(e=>e.tuneUse&&e.actual).length,auto=estSettings().autoTune;
     const pct=x=>x==null?'—':(x*100).toFixed(1)+'%';
-    let h=`<p class="cl-note">After a job, enter how many hours it actually took on the estimate (Actual hours) and tick <b>Use this job to fine-tune</b>. The multipliers are then fitted to all those jobs together — rates, duct types, width bands and branch time. With only a job or two mostly the overall rate moves; the width and type multipliers firm up as jobs add up.</p>`;
-    if(!n)h+=`<p class="cl-note" style="margin-top:10px"><b>No jobs marked yet.</b></p>`;
-    EST_CATS.forEach(([c,l])=>{const t=estTune(c);if(!t){if(n)h+=`<div class="cl-subhead" style="margin-top:12px">${l}</div><p class="cl-note">No actual ${l.toLowerCase()} hours entered on the marked jobs yet.</p>`;return;}
-      const rows=[];const add=(lab,a,b,fmt)=>{if(Math.abs((b||0)-(a||0))>Math.max(0.005,0.01*Math.abs(a||0)))rows.push(`<tr><td>${lab}</td><td>${fmt(a)}</td><td><b>${fmt(b)}</b></td></tr>`);};
-      const hr=x=>x>0?(+x).toFixed(3):'—',fx=x=>'×'+(+x).toFixed(2);
-      add('Hours per lf',t.cur.hrPerLf,t.sug.hrPerLf,hr);add('Hours per sf',t.cur.hrPerSf,t.sug.hrPerSf,hr);add('Hours per branch',t.cur.hrPerBranch,t.sug.hrPerBranch,x=>x>0?(+x).toFixed(2):'—');
-      EST_KINDS.forEach(([k,kl])=>add(kl,t.cur.type[k],t.sug.type[k],fx));EST_BANDS.forEach((_,i)=>add(estBandLabel(i),t.cur.bands[i],t.sug.bands[i],fx));
-      h+=`<div class="cl-subhead" style="margin-top:14px">${l} — from ${t.jobs} job${t.jobs>1?'s':''}</div>
-        <p class="cl-note" style="margin:6px 0">Average miss on hours by ${t.basis} now: <b>${pct(t.before)}</b> · with the suggestions: <b>${pct(t.after)}</b></p>
-        ${rows.length?`<table class="tunetbl" style="width:100%;font-size:13px;border-collapse:collapse"><tr style="color:var(--muted)"><td>Setting</td><td>Now</td><td>Suggested</td></tr>${rows.join('')}</table>
-        <button type="button" class="btn block" data-apply="${c}" style="margin-top:8px">Apply ${l.toLowerCase()} suggestions</button>`:'<p class="cl-note">Already in line with the actual hours.</p>'}`;});
+    let h=`<p class="cl-note">After a job, enter the hours it actually took on the estimate (<b>Actual hours</b>) and tick <b>Use this job to fine-tune</b>. Every checked job is used, and the more jobs you check off, the more the numbers follow your real results: with a job or two mostly the overall rate moves; each width band and duct type moves once enough jobs with that size or type back it up. Your own numbers on the Cleaning / Install / Shop fab tabs are the starting point.</p>
+      <label style="display:flex;align-items:center;gap:10px;margin:12px 0 4px"><input type="checkbox" id="autoTune"${auto?' checked':''} style="width:20px;height:20px"><span><b>Tune estimates automatically</b> from the checked jobs (every estimate updates as jobs are checked off)</span></label>`;
+    if(!n)h+=`<p class="cl-note" style="margin-top:10px"><b>No jobs checked off yet.</b></p>`;
+    EST_CATS.forEach(([c,l])=>{const t=estTune(c,null,{loo:true});if(!t){if(n)h+=`<div class="cl-subhead" style="margin-top:12px">${l}</div><p class="cl-note">No actual ${l.toLowerCase()} hours entered on the checked jobs yet.</p>`;return;}
+      const rows=[];const hr=x=>x>0?(+x).toFixed(3):'—',fx=x=>'×'+(+x).toFixed(2),dat=o=>o&&o.lf>0?`${Math.round(o.lf)} lf · ${o.jobs} job${o.jobs>1?'s':''}`:'<span style="color:var(--muted)">no data</span>';
+      const add=(lab,a,b,fmt,d)=>{const moved=Math.abs((b||0)-(a||0))>Math.max(0.005,0.01*Math.abs(a||0));if(moved||(d&&d.lf>0))rows.push(`<tr><td>${lab}</td><td>${fmt(a)}</td><td>${moved?'<b>'+fmt(b)+'</b>':fmt(b)}</td><td style="color:var(--muted)">${d?dat(d):''}</td></tr>`);};
+      add('Hours per lf',t.base.hrPerLf,t.sug.hrPerLf,hr);add('Hours per sf',t.base.hrPerSf,t.sug.hrPerSf,hr);add('Hours per branch',t.base.hrPerBranch,t.sug.hrPerBranch,x=>x>0?(+x).toFixed(2):'—');
+      EST_KINDS.forEach(([k,kl])=>add(kl,t.base.type[k],t.sug.type[k],fx,t.sup.type[k]));EST_BANDS.forEach((_,i)=>add(estBandLabel(i),t.base.bands[i],t.sug.bands[i],fx,t.sup.bands[i]));
+      const jl=t.perJob.slice().sort((a,b)=>Math.abs(b.fit/b.act-1)-Math.abs(a.fit/a.act-1)).map(j=>`<tr><td>${esc(j.name||'')}</td><td>${ft1(j.act)}h</td><td>${ft1(j.fit)}h</td><td>${j.fit>=j.act?'+':''}${((j.fit/j.act-1)*100).toFixed(0)}%</td></tr>`).join('');
+      h+=`<div class="cl-subhead" style="margin-top:16px">${l} — ${t.jobs} job${t.jobs>1?'s':''} · ${Math.round(t.totLf)} lf of real results</div>
+        <p class="cl-note tunemiss" style="margin:6px 0">Average miss on hours by ${t.basis}: your numbers <b>${pct(t.start)}</b> → tuned <b>${pct(t.after)}</b></p>
+        <p class="cl-note tuneloo" style="margin:0 0 6px">${t.loo!=null?`Expected miss on the next job: <b>${pct(t.loo)}</b> <span style="color:var(--muted)">(each job estimated from the other jobs only — this drops as you check off more jobs)</span>`:`<span style="color:var(--muted)">Check off 3 or more jobs to see the expected miss on the next job.</span>`}</p>
+        <table class="tunetbl" style="width:100%;font-size:13px;border-collapse:collapse"><tr style="color:var(--muted)"><td>Setting</td><td>Yours</td><td>Tuned</td><td>Backed by</td></tr>${rows.join('')}</table>
+        ${auto?'':`<button type="button" class="btn block" data-apply="${c}" style="margin-top:8px">Use the tuned ${l.toLowerCase()} numbers as my numbers</button>`}
+        <details style="margin-top:8px"><summary style="font-size:13px;cursor:pointer">Jobs used (${t.jobs})</summary><table style="width:100%;font-size:12.5px;border-collapse:collapse;margin-top:4px"><tr style="color:var(--muted)"><td>Job</td><td>Actual</td><td>Tuned est.</td><td>Miss</td></tr>${jl}</table></details>`;});
     pane.innerHTML=h;
-    pane.querySelectorAll('[data-apply]').forEach(b=>b.onclick=async()=>{const c=b.dataset.apply,t=estTune(c);if(!t)return;writeCat(c,t.sug);await save('Applied — '+EST_CATS.find(x=>x[0]===c)[1]+' multipliers updated');renderTune();});}
+    pane.querySelector('#autoTune').onchange=async()=>{await save(pane.querySelector('#autoTune').checked?'Estimates now tune automatically':'Automatic tuning off — estimates use your numbers');renderTune();};
+    pane.querySelectorAll('[data-apply]').forEach(b=>b.onclick=async()=>{const c=b.dataset.apply,t=estTune(c);if(!t)return;writeCat(c,t.sug);await save('Done — '+EST_CATS.find(x=>x[0]===c)[1]+' numbers updated');renderTune();});}
   const foot=document.createElement('button');foot.className='btn primary block';foot.textContent='Save standards';
   const ctl=sheetShell({title:'Estimating standards',bodyNode:body,footNode:foot});
   foot.onclick=async()=>{await save('Standards saved');ctl.close();};
 }
 // labor + access-door estimate from totals and the standards
-function estDerived(totL,totA,branches,mode,kL,kA){const s=estSettings();branches=branches||0;mode=(mode==='none')?'none':'flat';kL=kL>0?kL:1;kA=kA>0?kA:1;
+function estDerived(totL,totA,branches,mode,kL,kA){const s0=estSettings(),cm=estCat(s0,'clean'),s={hrPerLf:cm.hrPerLf,hrPerSf:cm.hrPerSf,hrPerBranch:cm.hrPerBranch,lfPerDoor:s0.lfPerDoor};branches=branches||0;mode=(mode==='none')?'none':'flat';kL=kL>0?kL:1;kA=kA>0?kA:1;
   const baseLf=totL*s.hrPerLf*kL, baseSf=totA*s.hrPerSf*kA;
   const flat=(mode==='flat')?branches*s.hrPerBranch:0;
   return {hrsLf:baseLf+flat, hrsSf:baseSf+flat, baseLf, baseSf, doors:s.lfPerDoor>0?Math.ceil(totL/s.lfPerDoor):0,
@@ -4500,7 +4539,8 @@ function viewEstimate(app){
         const branches=H.clean.branches,dv=estDerived(totL,totA,branches,bmode,H.clean.kL,H.clean.kA),facOn=estFactorsActive(s);
         const multi=sh.installLf||sh.installSf||sh.fabLf||sh.fabSf;
         const bBig=(!dv.hasBranchRate||bmode==='none'||!branches)?'—':('+'+ft1(dv.branchFlat)+'h');
-        const noteAdd=bmode==='none'?'nothing':(s.hrPerBranch>0?ft1(s.hrPerBranch)+'h per branch':'nothing yet (set it in Standards)');
+        const noteAdd=bmode==='none'?'nothing':(H.clean.m.hrPerBranch>0?ft1(H.clean.m.hrPerBranch)+'h per branch':'nothing yet (set it in Standards)');
+        const tunedN=Math.max(0,...EST_CATS.map(([c])=>H[c].m.tunedJobs||0));
         const tiles=[];
         if(sh.cleanLf)tiles.push([dv.hasLf?ft1(dv.hrsLf):'—',multi?'Cleaning hrs by lf':'Hrs by lf']);
         if(sh.cleanSf)tiles.push([dv.hasSf?ft1(dv.hrsSf):'—',multi?'Cleaning hrs by sf':'Hrs by sf']);
@@ -4510,7 +4550,7 @@ function viewEstimate(app){
         const facLine=[];if(facOn)facLine.push(`Labor factors applied: <b>×${H.clean.kL.toFixed(3)}</b> on lf hours · <b>×${H.clean.kA.toFixed(3)}</b> on sf hours`);
         [['install','Install'],['fab','Shop fab']].forEach(([c,l])=>{if((sh[c+'Lf']||sh[c+'Sf'])&&(Math.abs(H[c].kL-1)>1e-4||Math.abs(H[c].kA-1)>1e-4))facLine.push(`${l}: ×${H[c].kL.toFixed(3)} lf · ×${H[c].kA.toFixed(3)} sf`);});
         return `<div class="card est-card" style="padding:14px 16px;margin-top:12px">
-        <div class="eyebrow" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><span>Estimate</span><button type="button" class="linkbtn" id="estEditStd">Standards</button></div>
+        <div class="eyebrow" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><span>Estimate${tunedN?` <span id="estTuned" style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--muted)">· tuned from ${tunedN} job${tunedN>1?'s':''}</span>`:''}</span><button type="button" class="linkbtn" id="estEditStd">Standards</button></div>
         ${tiles.length?`<div class="stats" style="flex-wrap:wrap">${tiles.map(([b,l])=>`<div class="s"><b>${b}</b><span>${l}</span></div>`).join('')}</div>`:'<p class="cl-note">Nothing chosen to show — pick figures in Standards → Display.</p>'}
         ${sh.branchToggle?`<div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:12px;color:var(--muted)">Branch load</span>
           <div class="seg" id="estBranchMode" style="flex:1;min-width:160px;max-width:220px">
@@ -4536,8 +4576,9 @@ function viewEstimate(app){
   app.querySelectorAll('#estBranchMode [data-bm]').forEach(b=>b.onclick=async()=>{e.branchMode=b.dataset.bm;await pPut('estimates',e).catch(()=>toast('Not saved — check connection'));render();});
   /* actual hours after the job, and whether this job tunes the multipliers */
   app.querySelectorAll('#estActual input[id^="act_"]').forEach(inp=>inp.onchange=async()=>{const c=inp.id.slice(4),x=parseFloat(inp.value);e.actual=Object.assign({},e.actual||{});if(x>0)e.actual[c]=x;else delete e.actual[c];
-    await pPut('estimates',e).catch(()=>toast('Not saved — check connection'));render();});
-  {const t=app.querySelector('#actTune');if(t)t.onchange=async()=>{e.tuneUse=t.checked;await pPut('estimates',e).catch(()=>toast('Not saved — check connection'));toast(t.checked?'This job will fine-tune the multipliers (Standards → Fine-tune)':'No longer used for fine-tuning');render();};}
+    await pPut('estimates',e).catch(()=>toast('Not saved — check connection'));if(e.tuneUse)await estAutoRetune().catch(()=>{});render();});
+  {const t=app.querySelector('#actTune');if(t)t.onchange=async()=>{e.tuneUse=t.checked;await pPut('estimates',e).catch(()=>toast('Not saved — check connection'));const auto=estSettings().autoTune;if(auto)await estAutoRetune().catch(()=>{});toast(t.checked?(auto?'Used for fine-tuning — estimates updated':'This job will fine-tune the multipliers (Standards → Fine-tune)'):'No longer used for fine-tuning');render();};}
+  estAutoRetuneSoon();   // runs edited or jobs checked on another device
   app.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>go('estmeasure',{estDrawId:b.dataset.d}));
   const input=app.querySelector('#estInput');
   app.querySelector('#addEst').onclick=()=>input.click();

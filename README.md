@@ -107,11 +107,18 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   fab lf/sf, the branch switch, the factors line, notes, actual hours); install and fab are off until
   you turn them on.
   **Actual hours / fine-tune**: after a job, enter the hours it actually took (cleaning, install,
-  shop fab) on the estimate and tick **Use this job to fine-tune**. The **Fine-tune** tab fits every
-  multiplier — rate, duct type, width bands and hours per branch — to all ticked jobs (a regularised
-  least-squares fit on log hours, so one job mostly moves the rate and the shape factors only move
-  once several jobs agree), shows the average miss now vs. with the suggestions and the changed
-  settings, and applies them with one button.
+  shop fab) on the estimate and tick **Use this job to fine-tune**. Every checked job feeds one fit of
+  every multiplier — rate, duct type, width bands and hours per branch — and with **Tune estimates
+  automatically** (on by default) every estimate uses the tuned numbers right away ("tuned from N jobs"
+  on the card). Your own numbers on the Cleaning / Install / Shop fab tabs stay as the starting point:
+  the fit is always pulled toward them, never toward its own last answer, so jobs never count twice
+  and each job checked off gives the real results more say (one job mostly moves the rate; a width
+  band or duct type follows the jobs once enough of them have that size or type). A job that ran far
+  over or under (more than ~35%) pulls no harder than that. The **Fine-tune** tab shows, per kind of
+  labor, the jobs and lf behind it, the average miss with your numbers vs. tuned, the **expected miss
+  on the next job** (each job estimated from the other jobs only; needs 3+ jobs), what lf backs each
+  multiplier, and each job's miss. With automatic tuning off, estimates use your numbers and a button
+  copies the tuned numbers into them.
 - **Export**: choose what the PDF includes — **Reports**, **Markups**, or **Both**.
   - *Reports*: each plan is a full-resolution vector page with numbered pins; tapping a pin jumps to
     that report's page.
