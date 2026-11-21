@@ -921,7 +921,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 00:39';
+const BUILD='Nov 21 00:47';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -1539,10 +1539,10 @@ function viewJob(app){
   const nr=jobReports(j.id).length, done=jobReports(j.id).filter(r=>r.status==='Completed').length;
   let list='';
   draws.forEach(d=>{
-    const rc=drawReports(d.id).length;
+    const dr=drawReports(d.id),rc=dr.length,rd=dr.filter(r=>r.status==='Completed').length;
     list+=`<button class="row" data-draw="${d.id}">
       <span class="thumb">${d.img?`<img src="${d.img}" alt="">`:I.plan}</span>
-      <span class="grow"><h3>${esc(d.name)}</h3><span class="meta">${rc} report${rc!==1?'s':''}</span></span>
+      <span class="grow"><h3>${esc(d.name)}</h3><span class="meta">${rc} report${rc!==1?'s':''}${rc?(rd===rc?' · all completed':' · '+(rc-rd)+' open'):''}</span></span>
       <span class="chev">${I.chev}</span></button>`;
   });
   const cnt=k=>jobMarkers(j.id).filter(m=>m.kind===k).length, ds=doorSummary(j.id);
@@ -1551,7 +1551,7 @@ function viewJob(app){
       <span class="grow"><h3>${label}</h3></span><span class="count-pill">${n}</span><span class="chev">${I.chev}</span></button>`;
   app.innerHTML=`
     <div class="topbar">
-      <button class="iconbtn" id="back">${I.back}</button>
+      <button class="iconbtn" id="back" aria-label="Back">${I.back}</button>
       <div class="ttl"><h1>${esc(j.name)}</h1><div class="sub mono">${esc(j.number)}</div></div>
       <button class="iconbtn" id="jobMenu" aria-label="Job options">${I.dots}</button>
     </div>
@@ -1679,8 +1679,8 @@ function viewDrawing(app){
   const reps=drawReports(d.id);
   app.innerHTML=`
     <div class="topbar">
-      <button class="iconbtn" id="back">${I.back}</button>
-      <div class="ttl"><h1>${esc(d.name)}</h1><div class="sub">${reps.length} report${reps.length!==1?'s':''}</div></div>
+      <button class="iconbtn" id="back" aria-label="Back">${I.back}</button>
+      <div class="ttl"><h1>${esc(d.name)}</h1><div class="sub">${reps.length} report${reps.length!==1?'s':''}${reps.length?(()=>{const o=reps.filter(r=>r.status!=='Completed').length;return o?' · '+o+' open':' · all completed';})():''}</div></div>
       <button class="iconbtn" id="drawMenu" aria-label="Plan options">${I.dots}</button>
     </div>
     <div class="viewer-wrap" id="vwrap">
@@ -4537,7 +4537,7 @@ function viewEstimates(app){
         ${act?`<span class="meta" style="color:var(--good)">Actual hours logged${e.tuneUse?' · used for fine-tuning':''}</span>`:''}</span>
       <span class="chev">${I.chev}</span></button>`;});
   app.innerHTML=`
-    <div class="topbar"><button class="iconbtn" id="back">${I.back}</button>
+    <div class="topbar"><button class="iconbtn" id="back" aria-label="Back">${I.back}</button>
       <div class="ttl"><h1>Estimates</h1><div class="sub">Measure takeoffs</div></div>
       <button class="estlink" id="estStd">Standards</button></div>
     <div class="content">
@@ -4583,7 +4583,7 @@ function viewEstimate(app){
       <span class="grow"><h3>${esc(d.name)}</h3><span class="meta">${d.cal?'':'No scale yet · '}${rs.length} run${rs.length!==1?'s':''}${rs.length?' · '+ft1(l)+' lf':''}</span></span>
       <span class="chev">${I.chev}</span></button>`;});
   app.innerHTML=`
-    <div class="topbar"><button class="iconbtn" id="back">${I.back}</button>
+    <div class="topbar"><button class="iconbtn" id="back" aria-label="Back">${I.back}</button>
       <div class="ttl"><h1>${esc(e.name)}</h1><div class="sub mono">${esc(e.number)}</div></div>
       <button class="iconbtn" id="estMenu" aria-label="Estimate options">${I.dots}</button></div>
     <div class="content">
@@ -4664,6 +4664,14 @@ function estTakeoffCsv(e){const t=estTakeoff(e),q=v=>{v=v==null?'':String(v);ret
   if(t.doors)L.push('',['','Access doors','','',t.doors].map(q).join(','));
   if(t.hrs.length){L.push('',['Hours','By lf','By sf','Actual'].join(','));t.hrs.forEach(h=>{const c=EST_CATS.find(x=>x[1]===h.cat)[0];L.push([h.cat,n(h.lf),n(h.sf),t.actual[c]||''].map(q).join(','));});}
   return L.join('\r\n');}
+// a drawing set is usually one scale: offer this drawing's scale to the estimate's other same-size sheets that have none
+async function offerScaleToOthers(d){if(!d||!d.cal)return;
+  const same=x=>x.id!==d.id&&!x.cal&&(d.pw&&x.pw?Math.abs(x.pw-d.pw)<1&&Math.abs((x.ph||0)-(d.ph||0))<1:(x.w&&d.w&&Math.abs(x.w/x.h-d.w/d.h)<0.002));
+  const others=estDrawsOf(d.estId).filter(same);if(!others.length)return;
+  await new Promise(r=>setTimeout(r,450));
+  if(!await confirmDialog({title:'Use this scale on the other sheets?',message:`${others.length} other drawing${others.length>1?'s':''} in this estimate ${others.length>1?'are':'is'} the same sheet size and ${others.length>1?'have':'has'} no scale yet. Set ${others.length>1?'them':'it'} to ${d.cal.preset?d.cal.preset:'the same scale'} too? (You can change any sheet's scale later.)`,confirmText:'Use on '+(others.length>1?'all '+others.length:'it'),danger:false}))return;
+  for(const x of others){x.cal=JSON.parse(JSON.stringify(d.cal));await pPut('estdrawings',x).catch(()=>{});}
+  render();toast('Scale set on '+others.length+' more drawing'+(others.length>1?'s':''));}
 function estMenu(e){
   const body=document.createElement('div');body.className='actionlist';
   const ren=mkAction(I.edit,'Rename estimate');const del=mkAction(I.trash,'Delete estimate','danger');
@@ -4726,7 +4734,7 @@ function viewEstMeasure(app){
   const e=estFind(d.estId)||{};
   const asp=(d.h||900)/(d.w||1200), VB=1000*asp;
   app.innerHTML=`
-    <div class="topbar"><button class="iconbtn" id="back">${I.back}</button>
+    <div class="topbar"><button class="iconbtn" id="back" aria-label="Back">${I.back}</button>
       <div class="ttl"><h1>${esc(d.name)}</h1><div class="sub" id="evSub"></div></div>
       <button class="iconbtn" id="evMenu" aria-label="Options">${I.dots}</button></div>
     <div class="viewer-wrap" id="evWrap">
@@ -4922,7 +4930,7 @@ function viewEstMeasure(app){
   function startCal(){mode='cal';temp=[];refresh();}
   async function applyPreset(label,ptPerFt){if(!d.pw){toast('Use "Measure a known length" for this drawing');return;}
     d.cal={a:[0,0.5],b:[1,0.5],ft:d.pw/ptPerFt,preset:label};await pPut('estdrawings',d).catch(()=>toast('Not saved — check connection'));
-    refresh();toast('Scale set · '+label);}
+    refresh();toast('Scale set · '+label);offerScaleToOthers(d);}
   function scaleSheet(){
     const body=document.createElement('div');const inW=d.pw?(d.pw/72):0,inH=d.ph?(d.ph/72):0;
     const grp=g=>EST_SCALES.filter(x=>x.g===g).map(x=>`<button type="button" class="chip" data-pp="${x.p}" data-l="${esc(x.l)}">${esc(x.l)}</button>`).join('');
@@ -5114,7 +5122,7 @@ function viewEstMeasure(app){
     ctl.scrim.addEventListener('click', e=>{if(e.target===ctl.scrim)cancel();});
     foot.onclick=async()=>{const ft=parseFeet(inp.value);if(!ft||ft<=0){toast('Enter a length in feet');inp.focus();return;}
       d.cal={a:[temp[0],temp[1]],b:[temp[2],temp[3]],ft};await pPut('estdrawings',d).catch(()=>toast('Not saved — check connection'));
-      ctl.close();mode='view';temp=[];refresh();toast('Scale set');};
+      ctl.close();mode='view';temp=[];refresh();toast('Scale set');offerScaleToOthers(d);};
   }
   async function addRun(exit){
     if(temp.length<4){if(exit){mode='view';temp=[];tempTaps=[];tempPieces=[];tempArc=[];tempIds=[];tempRaw=[];tempTie=false;tempTieRun=null;runGroup=null;refresh();}else toast('Tap at least two points');return;}
@@ -5298,7 +5306,7 @@ function viewExport(app){
   const draws=jobDrawings(j.id), nr=jobReports(j.id).length, done=jobReports(j.id).filter(r=>r.status==='Completed').length;
   app.innerHTML=`
     <div class="topbar">
-      <button class="iconbtn" id="back">${I.back}</button>
+      <button class="iconbtn" id="back" aria-label="Back">${I.back}</button>
       <div class="ttl"><h1>Export</h1><div class="sub">${esc(j.name)}</div></div>
     </div>
     <div class="content">
