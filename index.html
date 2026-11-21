@@ -924,7 +924,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 21 02:20';
+const BUILD='Nov 21 02:28';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -5670,10 +5670,23 @@ function homeMenu(){const body=document.createElement('div');const cur=document.
     <div class="seg" id="themeSeg" style="margin:8px 0 16px">${[['','Match phone'],['light','Light'],['dark','Dark']].map(([k,l])=>`<button type="button" data-th="${k}"${k===cur?' class="on"':''}>${l}</button>`).join('')}</div>
     <div class="actionlist" id="hmActs"></div>
     <p class="cl-note" style="margin-top:14px;font-size:12px">Version ${esc(BUILD==='__BUILD__'?'dev':BUILD)}</p>`;
-  const acts=body.querySelector('#hmActs'),est=mkAction(I.plan,'Estimates (measure takeoffs)');acts.append(est);
+  const acts=body.querySelector('#hmActs'),est=mkAction(I.plan,'Estimates (measure takeoffs)'),bk=mkAction(I.download,'Download a backup (all records, no photos or PDFs)');acts.append(est,bk);
   const ctl=sheetShell({title:'Menu',bodyNode:body});
   body.querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>{const k=b.dataset.th;setTheme(k);body.querySelectorAll('[data-th]').forEach(x=>x.classList.toggle('on',x===b));});
-  est.onclick=()=>{ctl.close();go('estimates',{estId:null,estDrawId:null});};}
+  est.onclick=()=>{ctl.close();go('estimates',{estId:null,estDrawId:null});};
+  bk.onclick=()=>{ctl.close();downloadBackup();};}
+// everything except photos and plan PDFs (those are big and stay in the database): jobs, plans' details, reports, tags,
+// checklist, people, groups, estimates, runs and standards — a safety copy, since the database has no login
+async function downloadBackup(){const strip=(a,keys)=>(a||[]).map(x=>{const o=Object.assign({},x);keys.forEach(k=>delete o[k]);return o;});
+  let strokes=[];try{const sn=await fdb.collection('strokes').get();strokes=sn.docs.map(d=>d.data());}catch(e){}
+  const data={app:'Arctic Duct Cleaning',version:BUILD,exportedAt:new Date().toISOString(),
+    jobs:S.jobs,drawings:strip(S.drawings,['img','pdfData']),reports:S.reports,markers:S.markers,strokes,users:S.users,mkgroups:S.groups,checklist:S.checklist,
+    estimates:S.estimates,estdrawings:strip(S.estdraws,['img','pdfData']),estruns:S.estruns,estsettings:S.estsetArr};
+  const fname='Arctic backup '+new Date().toISOString().slice(0,10)+'.json',blob=new Blob([JSON.stringify(data)],{type:'application/json'});
+  let file=null;try{file=new File([blob],fname,{type:'application/json'});}catch(e){}
+  if(file&&navigator.canShare&&navigator.share&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:fname});return;}catch(e){if(e&&e.name==='AbortError')return;}}
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=fname;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),15000);
+  toast('Backup downloaded · '+S.jobs.length+' jobs, '+S.reports.length+' reports, '+S.estimates.length+' estimates');}
 function setTheme(next){if(next)document.documentElement.setAttribute('data-theme',next);else document.documentElement.removeAttribute('data-theme');try{localStorage.setItem('ductpro-theme',next);}catch(e){}}
 function cycleTheme(){
   const cur=document.documentElement.getAttribute('data-theme');

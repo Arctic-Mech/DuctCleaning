@@ -179,6 +179,12 @@ Firebase console → **Firestore Database → Rules** → paste `firebase/firest
 > ⚠️ Open rules make the database world-readable and world-writable. Anyone with the URL
 > can read or change everything. Add Firebase Auth later if you need to lock it down.
 
+### Backup
+Home ⋯ menu → **Download a backup**: one JSON file with every job, plan's details, report, tag, freehand
+stroke, checklist item, person, group, estimate, run and the standards (photos and plan PDFs are not
+included — they stay in the database). Worth doing now and then, since the open rules mean anyone with
+the URL could change data.
+
 ### Free-tier limits and offloading
 Spark gives **1 GiB storage** and **50K reads / 20K writes / 20K deletes per day**. When a
 job is finished, export the PDF, file it, then **delete the job** (job menu → Delete job).
