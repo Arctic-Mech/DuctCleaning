@@ -898,7 +898,7 @@ const SAFE=(function(){
   addEventListener('resize',apply);addEventListener('orientationchange',()=>setTimeout(apply,350));
   return S0;
 })();
-const BUILD='Nov 20 17:18';
+const BUILD='Nov 20 17:30';
 const S={jobs:[],drawings:[],reports:[],markers:[],users:[],groups:[],checklist:[],estimates:[],estdraws:[],estruns:[],estsetArr:[],user:null,route:['jobs'],jobId:null,drawId:null,estId:null,estDrawId:null,placing:false,focus:null};
 const uid=()=> (crypto.randomUUID?crypto.randomUUID():'id'+Date.now()+Math.random().toString(16).slice(2));
 const now=()=>Date.now();
@@ -3740,7 +3740,10 @@ async function estRunWallsHD(d,ptsN,opt){
       const sg={L,s:[],w:[],c:[],dl:[],dr:[]};segs[i]=sg;if(L<1e-6)continue;
       const ux=(B[0]-A[0])/L,uy=(B[1]-A[1])/L,nx=-uy,ny=ux,n=Math.max(2,Math.min(1500,Math.round(L/STEP))),K=Math.min(80,Math.max(20,L/2));
       if(opt.walls&&L>=40){sg.cl=[];sg.cr=[];sg.w1=[];sg.c1=[];}
+      // a branch starting inside the run it ties into: its opening stretch, up to where it leaves that run's band, reads the other duct
+      let maskTo=0;if(i===0&&opt.mask){let k=0;for(;k<=n;k++){const s=L*k/n;if(!opt.mask.some(Q=>estInPoly(Q,A[0]+ux*s,A[1]+uy*s)))break;}maskTo=k<=n?k:0;}
       for(let k=0;k<=n;k++){const s=L*k/n,x=A[0]+ux*s,y=A[1]+uy*s;
+        if(k<maskTo){put(sg,k,s,null,null);if(sg.cl){sg.cl[k]=null;sg.cr[k]=null;sg.w1[k]=null;sg.c1[k]=null;}continue;}   // inside the run this one branches from: not this duct's walls
         if(opt.walls&&L>=40){const cl=estVecWall(V,x,y,nx,ny,1,ux,uy,s,L,K,MAXH),cr=estVecWall(V,x,y,nx,ny,-1,ux,uy,s,L,K,MAXH);
           {const pr=estVecPair(V,cl,cr,ux,uy);if(pr){const up=(C,j)=>{if(j>0){C.unshift(C.splice(j,1)[0]);C.idx.unshift(C.idx.splice(j,1)[0]);}C.past=false;};up(cl,pr.a);up(cr,pr.b);}}   // the pair of lines drawn as this duct's walls
           sg.cl[k]=cl;sg.cr[k]=cr;put(sg,k,s,cl?cl[0]:null,cr?cr[0]:null);
@@ -4072,22 +4075,27 @@ function estCollapseArcs(ptsN,PW,PH,maxSeg){maxSeg=maxSeg||15;const P=[];for(let
     out.push(P[k]);k++;}
   out.push(P[n-1]);
   return changed?[].concat(...out.map(p=>[+(p[0]/PW).toFixed(6),+(p[1]/PH).toFixed(6)])):ptsN;}
+// point in polygon (page pt), for a branch's start inside the run it ties into
+function estInPoly(Q,x,y){let c=false;for(let i=0,j=Q.length-1;i<Q.length;j=i++){const a=Q[i],b=Q[j];if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/((b[1]-a[1])||1e-12)+a[0])c=!c;}return c;}
 // everything a drawn run stores from the wall sampler: centred points, per-segment mean width, width profile, outline
 async function estMeasureRun(d,ptsN,centre,raw){
   // pass 1 (first line each way) lines the run up on its duct; pass 2 (on the lined-up run) finds the walls proper:
   // lines that run on along the duct, looking past tags, crossing ducts and boxes inside it
   let pts=ptsN;const V=await estVecPage(d);   // the PDF's own vector lines (exact walls), when the drawing has them
-  if(V&&centre){if(raw&&raw.length>=4)ptsN=raw;ptsN=estCollapseArcs(ptsN,V.PW,V.PH);pts=ptsN;}   /* the user's own taps (the walls are traced exactly, no snapped arcs needed); an elbow's inserted arc -> one corner */
-  if(centre){const r1=await estRunWallsHD(d,ptsN,V?{walls:true,V}:{});if(r1){const c=estCentreRun(r1,0.5);if(c)pts=[].concat(...c).map(v=>+v.toFixed(6));}}
-  let r=await estRunWallsHD(d,pts,{walls:true,V});if(!r)return null;
+  if(V&&centre){if(raw&&raw.length>=4)ptsN=raw;ptsN=estCollapseArcs(ptsN,V.PW,V.PH);pts=ptsN;}
+  /* a branch that starts inside another run's band (its tie-in): that stretch of its first segment reads the other duct, not its own walls */
+  let mask=null;if(V&&centre){const x0=ptsN[0]*V.PW,y0=ptsN[1]*V.PH;for(const o of estRunsOf(d.id)){if(o.widthMode==='fill'||!estHasEdges(o))continue;
+    const Q=[];for(let k=0;k+1<o.edgeL.length;k+=2)Q.push([o.edgeL[k]*V.PW,o.edgeL[k+1]*V.PH]);for(let k=o.edgeR.length-2;k>=0;k-=2)Q.push([o.edgeR[k]*V.PW,o.edgeR[k+1]*V.PH]);if(estInPoly(Q,x0,y0))(mask=mask||[]).push(Q);}}   /* the user's own taps (the walls are traced exactly, no snapped arcs needed); an elbow's inserted arc -> one corner */
+  if(centre){const r1=await estRunWallsHD(d,ptsN,V?{walls:true,V,mask}:{});if(r1){const c=estCentreRun(r1,0.5);if(c)pts=[].concat(...c).map(v=>+v.toFixed(6));}}
+  let r=await estRunWallsHD(d,pts,{walls:true,V,mask});if(!r)return null;
   if(centre)for(let it=0;it<2;it++){const c=estCentreRun(r,0.5);   // again on the cleaner walls until it settles (pass 1 can be pulled by something drawn over the duct)
     if(!c)break;const flat=[].concat(...c).map(v=>+v.toFixed(6));if(!flat.some((v,i)=>Math.abs(v-pts[i])*(i%2?r.PH:r.PW)>0.3))break;
-    const r3=await estRunWallsHD(d,flat,{walls:true,V});if(!r3)break;r=r3;pts=flat;}
+    const r3=await estRunWallsHD(d,flat,{walls:true,V,mask});if(!r3)break;r=r3;pts=flat;}
   // the elbows' real shapes: each fitted bend becomes its centreline arc, and the run is measured along it
   let elbows=[];   // fittings whose outline was followed wall by wall: exact outline and area
   if(centre&&V){const f=estFitElbows(r,V);if(f&&f.pts){const flat=[].concat(...f.pts.map(p=>[+(p[0]/r.PW).toFixed(6),+(p[1]/r.PH).toFixed(6)]));elbows=f.elbows||[];
       const hints=[];f.arcs.forEach(a=>{for(let j=a.i0;j<a.i1;j++)hints[j]={half:a.half};});
-      const r4=await estRunWallsHD(d,flat,{walls:true,V,hints});if(r4){r=r4;pts=flat;}}}
+      const r4=await estRunWallsHD(d,flat,{walls:true,V,hints,mask});if(r4){r=r4;pts=flat;}}}
   const PW=r.PW,PH=r.PH,segW=[],prof=[],L=[],R=[];
   const elbowOf=i=>elbows.find(e=>i>=e.i0&&i<e.i1);
   elbows.forEach(e=>{let Ls=0;for(let j=e.i0;j<e.i1;j++)Ls+=r.segs[j]?r.segs[j].L:0;e.w=Ls>0?e.area/Ls:0;});

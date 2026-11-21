@@ -58,7 +58,10 @@ iPhone-first web app for Arctic's duct cleaning field inspections. Live at
   shape, the line runs along the midline between its walls and the area is the duct's own; square
   elbows and tees stay square. Reducers and other places where a wall steps in or out (a wider
   section, a box edge drawn just inside the wall) are traced the same way, so the band follows each
-  taper line exactly. Tap a run and choose **Edit area (paint / erase)** to fix the area by hand anywhere the
+  taper line exactly, and through inline equipment (a silencer or VAV box between two sizes) it follows
+  each box's stepped outline. When a building wall or another duct is drawn just inside a duct's wall,
+  the pair of lines drawn as that duct's walls (they start and end together) is used. A branch that
+  starts on its main ignores the stretch inside the main while finding its own walls. Tap a run and choose **Edit area (paint / erase)** to fix the area by hand anywhere the
   drawing is ambiguous (the brush starts from the measured band); the painted outline becomes the
   run's sq ft while the drawn line stays its linear footage, and **Reset area to measured** undoes it. The line you drew shows as a crisp centerline with end dots (your linear measurement)
   and the detected width as a translucent band out to the bold lines (the area); width can be
